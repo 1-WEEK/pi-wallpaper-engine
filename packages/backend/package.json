@@ -1,0 +1,20 @@
+{
+  "name": "@pwe/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "check": "bun src/preflight.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@pwe/shared": "workspace:*",
+    "effect": "^3.10.0",
+    "elysia": "^1.1.0",
+    "@elysiajs/static": "^1.1.0",
+    "ulid": "^2.3.0"
+  }
+}

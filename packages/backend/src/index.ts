@@ -1,0 +1,73 @@
+import { Elysia } from "elysia"
+import staticPlugin from "@elysiajs/static"
+import { existsSync } from "node:fs"
+import { resolve, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
+import { makeRuntime, getConfig } from "./runtime.js"
+import { workshopRoutes } from "./routes/workshop.js"
+import { libraryRoutes } from "./routes/library.js"
+import { playerRoutes } from "./routes/player.js"
+import { downloadRoutes } from "./routes/download.js"
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const PROJECT_ROOT = resolve(__dirname, "../../..")
+const CONFIG_PATH = process.env["PWE_CONFIG"] ?? resolve(PROJECT_ROOT, "config.json")
+const FRONTEND_DIST = resolve(PROJECT_ROOT, "packages/frontend/dist")
+
+if (!existsSync(CONFIG_PATH)) {
+  console.error(`✗ Config not found: ${CONFIG_PATH}`)
+  console.error("  Run install-pi.sh, or copy config.example.json to config.json and edit it.")
+  process.exit(1)
+}
+
+const runtime = makeRuntime(CONFIG_PATH)
+
+let config: Awaited<ReturnType<typeof getConfig>>
+try {
+  config = await getConfig(runtime)
+} catch (e) {
+  console.error("✗ Failed to load config:", e instanceof Error ? e.message : String(e))
+  await runtime.dispose()
+  process.exit(1)
+}
+
+const app = new Elysia()
+  .onError(({ error, set }) => {
+    console.error("Unhandled route error:", error)
+    set.status = 500
+    return { error: error instanceof Error ? error.message : String(error) }
+  })
+  .get("/api/health", () => ({ ok: true, version: "0.1.0" }))
+  .use(workshopRoutes(runtime))
+  .use(libraryRoutes(runtime))
+  .use(playerRoutes(runtime))
+  .use(downloadRoutes(runtime))
+
+if (existsSync(FRONTEND_DIST)) {
+  app.use(staticPlugin({ assets: FRONTEND_DIST, prefix: "/" }))
+} else {
+  console.warn(
+    `⚠ Frontend dist not found at ${FRONTEND_DIST}. Run 'bun run build' to build the UI.`
+  )
+  app.get("/", () => ({
+    message:
+      "Frontend not built. Run `bun run build` from project root. API is available under /api/*.",
+  }))
+}
+
+const server = app.listen({ hostname: config.server.host, port: config.server.port })
+
+console.log(`▶ pi-wallpaper-engine listening on http://${config.server.host}:${config.server.port}`)
+console.log(`  Config: ${CONFIG_PATH}`)
+console.log(`  Data root: ${config.paths.data_root}`)
+
+const shutdown = async (signal: string) => {
+  console.log(`\n${signal} received, shutting down...`)
+  await server.stop()
+  await runtime.dispose()
+  process.exit(0)
+}
+
+process.on("SIGINT", () => void shutdown("SIGINT"))
+process.on("SIGTERM", () => void shutdown("SIGTERM"))
