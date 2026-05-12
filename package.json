@@ -1,0 +1,25 @@
+{
+  "name": "pi-wallpaper-engine",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Wallpaper Engine video wallpaper player for Raspberry Pi 4B",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bash dev.sh",
+    "dev:backend": "bun run --filter @pwe/backend dev",
+    "dev:frontend": "bun run --filter @pwe/frontend dev",
+    "build": "bun run --filter @pwe/frontend build",
+    "check": "bun run --filter @pwe/backend check",
+    "test": "bun test",
+    "typecheck": "bun run --filter '*' typecheck"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}

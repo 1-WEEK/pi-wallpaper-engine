@@ -1,0 +1,32 @@
+{
+  "steam": {
+    "username": "",
+    "web_api_key": "",
+    "steamcmd_path": "/usr/local/bin/steamcmd"
+  },
+  "paths": {
+    "data_root": "",
+    "source_dir": "source",
+    "optimized_dir": "optimized"
+  },
+  "screen": {
+    "width": 1200,
+    "height": 1080,
+    "default_display_mode": "fill"
+  },
+  "mpv": {
+    "binary_path": "mpv",
+    "ipc_socket": "/tmp/pi-wallpaper-engine-mpv.sock",
+    "hwdec": "auto",
+    "gpu_api": "opengl"
+  },
+  "transcode": {
+    "target_codec": "hevc",
+    "target_quality": 23,
+    "heartbeat_timeout_ms": 60000
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  }
+}
