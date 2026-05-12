@@ -33,7 +33,21 @@ try {
 }
 
 const app = new Elysia()
-  .onError(({ error, set }) => {
+  .onError(({ code, error, request, set }) => {
+    if (code === "NOT_FOUND") {
+      const url = new URL(request.url)
+      const accept = request.headers.get("accept") ?? ""
+      const wantsHtml = accept.includes("text/html")
+      const isApi = url.pathname.startsWith("/api/")
+      const isAsset = url.pathname.startsWith("/assets/")
+      if (wantsHtml && !isApi && !isAsset && existsSync(FRONTEND_DIST)) {
+        set.status = 200
+        set.headers["content-type"] = "text/html; charset=utf-8"
+        return Bun.file(`${FRONTEND_DIST}/index.html`)
+      }
+      set.status = 404
+      return { error: "Not found" }
+    }
     console.error("Unhandled route error:", error)
     set.status = 500
     return { error: error instanceof Error ? error.message : String(error) }
