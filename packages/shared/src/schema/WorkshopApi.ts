@@ -25,6 +25,7 @@ export const QueryFilesResponse = Schema.Struct({
   response: Schema.Struct({
     total: Schema.Number,
     publishedfiledetails: Schema.optional(Schema.Array(WorkshopItem)),
+    next_cursor: Schema.optional(Schema.String),
   }),
 })
 

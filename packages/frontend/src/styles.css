@@ -294,6 +294,38 @@ input[type="text"] {
   color: #ff6b6b;
 }
 
+.result-summary {
+  font-size: 12px;
+  color: #888;
+  padding: 8px 4px 4px;
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0 8px;
+}
+
+.load-more button {
+  padding: 10px 24px;
+  background: #2a2a2a;
+  color: #e0e0e0;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.load-more button:hover:not(:disabled) {
+  background: #333;
+  border-color: #555;
+}
+
+.load-more button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .page h2 {
   margin-top: 0;
 }

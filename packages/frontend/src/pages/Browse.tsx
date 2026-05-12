@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
-import useSWR from "swr"
-import { api } from "../api.js"
+import useSWRInfinite from "swr/infinite"
+import { api, type WorkshopSearchResult } from "../api.js"
 import { WallpaperCard } from "../components/WallpaperCard.js"
 import {
   AGE_TAGS,
@@ -9,6 +9,8 @@ import {
   SORT_OPTIONS,
   type WorkshopSort,
 } from "../workshopTags.js"
+
+const PAGE_SIZE = 25
 
 // App.tsx unmounts <Browse /> when the user switches tabs, so local state
 // would reset on every return. Persist filter/sort/query to localStorage so
@@ -58,24 +60,38 @@ export const Browse = () => {
   // SWR key includes every parameter that affects the response. Tags are
   // sorted so the order user toggled them in doesn't fragment the cache.
   const tagKey = [...selectedTags].sort().join(",")
-  const {
-    data: search,
-    error,
-    isLoading,
-  } = useSWR(
-    ["workshop-search", submittedQuery, tagKey, sort],
-    ([, q, tags, s]) =>
+
+  const getKey = (pageIndex: number, prev: WorkshopSearchResult | null) => {
+    if (pageIndex > 0 && (!prev || !prev.nextCursor || prev.items.length < PAGE_SIZE)) {
+      return null
+    }
+    const cursor = pageIndex === 0 ? "*" : (prev?.nextCursor ?? "*")
+    return ["workshop-search", submittedQuery, tagKey, sort, cursor] as const
+  }
+
+  const { data, error, isLoading, isValidating, size, setSize } = useSWRInfinite(
+    getKey,
+    ([, q, tags, s, cursor]) =>
       api.workshopSearch(q, {
+        cursor,
+        pageSize: PAGE_SIZE,
         tags: tags ? tags.split(",") : [],
         sort: s as WorkshopSort,
-      })
+      }),
+    { revalidateFirstPage: false }
   )
 
   useEffect(() => {
     api.libraryList().then((rows) => setLibraryIds(new Set(rows.map((r) => r.workshop_id))))
   }, [])
 
-  const items = search?.items ?? []
+  const pages = data ?? []
+  const items = pages.flatMap((p) => p.items)
+  const total = pages[0]?.total ?? 0
+  const lastPage = pages[pages.length - 1]
+  const hasMore =
+    !!lastPage && !!lastPage.nextCursor && lastPage.items.length >= PAGE_SIZE
+  const isLoadingMore = isValidating && pages.length > 0 && pages.length < size
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -163,6 +179,12 @@ export const Browse = () => {
 
       {isLoading && <div className="loading">Loading...</div>}
       {error && <div className="error">Error: {(error as Error).message}</div>}
+      {!isLoading && items.length > 0 && (
+        <div className="result-summary">
+          Showing {items.length}
+          {total > 0 ? ` of ${total.toLocaleString()}` : ""}
+        </div>
+      )}
       <div className="grid">
         {items.map((it) => (
           <WallpaperCard
@@ -175,6 +197,17 @@ export const Browse = () => {
           <div className="empty">No results. Try a different search or fewer filters.</div>
         )}
       </div>
+      {hasMore && (
+        <div className="load-more">
+          <button
+            type="button"
+            disabled={isLoadingMore}
+            onClick={() => setSize(size + 1)}
+          >
+            {isLoadingMore ? "Loading..." : "Load more"}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

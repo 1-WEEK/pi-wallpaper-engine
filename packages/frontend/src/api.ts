@@ -32,17 +32,25 @@ const json = async <T>(res: Response): Promise<T> => {
 
 export interface WorkshopSearchOptions {
   cursor?: string
+  pageSize?: number
   tags?: ReadonlyArray<string>
   sort?: WorkshopSort
+}
+
+export interface WorkshopSearchResult {
+  total: number
+  items: WorkshopItem[]
+  nextCursor?: string
 }
 
 export const api = {
   workshopSearch: (q: string, opts: WorkshopSearchOptions = {}) => {
     const params = new URLSearchParams({ q, cursor: opts.cursor ?? "*" })
+    if (opts.pageSize) params.set("pageSize", String(opts.pageSize))
     if (opts.tags && opts.tags.length > 0) params.set("tags", opts.tags.join(","))
     if (opts.sort) params.set("sort", opts.sort)
     return fetch(`/api/workshop/search?${params.toString()}`).then(
-      json<{ total: number; items: WorkshopItem[] }>
+      json<WorkshopSearchResult>
     )
   },
 
