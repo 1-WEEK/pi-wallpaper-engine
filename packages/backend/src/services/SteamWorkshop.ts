@@ -22,7 +22,10 @@ export interface WorkshopSearchParams {
 export interface WorkshopSearchResult {
   readonly total: number
   readonly items: ReadonlyArray<WorkshopItem>
+  readonly nextCursor?: string
 }
+
+export const DEFAULT_PAGE_SIZE = 25
 
 export interface SteamWorkshopImpl {
   readonly search: (
@@ -67,11 +70,10 @@ const QUERY_TYPE = {
   recent: 1, // most recent
 } as const
 
-// 30-min TTL is well under the practical churn rate of "trend" / "recent" lists
-// for a niche tag (WE Video). Multi-client cache hit rate matters more than
-// freshness for this app — re-search the same chip set within half an hour
-// shouldn't re-hit Steam.
-const CACHE_TTL_MS = 30 * 60 * 1000
+// Trend / recent feeds for a niche tag (WE Video) don't churn fast, and paging
+// through results should stay stable as the user clicks Load More — bumped to
+// 4h so re-visiting a cursor mid-session is always a hit.
+const CACHE_TTL_MS = 4 * 60 * 60 * 1000
 const CACHE_MAX_ENTRIES = 200
 
 interface CacheEntry {
@@ -139,7 +141,7 @@ export const SteamWorkshopLive = Layer.effect(
     }
 
     return {
-      search: ({ query, cursor = "*", pageSize = 24, tags = [], sort = "trend" }) =>
+      search: ({ query, cursor = "*", pageSize = DEFAULT_PAGE_SIZE, tags = [], sort = "trend" }) =>
         Effect.gen(function* () {
           const normTags = [...tags].sort()
           const key = cacheKey({ query, cursor, pageSize, tags: normTags, sort })
@@ -153,9 +155,11 @@ export const SteamWorkshopLive = Layer.effect(
               (e) => new WorkshopApiError({ status: 0, message: `Schema: ${e.message}` })
             )
           )
+          const nextCursor = decoded.response.next_cursor
           const result: WorkshopSearchResult = {
             total: decoded.response.total,
             items: decoded.response.publishedfiledetails ?? [],
+            nextCursor: nextCursor && nextCursor !== cursor ? nextCursor : undefined,
           }
           cachePut(key, result)
           return result

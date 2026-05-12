@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia"
 import { Effect } from "effect"
-import { SteamWorkshop, type WorkshopSort } from "../services/SteamWorkshop.js"
+import { DEFAULT_PAGE_SIZE, SteamWorkshop, type WorkshopSort } from "../services/SteamWorkshop.js"
 import type { AppRuntime } from "../runtime.js"
 
 const parseSort = (raw: string | undefined): WorkshopSort =>
@@ -26,7 +26,7 @@ export const workshopRoutes = (runtime: AppRuntime) =>
               return yield* ws.search({
                 query: query.q ?? "",
                 cursor: query.cursor ?? "*",
-                pageSize: query.pageSize ? parseInt(query.pageSize, 10) : 24,
+                pageSize: query.pageSize ? parseInt(query.pageSize, 10) : DEFAULT_PAGE_SIZE,
                 tags: parseTags(query.tags),
                 sort: parseSort(query.sort),
               })
