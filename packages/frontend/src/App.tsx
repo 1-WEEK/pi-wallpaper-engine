@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { Link, Redirect, Route, Switch, useLocation } from "wouter"
 import { SWRConfig } from "swr"
 import { Browse } from "./pages/Browse.js"
 import { Downloads } from "./pages/Downloads.js"
@@ -6,11 +6,17 @@ import { Library } from "./pages/Library.js"
 import { Settings } from "./pages/Settings.js"
 import { PlayerBar } from "./components/PlayerBar.js"
 
-type View = "browse" | "library" | "downloads" | "settings"
+const NavLink = ({ href, label }: { href: string; label: string }) => {
+  const [loc] = useLocation()
+  const active = loc === href || (href === "/browse" && loc === "/")
+  return (
+    <Link href={href} className={active ? "active" : ""}>
+      {label}
+    </Link>
+  )
+}
 
 export const App = () => {
-  const [view, setView] = useState<View>("browse")
-
   return (
     <SWRConfig
       value={{
@@ -20,44 +26,27 @@ export const App = () => {
         shouldRetryOnError: false,
       }}
     >
-    <div className="app">
-      <header className="header">
-        <h1>Pi Wallpaper Engine</h1>
-        <PlayerBar />
-      </header>
-      <nav className="nav">
-        <button
-          className={view === "browse" ? "active" : ""}
-          onClick={() => setView("browse")}
-        >
-          Browse
-        </button>
-        <button
-          className={view === "library" ? "active" : ""}
-          onClick={() => setView("library")}
-        >
-          Library
-        </button>
-        <button
-          className={view === "downloads" ? "active" : ""}
-          onClick={() => setView("downloads")}
-        >
-          Downloads
-        </button>
-        <button
-          className={view === "settings" ? "active" : ""}
-          onClick={() => setView("settings")}
-        >
-          Settings
-        </button>
-      </nav>
-      <main className="main">
-        {view === "browse" && <Browse />}
-        {view === "library" && <Library />}
-        {view === "downloads" && <Downloads />}
-        {view === "settings" && <Settings />}
-      </main>
-    </div>
+      <div className="app">
+        <header className="header">
+          <h1>Pi Wallpaper Engine</h1>
+          <PlayerBar />
+        </header>
+        <nav className="nav">
+          <NavLink href="/browse" label="Browse" />
+          <NavLink href="/library" label="Library" />
+          <NavLink href="/downloads" label="Downloads" />
+          <NavLink href="/settings" label="Settings" />
+        </nav>
+        <main className="main">
+          <Switch>
+            <Route path="/browse"><Browse /></Route>
+            <Route path="/library"><Library /></Route>
+            <Route path="/downloads"><Downloads /></Route>
+            <Route path="/settings"><Settings /></Route>
+            <Route><Redirect to="/browse" /></Route>
+          </Switch>
+        </main>
+      </div>
     </SWRConfig>
   )
 }
