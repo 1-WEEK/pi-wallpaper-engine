@@ -1,0 +1,5 @@
+scopes:
+    - name: pkg
+      description: Shared library source, schemas, and TypeScript config in packages/; does not cover docs or plans.
+    - name: plan
+      description: Specification documents in plans/; does not cover package code or documentation.
