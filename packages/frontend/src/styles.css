@@ -53,16 +53,21 @@ body, html {
   border-bottom: 1px solid #2a2a2a;
 }
 
-.nav button {
+.nav button,
+.nav a {
   background: transparent;
   color: #aaa;
   border: 1px solid transparent;
   padding: 6px 14px;
   border-radius: 4px;
   cursor: pointer;
+  text-decoration: none;
+  font-size: 13px;
+  display: inline-block;
 }
 
-.nav button.active {
+.nav button.active,
+.nav a.active {
   background: #2a2a2a;
   color: #fff;
   border-color: #444;

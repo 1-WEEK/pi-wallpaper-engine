@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import useSWRInfinite from "swr/infinite"
+import { useLocation, useSearch } from "wouter"
 import { api, type WorkshopSearchResult } from "../api.js"
 import { WallpaperCard } from "../components/WallpaperCard.js"
 import {
@@ -12,10 +13,12 @@ import {
 
 const PAGE_SIZE = 25
 
-// App.tsx unmounts <Browse /> when the user switches tabs, so local state
-// would reset on every return. Persist filter/sort/query to localStorage so
-// the user's chip selection survives navigation and page reloads.
+// URL search params are the source of truth. localStorage is only consulted
+// once per page load: if the URL has no filter params at boot, we restore the
+// last saved filter. After that the URL drives state — clearing filters and
+// switching tabs will not "resurrect" old chips.
 const STORAGE_KEY = "pwe.browse.state"
+let hasBooted = false
 
 interface PersistedState {
   query: string
@@ -38,14 +41,49 @@ const loadPersisted = (): PersistedState => {
   }
 }
 
-export const Browse = () => {
-  const initial = loadPersisted()
-  const [query, setQuery] = useState(initial.query)
-  const [submittedQuery, setSubmittedQuery] = useState(initial.query)
-  const [selectedTags, setSelectedTags] = useState<ReadonlyArray<string>>(initial.tags)
-  const [sort, setSort] = useState<WorkshopSort>(initial.sort)
-  const [libraryIds, setLibraryIds] = useState<Set<string>>(new Set())
+const parseSort = (raw: string | null): WorkshopSort =>
+  raw === "recent" ? "recent" : "trend"
 
+const parseTags = (raw: string | null): ReadonlyArray<string> =>
+  raw ? raw.split(",").filter(Boolean) : []
+
+const buildSearch = (
+  query: string,
+  tags: ReadonlyArray<string>,
+  sort: WorkshopSort
+): string => {
+  const p = new URLSearchParams()
+  if (query) p.set("q", query)
+  if (tags.length) p.set("tags", tags.join(","))
+  if (sort !== "trend") p.set("sort", sort)
+  return p.toString()
+}
+
+export const Browse = () => {
+  const search = useSearch()
+  const [, setLocation] = useLocation()
+  const params = new URLSearchParams(search)
+
+  const submittedQuery = params.get("q") ?? ""
+  const selectedTags = parseTags(params.get("tags"))
+  const sort = parseSort(params.get("sort"))
+
+  const hasUrlState = params.has("q") || params.has("tags") || params.has("sort")
+
+  // Boot-time localStorage fallback. Runs at most once per full page load.
+  useEffect(() => {
+    if (hasBooted) return
+    hasBooted = true
+    if (hasUrlState) return
+    const persisted = loadPersisted()
+    const isDefault =
+      !persisted.query && !persisted.tags.length && persisted.sort === "trend"
+    if (isDefault) return
+    const qs = buildSearch(persisted.query, persisted.tags, persisted.sort)
+    setLocation(`/browse?${qs}`, { replace: true })
+  }, [hasUrlState, setLocation])
+
+  // Mirror current URL state to localStorage so the next page load can resume.
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -55,10 +93,28 @@ export const Browse = () => {
     } catch {
       // localStorage unavailable (private mode) — silently degrade
     }
-  }, [submittedQuery, selectedTags, sort])
+  }, [submittedQuery, selectedTags.join(","), sort])
 
-  // SWR key includes every parameter that affects the response. Tags are
-  // sorted so the order user toggled them in doesn't fragment the cache.
+  // Local typing buffer for the search input; commits to URL on submit.
+  const [queryDraft, setQueryDraft] = useState(submittedQuery)
+  useEffect(() => {
+    setQueryDraft(submittedQuery)
+  }, [submittedQuery])
+
+  const writeParams = (next: {
+    query?: string
+    tags?: ReadonlyArray<string>
+    sort?: WorkshopSort
+  }) => {
+    const q = next.query !== undefined ? next.query : submittedQuery
+    const t = next.tags !== undefined ? next.tags : selectedTags
+    const s = next.sort !== undefined ? next.sort : sort
+    const qs = buildSearch(q, t, s)
+    setLocation(qs ? `/browse?${qs}` : "/browse")
+  }
+
+  const [libraryIds, setLibraryIds] = useState<Set<string>>(new Set())
+
   const tagKey = [...selectedTags].sort().join(",")
 
   const getKey = (pageIndex: number, prev: WorkshopSearchResult | null) => {
@@ -94,12 +150,13 @@ export const Browse = () => {
   const isLoadingMore = isValidating && pages.length > 0 && pages.length < size
 
   const toggleTag = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    )
+    const next = selectedTags.includes(tag)
+      ? selectedTags.filter((t) => t !== tag)
+      : [...selectedTags, tag]
+    writeParams({ tags: next })
   }
 
-  const clearTags = () => setSelectedTags([])
+  const clearTags = () => writeParams({ tags: [] })
 
   return (
     <div className="page">
@@ -107,19 +164,19 @@ export const Browse = () => {
         className="search"
         onSubmit={(e) => {
           e.preventDefault()
-          setSubmittedQuery(query)
+          writeParams({ query: queryDraft })
         }}
       >
         <input
           type="text"
           placeholder="Search Wallpaper Engine video wallpapers..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={queryDraft}
+          onChange={(e) => setQueryDraft(e.target.value)}
         />
         <button type="submit">Search</button>
         <select
           value={sort}
-          onChange={(e) => setSort(e.target.value as WorkshopSort)}
+          onChange={(e) => writeParams({ sort: e.target.value as WorkshopSort })}
           title="Sort"
         >
           {SORT_OPTIONS.map((o) => (
