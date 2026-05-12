@@ -1,0 +1,25 @@
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+
+# Runtime config (contains Steam Web API key)
+config.json
+
+# Local data (downloaded wallpapers, sqlite db)
+pi-wallpaper-engine-data/
+
+# IDE
+.vscode/
+.idea/
+
+# TypeScript
+*.tsbuildinfo
+
+# Bun
+.bun/
+
+# Test artifacts
+packages/backend/src/test-assets/*.mp4
+!packages/backend/src/test-assets/.gitkeep
