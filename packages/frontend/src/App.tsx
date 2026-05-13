@@ -1,4 +1,5 @@
-import { Link, Redirect, Route, Switch, useLocation } from "wouter"
+import { useRef } from "react"
+import { Link, Redirect, Route, Switch, useLocation, useSearch } from "wouter"
 import { SWRConfig } from "swr"
 import { Browse } from "./pages/Browse.js"
 import { Downloads } from "./pages/Downloads.js"
@@ -8,9 +9,19 @@ import { PlayerBar } from "./components/PlayerBar.js"
 
 const NavLink = ({ href, label }: { href: string; label: string }) => {
   const [loc] = useLocation()
-  const active = loc === href || (href === "/browse" && loc === "/")
+  const search = useSearch()
+  const savedSearch = useRef("")
+  const isBrowse = href === "/browse"
+  const active = loc === href || (isBrowse && loc === "/")
+
+  if (isBrowse && active) savedSearch.current = search
+
+  const targetHref = isBrowse && savedSearch.current
+    ? `/browse?${savedSearch.current}`
+    : href
+
   return (
-    <Link href={href} className={active ? "active" : ""}>
+    <Link href={targetHref} className={active ? "active" : ""}>
       {label}
     </Link>
   )

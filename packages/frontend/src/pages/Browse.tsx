@@ -29,7 +29,7 @@ interface PersistedState {
 const loadPersisted = (): PersistedState => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { query: "", tags: [], sort: "trend" }
+    if (!raw) return { query: "", tags: ["Everyone"], sort: "trend" }
     const parsed = JSON.parse(raw) as Partial<PersistedState>
     return {
       query: parsed.query ?? "",
