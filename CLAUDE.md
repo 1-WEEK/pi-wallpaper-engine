@@ -53,6 +53,23 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 - **mpv 参数实测可用**：`--hwdec=auto --gpu-api=opengl`（Pi 4B V3D 驱动），不是 spec 里的 `auto-safe` + `vo=gpu`。Config 字段 `mpv.hwdec` 和 `mpv.gpu_api` 可调。
 - **mpv 由 backend 拉起**（不是兄弟 systemd unit），acquireRelease 管生命周期。backend 重启 = 短暂黑屏。
 
+## 前端设计系统
+
+**Logo**：方案 B（IconChip），IC 芯片造型，紫色调色板。文件在 `packages/frontend/public/favicon.svg`（256×256 SVG）和 `packages/frontend/public/favicon.ico`（16/32/48px 多尺寸）。
+
+**色彩 token**（定义在 `packages/frontend/src/styles.css` `:root`）：
+- `--ink: #0E1116` — 正文背景（与 logo 的 ink 色一致）
+- `--ink-1: #131820` — 卡片/面板表面
+- `--ink-2: #1a2030` — 输入框/按钮
+- `--paper: #F4EFE6` — 主文字（暖奶油色）
+- `--accent: #7C5CFF` — 主强调色（紫色）
+- `--accent-2: #B7A7FF` — 次强调色（浅紫）
+- `--accent-border: rgba(124,92,255,0.22)` — 强调色边框
+
+**CSS 策略**：纯 CSS（无 Tailwind / CSS Modules）。不要在前端引入第二套 CSS 方案。调色系统全部走 CSS 自定义属性，不要在组件里硬写十六进制颜色值。
+
+**Favicon 生成**：如需重新生成 `.ico`，在临时目录装 `@resvg/resvg-js`（arm64-linux-gnu 有预编译包），用 Bun 脚本渲染 SVG → PNG → ICO。`librsvg2-bin` 未安装，不走 `rsvg-convert`。
+
 ## Vite 与局域网
 
 `packages/frontend/vite.config.ts` 设 `server.host: true` 绑 0.0.0.0，否则手机/电脑访问 `http://<pi-ip>:5173` 会 connection refused。生产模式（`--service`）走 backend 8080 静态托管 `packages/frontend/dist/`。
