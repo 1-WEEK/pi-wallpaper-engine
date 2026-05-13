@@ -55,7 +55,7 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 
 ## 前端设计系统
 
-**Logo**：方案 B（IconChip），IC 芯片造型，紫色调色板。文件在 `packages/frontend/public/favicon.svg`（256×256 SVG）和 `packages/frontend/public/favicon.ico`（16/32/48px 多尺寸）。
+**Logo**：`packages/frontend/public/favicon.svg`（256×256 SVG）和 `packages/frontend/public/favicon.ico`（16/32/48px 多尺寸）。
 
 **色彩 token**（定义在 `packages/frontend/src/styles.css` `:root`）：
 - `--ink: #0E1116` — 正文背景（与 logo 的 ink 色一致）
