@@ -28,7 +28,10 @@ export const App = () => {
     >
       <div className="app">
         <header className="header">
-          <h1>Pi Wallpaper Engine</h1>
+          <div className="header-brand">
+            <img src="/favicon.svg" alt="" className="header-logo" width={32} height={32} />
+            <h1>Pi Wallpaper Engine</h1>
+          </div>
           <PlayerBar />
         </header>
         <nav className="nav">
