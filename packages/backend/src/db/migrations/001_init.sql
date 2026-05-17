@@ -39,3 +39,18 @@ CREATE TABLE IF NOT EXISTS transcode_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_transcode_jobs_status ON transcode_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_transcode_jobs_workshop_id ON transcode_jobs(workshop_id);
+
+CREATE TABLE IF NOT EXISTS download_tasks (
+  workshop_id TEXT PRIMARY KEY,
+  title       TEXT NOT NULL,
+  preview_url TEXT NOT NULL DEFAULT '',
+  stage       TEXT NOT NULL,
+  message     TEXT NOT NULL DEFAULT '',
+  started_at  INTEGER NOT NULL,
+  finished_at INTEGER,
+  percent     REAL,
+  bytes_done  INTEGER,
+  bytes_total INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_download_tasks_started_at ON download_tasks(started_at DESC);
