@@ -18,6 +18,9 @@ export interface DownloadTask {
   readonly workshop_id: string
   readonly title: string
   readonly preview_url: string
+  readonly content_rating: string | null
+  readonly rating_sex: string | null
+  readonly adult_hint: number
   readonly stage: DownloadStage
   readonly message: string
   readonly started_at: number
@@ -54,6 +57,9 @@ const COLUMNS = [
   "workshop_id",
   "title",
   "preview_url",
+  "content_rating",
+  "rating_sex",
+  "adult_hint",
   "stage",
   "message",
   "started_at",
@@ -198,6 +204,9 @@ export const DownloadTasksLive = Layer.effect(
               workshop_id: workshopId,
               title: workshopId,
               preview_url: "",
+              content_rating: null,
+              rating_sex: null,
+              adult_hint: 0,
               stage: "starting",
               message: "",
               started_at: Date.now(),

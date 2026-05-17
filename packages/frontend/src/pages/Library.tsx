@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import type { DisplayMode, LibraryItem } from "@pwe/shared"
+import { isAdultContent, type DisplayMode, type LibraryItem } from "@pwe/shared"
 import useSWR from "swr"
 import { api } from "../api.js"
 
@@ -20,17 +20,31 @@ const playableResolution = (row: LibraryItem): string =>
 
 const playableCodec = (row: LibraryItem): string => row.transcoded_codec ?? row.source_codec
 
+const isAdultRow = (row: LibraryItem): boolean =>
+  isAdultContent({
+    title: row.title,
+    contentRating: row.content_rating,
+    ratingSex: row.rating_sex,
+  })
+
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const [view, setView] = useState<"grid" | "list">("grid")
+  const [privacyOpen, setPrivacyOpen] = useState(false)
+  const [showAdult, setShowAdult] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { data: rows = [], mutate } = useSWR("library-list", api.libraryList, {
     refreshInterval: 5000,
     revalidateIfStale: true,
   })
 
+  const adultCount = useMemo(() => rows.filter(isAdultRow).length, [rows])
+  const visibleRows = useMemo(
+    () => (showAdult ? rows : rows.filter((row) => !isAdultRow(row))),
+    [rows, showAdult]
+  )
   const totalSize = useMemo(
-    () => rows.reduce((sum, row) => sum + (row.transcoded_size ?? row.source_size), 0),
-    [rows]
+    () => visibleRows.reduce((sum, row) => sum + (row.transcoded_size ?? row.source_size), 0),
+    [visibleRows]
   )
 
   const handlePlay = (id: string) =>
@@ -68,13 +82,24 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
     <div className="page">
       <header className="page-header">
         <div>
-          <div className="page-kicker mono">Downloaded wallpapers</div>
+          <div className="page-kicker mono library-kicker-row">
+            <span>Downloaded wallpapers</span>
+            <button
+              type="button"
+              className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
+              aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
+              aria-expanded={privacyOpen}
+              onClick={() => setPrivacyOpen((open) => !open)}
+            >
+              ••
+            </button>
+          </div>
           <h1 className="page-title">Library</h1>
         </div>
         <div className="page-actions">
           <div className="summary-stat compact">
             <span className="summary-stat-label mono">items</span>
-            <strong>{rows.length}</strong>
+            <strong>{visibleRows.length}</strong>
           </div>
           <div className="summary-stat compact">
             <span className="summary-stat-label mono">size</span>
@@ -99,14 +124,47 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
         </div>
       </header>
 
+      <div className={`library-privacy-shell ${privacyOpen ? "open" : ""}`}>
+        <div className="library-privacy-panel">
+          <div className="library-privacy-copy">
+            <div className="library-privacy-title mono">safe shelf</div>
+            <div className="library-privacy-note">
+              {adultCount > 0
+                ? showAdult
+                  ? "All saved wallpapers are visible in this session."
+                  : `${adultCount} mature item${adultCount === 1 ? "" : "s"} hidden in this session.`
+                : "No mature-marked wallpapers found."}
+            </div>
+          </div>
+          <div className="segmented segmented-compact library-privacy-toggle">
+            <button
+              type="button"
+              className={`segmented-button ${!showAdult ? "active" : ""}`}
+              aria-pressed={!showAdult}
+              onClick={() => setShowAdult(false)}
+            >
+              Safe
+            </button>
+            <button
+              type="button"
+              className={`segmented-button ${showAdult ? "active" : ""}`}
+              aria-pressed={showAdult}
+              onClick={() => setShowAdult(true)}
+            >
+              All
+            </button>
+          </div>
+        </div>
+      </div>
+
       {error && <div className="error-banner">{error}</div>}
-      {rows.length === 0 && (
+      {visibleRows.length === 0 && (
         <div className="empty-state">Library is empty. Download some wallpapers in Browse.</div>
       )}
 
-      {rows.length > 0 && view === "grid" && (
+      {visibleRows.length > 0 && view === "grid" && (
         <div className="library-grid">
-          {rows.map((row) => {
+          {visibleRows.map((row) => {
             const active = row.workshop_id === nowPlayingId
             return (
               <article
@@ -128,7 +186,9 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                 </div>
                 <div className="library-card-body">
                   <div className="library-card-title-row">
-                    <h2 className="library-card-title">{row.title}</h2>
+                    <h2 className="library-card-title" title={row.title}>
+                      {row.title}
+                    </h2>
                     <span className={`status-pill status-pill-${row.transcode_status}`}>
                       {row.transcode_status}
                     </span>
@@ -176,9 +236,9 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
         </div>
       )}
 
-      {rows.length > 0 && view === "list" && (
+      {visibleRows.length > 0 && view === "list" && (
         <ul className="library-list">
-          {rows.map((row) => {
+          {visibleRows.map((row) => {
             const active = row.workshop_id === nowPlayingId
             return (
               <li key={row.workshop_id} className={`library-row ${active ? "active" : ""}`}>
@@ -189,7 +249,9 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                 )}
                 <div className="library-row-copy">
                   <div className="library-row-title">
-                    {row.title}
+                    <span className="library-row-title-text" title={row.title}>
+                      {row.title}
+                    </span>
                     {active && <span className="library-row-playing mono">now playing</span>}
                   </div>
                   <div className="library-row-meta mono">

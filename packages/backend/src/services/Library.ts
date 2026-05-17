@@ -1,11 +1,12 @@
 import { Context, Effect, Layer } from "effect"
-import { rm, unlink } from "node:fs/promises"
-import { resolve } from "node:path"
+import { readFile, rm, unlink } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
 import { DbError, LibraryItem, LibraryNotFoundError } from "@pwe/shared"
 import { ffprobe } from "../transcode/ffprobe.js"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
 import { Logger } from "./Logger.js"
+import { normalizeAdultMetadata } from "./WallpaperFile.js"
 
 type LibraryRow = LibraryItem
 
@@ -28,6 +29,8 @@ const COLUMNS = [
   "title",
   "author",
   "preview_url",
+  "content_rating",
+  "rating_sex",
   "source_path",
   "source_resolution",
   "source_codec",
@@ -49,6 +52,9 @@ export const hasSuspectSourceMetadata = (
   sourceResolution: string
 ): boolean => sourceCodec === "unknown" || sourceResolution === "0x0"
 
+const hasMissingAdultMetadata = (row: LibraryRow): boolean =>
+  row.content_rating === null && row.rating_sex === null
+
 export const LibraryLive = Layer.effect(
   Library,
   Effect.gen(function* () {
@@ -58,13 +64,36 @@ export const LibraryLive = Layer.effect(
 
     const dataRoot = config.paths.data_root
 
+    const readAdultMetadata = (mediaPath: string) =>
+      Effect.tryPromise({
+        try: async () => {
+          const raw = await readFile(resolve(dirname(mediaPath), "project.json"), "utf-8")
+          return normalizeAdultMetadata(JSON.parse(raw) as { contentrating?: string; ratingsex?: string })
+        },
+        catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+      }).pipe(Effect.catchAll(() => Effect.succeed(normalizeAdultMetadata(null))))
+
     const reconcileSuspectRows = Effect.gen(function* () {
       const suspectRows = yield* db.query<LibraryRow>(
-        `SELECT * FROM library WHERE source_codec = 'unknown' OR source_resolution = '0x0'`
+        `SELECT * FROM library
+         WHERE source_codec = 'unknown'
+            OR source_resolution = '0x0'
+            OR content_rating IS NULL AND rating_sex IS NULL`
       )
 
       for (const row of suspectRows) {
         const mediaPath = resolve(dataRoot, row.source_path)
+        const adultMetadata = yield* readAdultMetadata(mediaPath)
+
+        if (hasMissingAdultMetadata(row)) {
+          yield* db.exec(
+            `UPDATE library SET content_rating = ?, rating_sex = ? WHERE workshop_id = ?`,
+            [adultMetadata.contentRating, adultMetadata.ratingSex, row.workshop_id]
+          )
+        }
+
+        if (!hasSuspectSourceMetadata(row.source_codec, row.source_resolution)) continue
+
         const probe = yield* ffprobe(mediaPath).pipe(
           Effect.map((value) => ({ ok: true as const, value })),
           Effect.catchTag("FfprobeError", () => Effect.succeed({ ok: false as const }))
@@ -85,12 +114,14 @@ export const LibraryLive = Layer.effect(
 
         yield* db.exec(
           `UPDATE library
-           SET source_resolution = ?, source_codec = ?, source_size = ?
+           SET source_resolution = ?, source_codec = ?, source_size = ?, content_rating = ?, rating_sex = ?
            WHERE workshop_id = ?`,
           [
             `${probe.value.width}x${probe.value.height}`,
             probe.value.codec,
             probe.value.size_bytes || row.source_size,
+            adultMetadata.contentRating,
+            adultMetadata.ratingSex,
             row.workshop_id,
           ]
         )

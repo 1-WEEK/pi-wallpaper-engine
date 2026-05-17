@@ -13,6 +13,9 @@ export interface DownloadTask {
   workshop_id: string
   title: string
   preview_url: string
+  content_rating: string | null
+  rating_sex: string | null
+  adult_hint: number
   stage: DownloadStage
   message: string
   started_at: number

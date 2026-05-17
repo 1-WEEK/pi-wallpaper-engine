@@ -11,6 +11,35 @@ const __dirname = dirname(__filename)
 
 const MIGRATION_FILE = resolve(__dirname, "../db/migrations/001_init.sql")
 
+const ensureLibraryColumns = (db: Database) => {
+  const columns = (db.query(`PRAGMA table_info(library)`).all() as Array<{ name: string }>).map(
+    (row) => row.name
+  )
+
+  if (!columns.includes("content_rating")) {
+    db.exec(`ALTER TABLE library ADD COLUMN content_rating TEXT`)
+  }
+  if (!columns.includes("rating_sex")) {
+    db.exec(`ALTER TABLE library ADD COLUMN rating_sex TEXT`)
+  }
+}
+
+const ensureDownloadTaskColumns = (db: Database) => {
+  const columns = (db.query(`PRAGMA table_info(download_tasks)`).all() as Array<{ name: string }>).map(
+    (row) => row.name
+  )
+
+  if (!columns.includes("content_rating")) {
+    db.exec(`ALTER TABLE download_tasks ADD COLUMN content_rating TEXT`)
+  }
+  if (!columns.includes("rating_sex")) {
+    db.exec(`ALTER TABLE download_tasks ADD COLUMN rating_sex TEXT`)
+  }
+  if (!columns.includes("adult_hint")) {
+    db.exec(`ALTER TABLE download_tasks ADD COLUMN adult_hint INTEGER NOT NULL DEFAULT 0`)
+  }
+}
+
 export interface DbImpl {
   readonly query: <T = unknown>(sql: string, params?: unknown[]) => Effect.Effect<T[], DbError>
   readonly queryOne: <T = unknown>(
@@ -58,6 +87,8 @@ export const DbLive = Layer.scoped(
 
     yield* tryDb<void>("migrate")(() => {
       sqlite.exec(migrationSql)
+      ensureLibraryColumns(sqlite)
+      ensureDownloadTaskColumns(sqlite)
     })
 
     return {
