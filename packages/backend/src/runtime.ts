@@ -1,6 +1,7 @@
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { ConfigLive, Config as ConfigTag } from "./services/Config.js"
 import { DbLive } from "./services/Db.js"
+import { DisplayLive } from "./services/Display.js"
 import { DownloadTasksLive } from "./services/DownloadTasks.js"
 import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
@@ -19,6 +20,7 @@ export const buildLayer = (configPath: string) =>
   TranscodeQueueNoop.pipe(
     Layer.provideMerge(DownloadTasksLive),
     Layer.provideMerge(LibraryLive),
+    Layer.provideMerge(DisplayLive),
     Layer.provideMerge(DbLive),
     Layer.provideMerge(MpvLive),
     Layer.provideMerge(SteamCmdLive),

@@ -28,5 +28,10 @@
   "server": {
     "host": "0.0.0.0",
     "port": 8080
+  },
+  "display": {
+    "on_command": ["display-on"],
+    "off_command": ["display-off"],
+    "status_command": ["display-status"]
   }
 }

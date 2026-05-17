@@ -44,7 +44,8 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 - **路径在 DB 里存相对值**（如 `source/<id>/.../foo.mp4`），运行时拼 `config.paths.data_root`。Phase 2 Worker 用同样的相对路径，各自前缀自己的 root。
 - **非 Video 类型 fail-fast**：`WallpaperFile.resolveWallpaperFiles` 读 `project.json.type`，非 `video` 立刻抛 `NotVideoWallpaperError`，路由 catch 自动清理 `source/<id>/` 半成品。Workshop 搜索 `requiredtags=Video` 不可靠，靠这层兜底。
 - **Phase 1 = `TranscodeQueueNoop`**：所有下载行 `transcode_status="skipped"`。`TranscodeQueueLive` 写好待用，Phase 2 改 `runtime.ts` 一行换 Layer 即可。`transcode_jobs` 表存在但 Phase 1 永远空。
-- **错误用 `Data.TaggedError`**（在 `@pwe/shared/errors.ts`）：`SteamCmdError`（带 `kind: AuthRequired | NotSubscribed | Timeout | BinaryNotFound | UnknownFailure`）、`WorkshopApiError`、`MpvIpcError`、`NotVideoWallpaperError` 等。路由 catch 用 `err._tag` 判定状态码。
+- **错误用 `Data.TaggedError`**（在 `@pwe/shared/errors.ts`）：`SteamCmdError`（带 `kind: AuthRequired | NotSubscribed | Timeout | BinaryNotFound | UnknownFailure`）、`WorkshopApiError`、`MpvIpcError`、`NotVideoWallpaperError`、`DisplayError` 等。路由 catch 用 `err._tag` 判定状态码。
+- **`display` 配置可选**：`on_command`/`off_command`/`status_command` 都是 argv 数组（`Bun.spawn` 直跑，无 shell 解析、无命令注入）。命令必须非交互（sudo 走 NOPASSWD）。缺 `display` 段时 `/api/display/*` 返 503，其他功能不受影响。5 秒超时杀子进程暴露阻塞型 sudo prompt。
 
 ## Pi/SteamCMD 特殊性
 
