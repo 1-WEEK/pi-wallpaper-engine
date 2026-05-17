@@ -1,49 +1,122 @@
-import { useEffect, useState } from "react"
-import type { DisplayMode } from "@pwe/shared"
+import { useState } from "react"
 import { api } from "../api.js"
+import type { SystemSummary } from "../api.js"
+import { appIcons } from "../icons.js"
 
-interface Status {
-  playing: boolean
-  current_workshop_id: string | null
-  path: string | null
-  display_mode: DisplayMode
+interface Props {
+  summary: SystemSummary | null
+  onRefresh: () => void
 }
 
-export const PlayerBar = () => {
-  const [status, setStatus] = useState<Status | null>(null)
+const DISPLAY_MODES = ["fill", "fit", "stretch"] as const
 
-  useEffect(() => {
-    const tick = () => {
-      api.playerStatus().then(setStatus).catch(() => setStatus(null))
+export const PlayerBar = ({ summary, onRefresh }: Props) => {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const player = summary?.status.player ?? null
+  const hasCurrent = !!player?.current_workshop_id
+
+  const runAction = async (action: () => Promise<unknown>) => {
+    setPending(true)
+    setError(null)
+    try {
+      await action()
+      onRefresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setPending(false)
     }
-    tick()
-    const handle = setInterval(tick, 2000)
-    return () => clearInterval(handle)
-  }, [])
+  }
 
-  if (!status) return <div className="player-bar">Player offline</div>
+  if (!summary || !player) {
+    return (
+      <div className="player-dock">
+        <div className="player-dock-inner">
+          <div className="player-empty">Connecting to Pi…</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="player-bar">
-      <span className="player-state">
-        {status.playing ? "▶ Playing" : "⏸ Idle"}{" "}
-        {status.current_workshop_id && <code>{status.current_workshop_id}</code>}
-      </span>
-      {status.playing && (
-        <button onClick={() => api.pause()}>Pause</button>
-      )}
-      {!status.playing && status.current_workshop_id && (
-        <button onClick={() => api.resume()}>Resume</button>
-      )}
-      {status.current_workshop_id && <button onClick={() => api.stop()}>Stop</button>}
-      <select
-        value={status.display_mode}
-        onChange={(e) => api.setDisplayMode(e.target.value as DisplayMode)}
-      >
-        <option value="fill">Fill</option>
-        <option value="fit">Fit</option>
-        <option value="stretch">Stretch</option>
-      </select>
+    <div className="player-dock">
+      <div className="player-dock-inner">
+        <div className="player-media">
+          {player.current_preview_url ? (
+            <img
+              className="player-preview"
+              src={player.current_preview_url}
+              alt=""
+              width={64}
+              height={58}
+            />
+          ) : (
+            <div className="player-preview player-preview-placeholder" />
+          )}
+          <div className="player-copy">
+            <div className="player-title">
+              {player.current_title ?? (hasCurrent ? player.current_workshop_id : "No wallpaper selected")}
+            </div>
+            <div className="player-subtitle mono">
+              {player.current_workshop_id ?? "waiting"} ·{" "}
+              {player.playing ? "looping" : hasCurrent ? "paused" : "idle"}
+            </div>
+          </div>
+        </div>
+
+        <div className="player-transport">
+          <button
+            type="button"
+            className="player-control player-control-icon"
+            aria-label="Stop playback"
+            disabled={!hasCurrent || pending}
+            onClick={() => {
+              void runAction(() => api.stop())
+            }}
+          >
+            {appIcons.stop}
+          </button>
+          <button
+            type="button"
+            className="player-control player-control-primary player-control-icon"
+            aria-label={player.playing ? "Pause playback" : "Resume playback"}
+            disabled={!hasCurrent || pending}
+            onClick={() => {
+              void runAction(() => (player.playing ? api.pause() : api.resume()))
+            }}
+          >
+            {player.playing ? appIcons.pause : appIcons.play}
+          </button>
+        </div>
+
+        <div className="player-codec mono">
+          {player.current_resolution ?? "—"} · {player.current_codec ?? "—"}
+        </div>
+
+        <div className="player-segmented">
+          <span className="player-segmented-label mono">display</span>
+          <div className="segmented">
+            {DISPLAY_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`segmented-button ${
+                  player.display_mode === mode ? "active" : ""
+                }`}
+                disabled={pending}
+                onClick={() => {
+                  void runAction(() => api.setDisplayMode(mode))
+                }}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      {error && <div className="player-error">{error}</div>}
     </div>
   )
 }

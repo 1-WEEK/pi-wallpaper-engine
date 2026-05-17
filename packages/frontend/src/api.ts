@@ -22,6 +22,70 @@ export interface DownloadTask {
   bytes_total: number | null
 }
 
+export interface SystemSummary {
+  config: {
+    steam: {
+      username: string
+      web_api_key_masked: string
+      steamcmd_path: string
+    }
+    paths: {
+      data_root: string
+      source_dir: string
+      optimized_dir: string
+    }
+    screen: {
+      width: number
+      height: number
+      default_display_mode: DisplayMode
+    }
+    mpv: {
+      binary_path: string
+      ipc_socket: string
+      hwdec: string
+      gpu_api: string
+    }
+    server: {
+      host: string
+      port: number
+    }
+  }
+  status: {
+    player: {
+      playing: boolean
+      current_workshop_id: string | null
+      path: string | null
+      display_mode: DisplayMode
+      current_title: string | null
+      current_preview_url: string | null
+      current_resolution: string | null
+      current_codec: string | null
+    }
+    display: {
+      configured: boolean
+      state: "on" | "off" | "unknown"
+      source: "probed" | "cached" | "default"
+      error_kind: string | null
+    }
+    storage: {
+      available: boolean
+      path: string
+      used_bytes: number | null
+      free_bytes: number | null
+      total_bytes: number | null
+      used_percent: number | null
+      error: string | null
+    }
+    library: {
+      total: number
+    }
+    downloads: {
+      active: number
+      finished: number
+    }
+  }
+}
+
 const json = async <T>(res: Response): Promise<T> => {
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
@@ -65,6 +129,8 @@ export const api = {
   downloadTasks: () => fetch(`/api/download/tasks`).then(json<DownloadTask[]>),
   dismissDownloadTask: (id: string) =>
     fetch(`/api/download/tasks/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+
+  systemSummary: () => fetch(`/api/system/summary`).then(json<SystemSummary>),
 
   libraryList: () => fetch(`/api/library`).then(json<LibraryItem[]>),
   libraryDelete: (id: string) =>

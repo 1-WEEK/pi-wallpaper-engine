@@ -1,7 +1,8 @@
 import { Context, Effect, Layer } from "effect"
-import { unlink } from "node:fs/promises"
+import { rm, unlink } from "node:fs/promises"
 import { resolve } from "node:path"
 import { DbError, LibraryItem, LibraryNotFoundError } from "@pwe/shared"
+import { ffprobe } from "../transcode/ffprobe.js"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
 import { Logger } from "./Logger.js"
@@ -43,6 +44,11 @@ const COLUMNS = [
   "last_played_at",
 ] as const
 
+export const hasSuspectSourceMetadata = (
+  sourceCodec: string,
+  sourceResolution: string
+): boolean => sourceCodec === "unknown" || sourceResolution === "0x0"
+
 export const LibraryLive = Layer.effect(
   Library,
   Effect.gen(function* () {
@@ -51,6 +57,48 @@ export const LibraryLive = Layer.effect(
     const logger = yield* Logger
 
     const dataRoot = config.paths.data_root
+
+    const reconcileSuspectRows = Effect.gen(function* () {
+      const suspectRows = yield* db.query<LibraryRow>(
+        `SELECT * FROM library WHERE source_codec = 'unknown' OR source_resolution = '0x0'`
+      )
+
+      for (const row of suspectRows) {
+        const mediaPath = resolve(dataRoot, row.source_path)
+        const probe = yield* ffprobe(mediaPath).pipe(
+          Effect.map((value) => ({ ok: true as const, value })),
+          Effect.catchTag("FfprobeError", () => Effect.succeed({ ok: false as const }))
+        )
+
+        if (!probe.ok) {
+          yield* db.exec(`DELETE FROM library WHERE workshop_id = ?`, [row.workshop_id])
+          const sourceDir = resolve(dataRoot, config.paths.source_dir, row.workshop_id)
+          yield* Effect.tryPromise({
+            try: () => rm(sourceDir, { recursive: true, force: true }),
+            catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+          }).pipe(
+            Effect.tap(() => logger.warn(`Removed invalid library row ${row.workshop_id}`)),
+            Effect.catchAll((e) => logger.warn(`Failed to clean invalid library row ${row.workshop_id}: ${e.message}`))
+          )
+          continue
+        }
+
+        yield* db.exec(
+          `UPDATE library
+           SET source_resolution = ?, source_codec = ?, source_size = ?
+           WHERE workshop_id = ?`,
+          [
+            `${probe.value.width}x${probe.value.height}`,
+            probe.value.codec,
+            probe.value.size_bytes || row.source_size,
+            row.workshop_id,
+          ]
+        )
+        yield* logger.info(`Healed library metadata for ${row.workshop_id}`)
+      }
+    }).pipe(Effect.catchAll((e) => logger.error(`Library reconcile failed: ${e.message}`)))
+
+    yield* reconcileSuspectRows
 
     return {
       list: () => db.query<LibraryRow>(`SELECT * FROM library ORDER BY downloaded_at DESC`),
