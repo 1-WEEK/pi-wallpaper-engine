@@ -1,7 +1,6 @@
 import { Elysia } from "elysia"
 import { Effect, PubSub, Stream } from "effect"
 import { resolve } from "node:path"
-import { statSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { Config } from "../services/Config.js"
 import { Db } from "../services/Db.js"
@@ -109,25 +108,7 @@ export const downloadRoutes = (runtime: AppRuntime) => {
         const files = yield* resolveWallpaperFiles(itemDir, workshopId)
 
         const probe = yield* ffprobe(files.videoAbs).pipe(
-          Effect.catchTag("FfprobeError", (e) =>
-            Effect.gen(function* () {
-              yield* logger.warn(`ffprobe failed: ${e.reason}`)
-              const size = (() => {
-                try {
-                  return statSync(files.videoAbs).size
-                } catch {
-                  return 0
-                }
-              })()
-              return {
-                width: 0,
-                height: 0,
-                codec: "unknown",
-                duration_seconds: 0,
-                size_bytes: size,
-              }
-            })
-          )
+          Effect.tapError((e) => logger.warn(`ffprobe failed: ${e.reason}`))
         )
 
         const sourceRel = toRelative(config.paths.data_root, files.videoAbs)
@@ -220,6 +201,10 @@ export const downloadRoutes = (runtime: AppRuntime) => {
         if (tag === "NotVideoWallpaper" || tag === "NotVideoWallpaperError") {
           const actualType = (err as { actualType?: string }).actualType ?? "unknown"
           message = `Cannot use this wallpaper — type "${actualType}". Only Video wallpapers play on the Pi. Try a different item.`
+        }
+        if (tag === "FfprobeError") {
+          const path = (err as { path?: string }).path ?? "downloaded file"
+          message = `Downloaded files are incomplete or unreadable: ${path}. SteamCMD likely stalled before finalizing the wallpaper. Retry the item.`
         }
         console.error(`Download ${workshopId} failed (${tag ?? "unknown"}): ${message}`)
         runtime.runFork(pubsub.publish({ workshopId, stage: "error", message }))
