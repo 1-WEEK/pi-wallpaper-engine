@@ -8,6 +8,7 @@ import { workshopRoutes } from "./routes/workshop.js"
 import { libraryRoutes } from "./routes/library.js"
 import { playerRoutes } from "./routes/player.js"
 import { downloadRoutes } from "./routes/download.js"
+import { displayRoutes } from "./routes/display.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -57,6 +58,7 @@ const app = new Elysia()
   .use(libraryRoutes(runtime))
   .use(playerRoutes(runtime))
   .use(downloadRoutes(runtime))
+  .use(displayRoutes(runtime))
 
 if (existsSync(FRONTEND_DIST)) {
   app.use(staticPlugin({ assets: FRONTEND_DIST, prefix: "/" }))

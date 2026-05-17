@@ -56,3 +56,12 @@ export class NotVideoWallpaperError extends Data.TaggedError("NotVideoWallpaperE
   readonly workshopId: string
   readonly actualType: string
 }> {}
+
+export type DisplayFailureKind = "NotConfigured" | "Timeout" | "NonZeroExit" | "SpawnFailed"
+
+export class DisplayError extends Data.TaggedError("DisplayError")<{
+  readonly kind: DisplayFailureKind
+  readonly message: string
+  readonly exitCode?: number | undefined
+  readonly stderr?: string | undefined
+}> {}

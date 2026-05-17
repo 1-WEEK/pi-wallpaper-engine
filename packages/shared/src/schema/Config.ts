@@ -48,6 +48,16 @@ export const ServerConfig = Schema.Struct({
   port: Schema.Number.pipe(Schema.between(1, 65535)),
 })
 
+// Optional display power control. Each command is an argv array, executed
+// directly without a shell (no injection, no quoting). `status_command` exits
+// 0 when the display is on, non-zero when off. Without status_command, the
+// service falls back to an in-memory cache of the last on/off action.
+export const DisplayConfig = Schema.Struct({
+  on_command: Schema.Array(Schema.String).pipe(Schema.minItems(1)),
+  off_command: Schema.Array(Schema.String).pipe(Schema.minItems(1)),
+  status_command: Schema.optional(Schema.Array(Schema.String).pipe(Schema.minItems(1))),
+})
+
 export const Config = Schema.Struct({
   steam: SteamConfig,
   paths: PathsConfig,
@@ -55,6 +65,7 @@ export const Config = Schema.Struct({
   mpv: MpvConfig,
   transcode: TranscodeConfig,
   server: ServerConfig,
+  display: Schema.optional(DisplayConfig),
 })
 
 export type Config = typeof Config.Type
