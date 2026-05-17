@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
 import { useLocation, useSearch } from "wouter"
 import { api, type WorkshopSearchResult } from "../api.js"
 import { WallpaperCard } from "../components/WallpaperCard.js"
+import { appIcons } from "../icons.js"
 import {
   AGE_TAGS,
   GENRE_TAGS,
@@ -113,8 +115,6 @@ export const Browse = () => {
     setLocation(qs ? `/browse?${qs}` : "/browse")
   }
 
-  const [libraryIds, setLibraryIds] = useState<Set<string>>(new Set())
-
   const tagKey = [...selectedTags].sort().join(",")
 
   const getKey = (pageIndex: number, prev: WorkshopSearchResult | null) => {
@@ -137,9 +137,28 @@ export const Browse = () => {
     { revalidateFirstPage: false }
   )
 
-  useEffect(() => {
-    api.libraryList().then((rows) => setLibraryIds(new Set(rows.map((r) => r.workshop_id))))
-  }, [])
+  const { data: libraryRows = [] } = useSWR("library-list", api.libraryList, {
+    refreshInterval: 5000,
+    revalidateIfStale: true,
+  })
+  const { data: downloadTasks = [], mutate: mutateDownloadTasks } = useSWR(
+    "download-tasks",
+    api.downloadTasks,
+    {
+      refreshInterval: 1000,
+      revalidateIfStale: true,
+      dedupingInterval: 0,
+    }
+  )
+
+  const libraryIds = useMemo(
+    () => new Set(libraryRows.map((row) => row.workshop_id)),
+    [libraryRows]
+  )
+  const downloadTasksById = useMemo(
+    () => new Map(downloadTasks.map((task) => [task.workshop_id, task])),
+    [downloadTasks]
+  )
 
   const pages = data ?? []
   const items = pages.flatMap((p) => p.items)
@@ -160,104 +179,145 @@ export const Browse = () => {
 
   return (
     <div className="page">
+      <header className="page-header">
+        <div>
+          <div className="page-kicker mono">Steam Workshop video wallpapers</div>
+          <h1 className="page-title">Browse</h1>
+        </div>
+        <div className="page-header-meta mono">
+          {total > 0 ? `${total.toLocaleString()} results` : "Search ready"}
+        </div>
+      </header>
+
       <form
-        className="search"
+        className="command-bar"
         onSubmit={(e) => {
           e.preventDefault()
           writeParams({ query: queryDraft })
         }}
-      >
-        <input
-          type="text"
-          placeholder="Search Wallpaper Engine video wallpapers..."
-          value={queryDraft}
-          onChange={(e) => setQueryDraft(e.target.value)}
-        />
-        <button type="submit">Search</button>
-        <select
-          value={sort}
-          onChange={(e) => writeParams({ sort: e.target.value as WorkshopSort })}
-          title="Sort"
         >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </form>
-
-      <div className="filters">
-        <div className="filter-row">
-          <span className="filter-label">Genre</span>
-          {GENRE_TAGS.map((tag) => (
+        <label className="command-bar-input">
+          <span className="command-bar-search-icon">{appIcons.browse}</span>
+          <input
+            type="text"
+            placeholder="Search Wallpaper Engine video wallpapers…"
+            value={queryDraft}
+            onChange={(e) => setQueryDraft(e.target.value)}
+          />
+          {queryDraft && (
             <button
-              key={tag}
               type="button"
-              className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
-              onClick={() => toggleTag(tag)}
+              className="command-bar-clear mono"
+              onClick={() => {
+                setQueryDraft("")
+                if (submittedQuery) writeParams({ query: "" })
+              }}
             >
-              {tag}
-            </button>
-          ))}
-        </div>
-        <div className="filter-row">
-          <span className="filter-label">Resolution</span>
-          {RESOLUTION_TAGS.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
-              onClick={() => toggleTag(tag)}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-        <div className="filter-row">
-          <span className="filter-label">Age</span>
-          {AGE_TAGS.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
-              onClick={() => toggleTag(tag)}
-            >
-              {tag}
-            </button>
-          ))}
-          {selectedTags.length > 0 && (
-            <button type="button" className="chip chip-clear" onClick={clearTags}>
-              Clear ({selectedTags.length})
+              Clear
             </button>
           )}
+        </label>
+        <button type="submit" className="btn btn-primary command-bar-submit">
+          Search
+        </button>
+        <div className="command-bar-sort">
+          <span className="mono">sort</span>
+          <div className="segmented segmented-compact command-bar-sort-toggle" role="tablist" aria-label="Sort results">
+            {SORT_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                className={`segmented-button ${sort === o.value ? "active" : ""}`}
+                aria-pressed={sort === o.value}
+                onClick={() => writeParams({ sort: o.value })}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <span className="kbd mono">⌘K</span>
+      </form>
+
+      <div className="filter-stack">
+        <div className="filter-group">
+          <span className="filter-group-label mono">Genre</span>
+          <div className="filter-chips">
+            {GENRE_TAGS.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
+                onClick={() => toggleTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="filter-group">
+          <span className="filter-group-label mono">Resolution</span>
+          <div className="filter-chips">
+            {RESOLUTION_TAGS.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
+                onClick={() => toggleTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="filter-group">
+          <span className="filter-group-label mono">Age</span>
+          <div className="filter-chips">
+            {AGE_TAGS.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
+                onClick={() => toggleTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+            {selectedTags.length > 0 && (
+              <button type="button" className="chip chip-clear" onClick={clearTags}>
+                Clear {selectedTags.length}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {isLoading && <div className="loading">Loading...</div>}
-      {error && <div className="error">Error: {(error as Error).message}</div>}
-      {!isLoading && items.length > 0 && (
-        <div className="result-summary">
-          Showing {items.length}
-          {total > 0 ? ` of ${total.toLocaleString()}` : ""}
-        </div>
-      )}
-      <div className="grid">
+      {isLoading && <div className="empty-state">Loading workshop results…</div>}
+      {error && <div className="error-banner">Error: {(error as Error).message}</div>}
+
+      <div className="grid browse-grid">
         {items.map((it) => (
           <WallpaperCard
             key={it.publishedfileid}
             item={it}
             isInLibrary={libraryIds.has(it.publishedfileid)}
+            downloadTask={downloadTasksById.get(it.publishedfileid)}
+            onDownloadQueued={() => {
+              void mutateDownloadTasks()
+            }}
           />
         ))}
-        {!isLoading && items.length === 0 && !error && (
-          <div className="empty">No results. Try a different search or fewer filters.</div>
-        )}
       </div>
+
+      {!isLoading && items.length === 0 && !error && (
+        <div className="empty-state">No results. Try a different search or fewer filters.</div>
+      )}
+
       {hasMore && (
-        <div className="load-more">
+        <div className="load-more load-more-spaced">
           <button
             type="button"
+            className="btn btn-secondary"
             disabled={isLoadingMore}
             onClick={() => setSize(size + 1)}
           >
