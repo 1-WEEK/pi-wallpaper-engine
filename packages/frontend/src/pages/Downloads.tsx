@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { isAdultContent } from "@pwe/shared"
 import useSWR from "swr"
 import { api, type DownloadStage, type DownloadTask } from "../api.js"
 
@@ -31,7 +32,17 @@ const formatElapsed = (totalSeconds: number): string => {
 const isFinished = (t: DownloadTask) =>
   t.stage === "complete" || t.stage === "error" || t.finished_at !== null
 
+const isAdultTask = (task: DownloadTask): boolean =>
+  isAdultContent({
+    title: task.title,
+    contentRating: task.content_rating,
+    ratingSex: task.rating_sex,
+    adultHint: task.adult_hint,
+  })
+
 export const Downloads = () => {
+  const [privacyOpen, setPrivacyOpen] = useState(false)
+  const [showAdult, setShowAdult] = useState(false)
   const { data, error, mutate } = useSWR("download-tasks", api.downloadTasks, {
     refreshInterval: REFRESH_MS,
     revalidateIfStale: true,
@@ -47,8 +58,13 @@ export const Downloads = () => {
   }, [])
 
   const tasks = data ?? []
-  const active = tasks.filter((t) => !isFinished(t))
-  const finished = tasks.filter(isFinished)
+  const adultCount = useMemo(() => tasks.filter(isAdultTask).length, [tasks])
+  const visibleTasks = useMemo(
+    () => (showAdult ? tasks : tasks.filter((task) => !isAdultTask(task))),
+    [tasks, showAdult]
+  )
+  const active = visibleTasks.filter((t) => !isFinished(t))
+  const finished = visibleTasks.filter(isFinished)
 
   const dismiss = async (id: string) => {
     await api.dismissDownloadTask(id)
@@ -66,7 +82,18 @@ export const Downloads = () => {
     <div className="page">
       <header className="page-header">
         <div>
-          <div className="page-kicker mono">Async SteamCMD workflow</div>
+          <div className="page-kicker mono library-kicker-row">
+            <span>Async SteamCMD workflow</span>
+            <button
+              type="button"
+              className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
+              aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
+              aria-expanded={privacyOpen}
+              onClick={() => setPrivacyOpen((open) => !open)}
+            >
+              ••
+            </button>
+          </div>
           <h1 className="page-title">Downloads</h1>
         </div>
         <div className="page-actions">
@@ -86,7 +113,46 @@ export const Downloads = () => {
         </div>
       </header>
 
-      {tasks.length === 0 && <div className="empty-state">No downloads yet. Pick a wallpaper in Browse.</div>}
+      <div className={`library-privacy-shell ${privacyOpen ? "open" : ""}`}>
+        <div className="library-privacy-panel">
+          <div className="library-privacy-copy">
+            <div className="library-privacy-title mono">safe queue</div>
+            <div className="library-privacy-note">
+              {adultCount > 0
+                ? showAdult
+                  ? "All queued and finished downloads are visible in this session."
+                  : `${adultCount} mature download item${adultCount === 1 ? "" : "s"} hidden in this session.`
+                : "No mature-marked downloads found."}
+            </div>
+          </div>
+          <div className="segmented segmented-compact library-privacy-toggle">
+            <button
+              type="button"
+              className={`segmented-button ${!showAdult ? "active" : ""}`}
+              aria-pressed={!showAdult}
+              onClick={() => setShowAdult(false)}
+            >
+              Safe
+            </button>
+            <button
+              type="button"
+              className={`segmented-button ${showAdult ? "active" : ""}`}
+              aria-pressed={showAdult}
+              onClick={() => setShowAdult(true)}
+            >
+              All
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {visibleTasks.length === 0 && (
+        <div className="empty-state">
+          {tasks.length > 0 && !showAdult && adultCount > 0
+            ? "Downloads are hidden in safe mode. Open the secret filter to reveal them."
+            : "No downloads yet. Pick a wallpaper in Browse."}
+        </div>
+      )}
 
       {active.length > 0 && (
         <section className="download-section">

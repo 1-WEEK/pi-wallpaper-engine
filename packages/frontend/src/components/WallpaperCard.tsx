@@ -104,7 +104,9 @@ export const WallpaperCard = ({
 
       <div className="wallpaper-body">
         <div className="wallpaper-title-row">
-          <h3 className="wallpaper-title">{item.title}</h3>
+          <h3 className="wallpaper-title" title={item.title}>
+            {item.title}
+          </h3>
           {readyState ? (
             <span className="status-pill status-pill-ok">In library</span>
           ) : activeTask ? (

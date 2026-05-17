@@ -65,6 +65,13 @@ const AppShell = () => {
     ? formatStorageUsage(storage.used_bytes, storage.total_bytes)
     : "Loading…"
   const browseActive = loc === "/browse" || loc === "/"
+  const displayStateLabel = display ? (display.configured ? display.state : "disabled") : "Loading…"
+  const displayStateTone =
+    display && display.configured && display.state === "on"
+      ? "on"
+      : display && (display.state === "off" || !display.configured)
+        ? "off"
+        : "unknown"
 
   if (browseActive) savedBrowseSearch.current = search
 
@@ -147,8 +154,9 @@ const AppShell = () => {
           </div>
           <div className="sidebar-status-row">
             <span>display</span>
-            <span className="mono">
-              {display ? (display.configured ? display.state : "disabled") : "Loading…"}
+            <span className={`mono sidebar-status-value sidebar-status-value-${displayStateTone}`}>
+              <span className="sidebar-status-indicator" aria-hidden="true" />
+              {displayStateLabel}
             </span>
           </div>
           <div className="sidebar-status-row">
