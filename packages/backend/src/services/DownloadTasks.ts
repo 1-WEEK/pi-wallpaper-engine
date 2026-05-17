@@ -63,6 +63,29 @@ const COLUMNS = [
   "bytes_total",
 ] as const
 
+const isTerminalStage = (stage: DownloadStage): boolean => stage === "complete" || stage === "error"
+
+export const mergeDownloadTaskRow = (
+  row: DownloadTask,
+  patch: Partial<Omit<DownloadTask, "workshop_id">>
+): DownloadTask => {
+  const restarting = patch.finished_at === null
+  const nextStage = patch.stage ?? row.stage
+
+  if (row.finished_at !== null && !restarting && !isTerminalStage(nextStage) && patch.finished_at === undefined) {
+    return row
+  }
+
+  return { ...row, ...patch }
+}
+
+export const reconcileFinishedTaskState = (
+  hasLibraryRow: boolean
+): Pick<DownloadTask, "stage" | "message"> =>
+  hasLibraryRow
+    ? { stage: "complete", message: "Library updated" }
+    : { stage: "error", message: "Download did not finalize" }
+
 export const DownloadTasksLive = Layer.effect(
   DownloadTasks,
   Effect.gen(function* () {
@@ -84,31 +107,50 @@ export const DownloadTasksLive = Layer.effect(
       const orphans = yield* db.query<{ workshop_id: string }>(
         `SELECT workshop_id FROM download_tasks WHERE finished_at IS NULL`
       )
-      if (orphans.length === 0) return
-
-      yield* db.exec(
-        `UPDATE download_tasks
-         SET stage = 'error',
-             message = 'Interrupted by restart',
-             finished_at = ?
-         WHERE finished_at IS NULL`,
-        [Date.now()]
-      )
-      yield* logger.info(`Reconciled ${orphans.length} interrupted download task(s)`)
-
-      for (const { workshop_id } of orphans) {
-        const lib = yield* library
-          .get(workshop_id)
-          .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
-        if (lib) continue
-        const sourceDir = resolve(config.paths.data_root, config.paths.source_dir, workshop_id)
-        yield* Effect.tryPromise({
-          try: () => rm(sourceDir, { recursive: true, force: true }),
-          catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-        }).pipe(
-          Effect.tap(() => logger.info(`Cleaned orphan source dir: ${sourceDir}`)),
-          Effect.catchAll((e) => logger.warn(`Failed to clean orphan ${sourceDir}: ${e.message}`))
+      if (orphans.length > 0) {
+        yield* db.exec(
+          `UPDATE download_tasks
+           SET stage = 'error',
+               message = 'Interrupted by restart',
+               finished_at = ?
+           WHERE finished_at IS NULL`,
+          [Date.now()]
         )
+        yield* logger.info(`Reconciled ${orphans.length} interrupted download task(s)`)
+
+        for (const { workshop_id } of orphans) {
+          const lib = yield* library
+            .get(workshop_id)
+            .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
+          if (lib) continue
+          const sourceDir = resolve(config.paths.data_root, config.paths.source_dir, workshop_id)
+          yield* Effect.tryPromise({
+            try: () => rm(sourceDir, { recursive: true, force: true }),
+            catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+          }).pipe(
+            Effect.tap(() => logger.info(`Cleaned orphan source dir: ${sourceDir}`)),
+            Effect.catchAll((e) => logger.warn(`Failed to clean orphan ${sourceDir}: ${e.message}`))
+          )
+        }
+      }
+
+      const inconsistent = yield* db.query<DownloadTask>(
+        `SELECT * FROM download_tasks WHERE finished_at IS NOT NULL AND stage NOT IN ('complete', 'error')`
+      )
+
+      for (const row of inconsistent) {
+        const lib = yield* library
+          .get(row.workshop_id)
+          .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
+        const patch = reconcileFinishedTaskState(lib !== null)
+        yield* db.exec(
+          `UPDATE download_tasks SET stage = ?, message = ? WHERE workshop_id = ?`,
+          [patch.stage, patch.message, row.workshop_id]
+        )
+      }
+
+      if (inconsistent.length > 0) {
+        yield* logger.info(`Reconciled ${inconsistent.length} inconsistent finished download task(s)`)
       }
     }).pipe(Effect.catchAll((e) => logger.error(`Reconcile failed: ${e.message}`)))
 
@@ -166,10 +208,10 @@ export const DownloadTasksLive = Layer.effect(
             }
           }
 
-          const merged = { ...row, ...patch }
+          const merged = mergeDownloadTaskRow(row, patch)
 
           const placeholders = COLUMNS.map(() => "?").join(",")
-          const values = COLUMNS.map((c) => (merged as Record<string, unknown>)[c] ?? null)
+          const values = COLUMNS.map((c) => (merged as unknown as Record<string, unknown>)[c] ?? null)
           
           yield* db.exec(
             `INSERT OR REPLACE INTO download_tasks (${COLUMNS.join(",")}) VALUES (${placeholders})`,
