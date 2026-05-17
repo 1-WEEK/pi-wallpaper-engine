@@ -10,13 +10,29 @@ interface ProjectJson {
   readonly file?: string
   readonly preview?: string
   readonly title?: string
+  readonly contentrating?: string
+  readonly ratingsex?: string
 }
 
 export interface ResolvedWallpaper {
   readonly title: string
   readonly previewAbs: string | null
   readonly videoAbs: string
+  readonly contentRating: string | null
+  readonly ratingSex: string | null
 }
+
+export interface WallpaperAdultMetadata {
+  readonly contentRating: string | null
+  readonly ratingSex: string | null
+}
+
+export const normalizeAdultMetadata = (
+  projectJson: ProjectJson | null
+): WallpaperAdultMetadata => ({
+  contentRating: projectJson?.contentrating ?? null,
+  ratingSex: projectJson?.ratingsex ?? null,
+})
 
 export const findWorkshopContent = (
   workshopRoot: string,
@@ -102,6 +118,7 @@ export const resolveWallpaperFiles = (
       title: projectJson?.title ?? "",
       previewAbs: previewName ? resolve(itemDir, previewName) : null,
       videoAbs: resolve(itemDir, video),
+      ...normalizeAdultMetadata(projectJson),
     }
   })
 

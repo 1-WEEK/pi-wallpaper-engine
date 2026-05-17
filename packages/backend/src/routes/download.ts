@@ -1,5 +1,6 @@
 import { Elysia } from "elysia"
 import { Effect, PubSub, Stream } from "effect"
+import { hasAdultTitleHint } from "@pwe/shared"
 import { resolve } from "node:path"
 import { rm } from "node:fs/promises"
 import { Config } from "../services/Config.js"
@@ -82,9 +83,11 @@ export const downloadRoutes = (runtime: AppRuntime) => {
           )
         )
         yield* logger.info(`[trace] metadata fetched: title="${item.title}"`)
+        const title = item.title ?? workshopId
         yield* tasks.upsert(workshopId, {
-          title: item.title ?? workshopId,
+          title,
           preview_url: item.preview_url ?? "",
+          adult_hint: hasAdultTitleHint(title) ? 1 : 0,
         })
 
         yield* logger.info(`[trace] spawning SteamCMD...`)
@@ -106,6 +109,10 @@ export const downloadRoutes = (runtime: AppRuntime) => {
 
         const itemDir = download.localPath
         const files = yield* resolveWallpaperFiles(itemDir, workshopId)
+        yield* tasks.upsert(workshopId, {
+          content_rating: files.contentRating,
+          rating_sex: files.ratingSex,
+        })
 
         const probe = yield* ffprobe(files.videoAbs).pipe(
           Effect.tapError((e) => logger.warn(`ffprobe failed: ${e.reason}`))
@@ -125,6 +132,8 @@ export const downloadRoutes = (runtime: AppRuntime) => {
               title: item.title ?? workshopId,
               author: item.creator ?? "",
               preview_url: item.preview_url ?? "",
+              content_rating: files.contentRating,
+              rating_sex: files.ratingSex,
               source_path: sourceRel,
               source_resolution: `${probe.width}x${probe.height}`,
               source_codec: probe.codec,

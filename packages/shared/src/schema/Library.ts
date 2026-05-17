@@ -16,6 +16,8 @@ export const LibraryItem = Schema.Struct({
   title: Schema.String,
   author: Schema.String,
   preview_url: Schema.String,
+  content_rating: Schema.NullOr(Schema.String),
+  rating_sex: Schema.NullOr(Schema.String),
   source_path: Schema.String,
   source_resolution: Schema.String,
   source_codec: Schema.String,
