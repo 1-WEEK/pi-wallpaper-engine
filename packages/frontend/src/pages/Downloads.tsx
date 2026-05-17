@@ -64,37 +64,50 @@ export const Downloads = () => {
 
   return (
     <div className="page">
-      <div className="dl-header">
-        <h2>Downloads</h2>
-        {finished.length > 0 && (
-          <button onClick={dismissAllFinished}>Clear finished ({finished.length})</button>
-        )}
-      </div>
+      <header className="page-header">
+        <div>
+          <div className="page-kicker mono">Async SteamCMD workflow</div>
+          <h1 className="page-title">Downloads</h1>
+        </div>
+        <div className="page-actions">
+          <div className="summary-stat compact">
+            <span className="summary-stat-label mono">active</span>
+            <strong>{active.length}</strong>
+          </div>
+          <div className="summary-stat compact">
+            <span className="summary-stat-label mono">finished</span>
+            <strong>{finished.length}</strong>
+          </div>
+          {finished.length > 0 && (
+            <button type="button" className="btn btn-secondary" onClick={dismissAllFinished}>
+              Clear finished
+            </button>
+          )}
+        </div>
+      </header>
 
-      {tasks.length === 0 && (
-        <div className="empty">No downloads. Pick a wallpaper in Browse.</div>
-      )}
+      {tasks.length === 0 && <div className="empty-state">No downloads yet. Pick a wallpaper in Browse.</div>}
 
       {active.length > 0 && (
-        <>
-          <h3 className="dl-section">Active</h3>
-          <ul className="dl-list">
+        <section className="download-section">
+          <h2 className="section-title mono">Active</h2>
+          <ul className="download-list">
             {active.map((t) => (
               <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} />
             ))}
           </ul>
-        </>
+        </section>
       )}
 
       {finished.length > 0 && (
-        <>
-          <h3 className="dl-section">Finished</h3>
-          <ul className="dl-list">
+        <section className="download-section">
+          <h2 className="section-title mono">Finished</h2>
+          <ul className="download-list download-list-finished">
             {finished.map((t) => (
               <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} />
             ))}
           </ul>
-        </>
+        </section>
       )}
     </div>
   )
@@ -118,47 +131,54 @@ const DownloadRow = ({ task, onDismiss }: RowProps) => {
     determinate && task.percent !== null ? Math.max(0, Math.min(100, task.percent)) : 0
 
   return (
-    <li className="dl-row">
-      <div className="dl-thumb-wrap">
+    <li className={`download-row ${isFinished(task) ? "finished" : "active"}`}>
+      <div className="download-thumb-wrap">
         {task.preview_url ? (
-          <img className="dl-thumb" src={task.preview_url} alt={task.title} loading="lazy" />
+          <img className="download-thumb" src={task.preview_url} alt={task.title} loading="lazy" />
         ) : (
-          <div className="dl-thumb dl-thumb-empty" />
+          <div className="download-thumb download-thumb-empty" />
         )}
       </div>
-      <div className="dl-info">
-        <div className="dl-title">{task.title}</div>
-        <div className="dl-meta">
-          <span className={`tag ${stageClass}`}>{stageLabel[task.stage]}</span>
-          {determinate && <span className="dl-pct">{percentClamped.toFixed(1)}%</span>}
+      <div className="download-copy">
+        <div className="download-title-row">
+          <div className="download-title">{task.title}</div>
+          <span className={`status-pill ${stageClass}`}>
+            {stageLabel[task.stage]}
+          </span>
+        </div>
+        <div className="download-meta">
+          <span className="mono">{task.workshop_id}</span>
+          {determinate && <span className="download-pct mono">{percentClamped.toFixed(1)}%</span>}
           {task.bytes_total !== null && task.bytes_total !== undefined && task.bytes_total > 0 && (
-            <span className="dl-bytes">
+            <span className="mono">
               {formatBytes(task.bytes_done ?? 0)} / {formatBytes(task.bytes_total)}
             </span>
           )}
-          <span className="dl-time">{elapsed}</span>
+          <span className="mono download-time">{elapsed}</span>
         </div>
         {showBar && (
           <div
-            className={`dl-bar ${determinate ? "" : "dl-bar-indeterminate"}`}
+            className={`card-progress card-progress-wide ${determinate ? "" : "indeterminate"}`}
             role="progressbar"
             aria-valuenow={determinate ? percentClamped : undefined}
             aria-valuemin={0}
             aria-valuemax={100}
           >
             <div
-              className="dl-bar-fill"
+              className="card-progress-fill"
               style={determinate ? { width: `${percentClamped}%` } : undefined}
             />
           </div>
         )}
         {task.stage === "error" && task.message && (
-          <div className="dl-message dl-message-error">{task.message}</div>
+          <div className="download-message download-message-error">{task.message}</div>
         )}
       </div>
-      <div className="dl-actions">
+      <div className="download-actions">
         {isFinished(task) && (
-          <button onClick={() => onDismiss(task.workshop_id)}>Dismiss</button>
+          <button type="button" className="btn btn-secondary" onClick={() => onDismiss(task.workshop_id)}>
+            Dismiss
+          </button>
         )}
       </div>
     </li>
