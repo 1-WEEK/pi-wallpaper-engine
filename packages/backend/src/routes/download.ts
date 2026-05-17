@@ -4,6 +4,7 @@ import { resolve } from "node:path"
 import { statSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { Config } from "../services/Config.js"
+import { Db } from "../services/Db.js"
 import { DownloadTasks } from "../services/DownloadTasks.js"
 import { Library } from "../services/Library.js"
 import { Logger } from "../services/Logger.js"
@@ -30,8 +31,28 @@ export const downloadRoutes = (runtime: AppRuntime) => {
       const pubsub = await wsPubsubPromise
       const workshopId = params.workshopId
 
+      // Idempotency: reject if a task for this workshopId is already in flight.
+      // Without this guard, a double-click or retry spawns a second SteamCMD
+      // racing the first against the same source dir.
+      const existing = await runtime.runPromise(
+        Effect.gen(function* () {
+          const tasks = yield* DownloadTasks
+          return yield* tasks.get(workshopId)
+        })
+      )
+      if (existing && existing.finished_at === null) {
+        set.status = 409
+        return {
+          ok: false,
+          error: "Download already in progress",
+          workshopId,
+          stage: existing.stage,
+        }
+      }
+
       const workflow = Effect.gen(function* () {
         const config = yield* Config
+        const db = yield* Db
         const ws = yield* SteamWorkshop
         const steam = yield* SteamCmd
         const lib = yield* Library
@@ -84,16 +105,7 @@ export const downloadRoutes = (runtime: AppRuntime) => {
         })
         yield* logger.info(`[trace] SteamCMD finished: ${download.localPath}`)
 
-        const itemDir = resolve(
-          config.paths.data_root,
-          config.paths.source_dir,
-          workshopId,
-          "steamapps",
-          "workshop",
-          "content",
-          WE_APPID,
-          workshopId
-        )
+        const itemDir = download.localPath
         const files = yield* resolveWallpaperFiles(itemDir, workshopId)
 
         const probe = yield* ffprobe(files.videoAbs).pipe(
@@ -121,34 +133,42 @@ export const downloadRoutes = (runtime: AppRuntime) => {
         const sourceRel = toRelative(config.paths.data_root, files.videoAbs)
         const decision = decideTranscode(probe, config.screen, config.transcode.target_codec)
 
-        yield* lib.insert({
-          workshop_id: workshopId,
-          title: item.title ?? workshopId,
-          author: item.creator ?? "",
-          preview_url: item.preview_url ?? "",
-          source_path: sourceRel,
-          source_resolution: `${probe.width}x${probe.height}`,
-          source_codec: probe.codec,
-          source_size: probe.size_bytes || download.sizeBytes,
-          downloaded_at: Date.now(),
-          transcode_status: "skipped",
-          transcode_progress: 0,
-          transcode_error: null,
-          transcoded_path: null,
-          transcoded_resolution: null,
-          transcoded_codec: null,
-          transcoded_size: null,
-          display_mode: config.screen.default_display_mode,
-          last_played_at: null,
-        })
+        // Finalize: library row + transcode enqueue + task completion all
+        // commit together. If the process dies inside this block, ROLLBACK
+        // keeps the library free of half-written rows and the task row stays
+        // in-flight — startup reconcile will catch it on next boot.
+        yield* db.transaction(() =>
+          Effect.gen(function* () {
+            yield* lib.insert({
+              workshop_id: workshopId,
+              title: item.title ?? workshopId,
+              author: item.creator ?? "",
+              preview_url: item.preview_url ?? "",
+              source_path: sourceRel,
+              source_resolution: `${probe.width}x${probe.height}`,
+              source_codec: probe.codec,
+              source_size: probe.size_bytes || download.sizeBytes,
+              downloaded_at: Date.now(),
+              transcode_status: "skipped",
+              transcode_progress: 0,
+              transcode_error: null,
+              transcoded_path: null,
+              transcoded_resolution: null,
+              transcoded_codec: null,
+              transcoded_size: null,
+              display_mode: config.screen.default_display_mode,
+              last_played_at: null,
+            })
 
-        yield* queue.enqueue(workshopId, decision, sourceRel)
+            yield* queue.enqueue(workshopId, decision, sourceRel)
 
-        yield* tasks.upsert(workshopId, {
-          stage: "complete",
-          message: "Library updated",
-          finished_at: Date.now(),
-        })
+            yield* tasks.upsert(workshopId, {
+              stage: "complete",
+              message: "Library updated",
+              finished_at: Date.now(),
+            })
+          })
+        )
         yield* pubsub.publish({ workshopId, stage: "complete", message: "Library updated" })
         return { ok: true, workshopId }
       })

@@ -206,6 +206,37 @@ export const SteamCmdLive = Layer.effect(
                 while (true) {
                   yield* Effect.sleep("5 seconds")
                   if (Date.now() - lastOutputAt > STALE_OUTPUT_TIMEOUT_MS) {
+                    // Box86 on Pi often stalls after download but before final move.
+                    // If we have files in either downloads/ or content/, assume
+                    // SteamCMD finished but hung on exit.
+                    const contentDir = resolve(
+                      config.paths.data_root,
+                      config.paths.source_dir,
+                      workshopId,
+                      "steamapps",
+                      "workshop",
+                      "content",
+                      WE_APPID,
+                      workshopId
+                    )
+                    const downloadsDir = resolve(
+                      config.paths.data_root,
+                      config.paths.source_dir,
+                      workshopId,
+                      "steamapps",
+                      "workshop",
+                      "downloads",
+                      WE_APPID,
+                      workshopId
+                    )
+
+                    if (existsSync(contentDir) || existsSync(downloadsDir)) {
+                      yield* logger.warn(
+                        `SteamCMD stalled for ${workshopId}, but files found. Proceeding.`
+                      )
+                      return 0 // Success exit code fake
+                    }
+
                     return yield* Effect.fail(
                       new SteamCmdError({
                         kind: "Timeout",
@@ -236,9 +267,7 @@ export const SteamCmdLive = Layer.effect(
               }
 
               if (!downloadedPath) {
-                // Fallback: SteamCMD always lands files in
-                // <install_dir>/steamapps/workshop/content/<appid>/<workshopid>/
-                downloadedPath = resolve(
+                const contentPath = resolve(
                   config.paths.data_root,
                   config.paths.source_dir,
                   workshopId,
@@ -248,6 +277,25 @@ export const SteamCmdLive = Layer.effect(
                   WE_APPID,
                   workshopId
                 )
+                const downloadsPath = resolve(
+                  config.paths.data_root,
+                  config.paths.source_dir,
+                  workshopId,
+                  "steamapps",
+                  "workshop",
+                  "downloads",
+                  WE_APPID,
+                  workshopId
+                )
+
+                // Fallback: prefer content/, then downloads/
+                if (existsSync(contentPath)) {
+                  downloadedPath = contentPath
+                } else if (existsSync(downloadsPath)) {
+                  downloadedPath = downloadsPath
+                } else {
+                  downloadedPath = contentPath // Last resort fallback
+                }
               }
 
               const result: DownloadResult = {
