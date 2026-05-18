@@ -1,16 +1,24 @@
 import { useRef } from "react"
-import type { CSSProperties } from "react"
-import type { ReactNode } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { Link, Redirect, Route, Switch, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
 import { SWRConfig } from "swr"
 import { api } from "./api.js"
+import type { SystemSummary } from "./api.js"
 import { appIcons } from "./icons.js"
 import { Browse } from "./pages/Browse.js"
 import { Downloads } from "./pages/Downloads.js"
 import { Library } from "./pages/Library.js"
 import { Settings } from "./pages/Settings.js"
 import { PlayerBar } from "./components/PlayerBar.js"
+import {
+  LayoutProvider,
+  MobileMiniPlayer,
+  MobileTabBar,
+  MobileTopBar,
+  useContainerWidth,
+  useLayout,
+} from "./components/mobile/index.js"
 
 const formatStorageUsage = (
   usedBytes: number | null | undefined,
@@ -48,15 +56,104 @@ const ShellNavLink = ({
   )
 }
 
-const AppShell = () => {
+const Routes = ({
+  summary,
+  onRefresh,
+}: {
+  summary: SystemSummary | undefined
+  onRefresh: () => void
+}) => (
+  <Switch>
+    <Route path="/browse">
+      <Browse />
+    </Route>
+    <Route path="/library">
+      <Library
+        nowPlayingId={summary?.status.player.current_workshop_id ?? null}
+        onSystemRefresh={onRefresh}
+      />
+    </Route>
+    <Route path="/downloads">
+      <Downloads />
+    </Route>
+    <Route path="/settings">
+      <Settings summary={summary ?? null} />
+    </Route>
+    <Route>
+      <Redirect to="/browse" />
+    </Route>
+  </Switch>
+)
+
+const pageTitle = (loc: string): string => {
+  if (loc.startsWith("/library")) return "Library"
+  if (loc.startsWith("/downloads")) return "Downloads"
+  if (loc.startsWith("/settings")) return "Settings"
+  return "Browse"
+}
+
+const ShellBody = () => {
   const [loc] = useLocation()
   const search = useSearch()
   const savedBrowseSearch = useRef("")
+  const { mobile } = useLayout()
   const { data: summary, mutate: mutateSummary } = useSWR("system-summary", api.systemSummary, {
     refreshInterval: 5000,
     revalidateIfStale: true,
   })
 
+  const browseActive = loc === "/browse" || loc === "/"
+  if (browseActive) savedBrowseSearch.current = search
+
+  const refresh = () => {
+    void mutateSummary()
+  }
+
+  const browseHref = savedBrowseSearch.current
+    ? `/browse?${savedBrowseSearch.current}`
+    : "/browse"
+
+  if (mobile) {
+    return (
+      <>
+        <MobileTopBar title={pageTitle(loc)} summary={summary ?? null} />
+        <main className="mobile-main">
+          <Routes summary={summary} onRefresh={refresh} />
+        </main>
+        <MobileMiniPlayer summary={summary ?? null} onRefresh={refresh} />
+        <MobileTabBar
+          summary={summary ?? null}
+          currentLoc={loc}
+          browseHref={browseHref}
+        />
+      </>
+    )
+  }
+
+  return (
+    <DesktopShell
+      summary={summary ?? null}
+      loc={loc}
+      browseHref={browseHref}
+      browseActive={browseActive}
+      onRefresh={refresh}
+    />
+  )
+}
+
+const DesktopShell = ({
+  summary,
+  loc,
+  browseHref,
+  browseActive,
+  onRefresh,
+}: {
+  summary: SystemSummary | null
+  loc: string
+  browseHref: string
+  browseActive: boolean
+  onRefresh: () => void
+}) => {
   const screen = summary?.config.screen
   const display = summary?.status.display
   const storage = summary?.status.storage
@@ -64,7 +161,6 @@ const AppShell = () => {
   const storageUsage = storage
     ? formatStorageUsage(storage.used_bytes, storage.total_bytes)
     : "Loading…"
-  const browseActive = loc === "/browse" || loc === "/"
   const displayStateLabel = display ? (display.configured ? display.state : "disabled") : "Loading…"
   const displayStateTone =
     display && display.configured && display.state === "on"
@@ -72,8 +168,6 @@ const AppShell = () => {
       : display && (display.state === "off" || !display.configured)
         ? "off"
         : "unknown"
-
-  if (browseActive) savedBrowseSearch.current = search
 
   const navItems: ReadonlyArray<{
     href: string
@@ -83,7 +177,7 @@ const AppShell = () => {
     badge?: number
   }> = [
     {
-      href: savedBrowseSearch.current ? `/browse?${savedBrowseSearch.current}` : "/browse",
+      href: browseHref,
       active: browseActive,
       label: "Browse",
       icon: appIcons.browse,
@@ -117,7 +211,7 @@ const AppShell = () => {
       : undefined
 
   return (
-    <div className="app">
+    <>
       <aside className="shell-sidebar">
         <div className="sidebar-brand">
           <img src="/favicon.svg" alt="" className="sidebar-logo" width={40} height={40} />
@@ -170,36 +264,22 @@ const AppShell = () => {
       </aside>
 
       <main className="main">
-        <Switch>
-          <Route path="/browse">
-            <Browse />
-          </Route>
-          <Route path="/library">
-            <Library
-              nowPlayingId={summary?.status.player.current_workshop_id ?? null}
-              onSystemRefresh={() => {
-                void mutateSummary()
-              }}
-            />
-          </Route>
-          <Route path="/downloads">
-            <Downloads />
-          </Route>
-          <Route path="/settings">
-            <Settings summary={summary ?? null} />
-          </Route>
-          <Route>
-            <Redirect to="/browse" />
-          </Route>
-        </Switch>
+        <Routes summary={summary ?? undefined} onRefresh={onRefresh} />
       </main>
 
-      <PlayerBar
-        summary={summary ?? null}
-        onRefresh={() => {
-          void mutateSummary()
-        }}
-      />
+      <PlayerBar summary={summary} onRefresh={onRefresh} />
+    </>
+  )
+}
+
+const AppShell = () => {
+  const [ref, width] = useContainerWidth()
+  const mobile = width > 0 && width < 720
+  return (
+    <div ref={ref} className={mobile ? "mobile-shell" : "app"}>
+      <LayoutProvider width={width}>
+        <ShellBody />
+      </LayoutProvider>
     </div>
   )
 }

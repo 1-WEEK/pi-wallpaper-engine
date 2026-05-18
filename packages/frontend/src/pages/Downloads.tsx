@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { isAdultContent } from "@pwe/shared"
 import useSWR from "swr"
 import { api, type DownloadStage, type DownloadTask } from "../api.js"
+import { useLayout } from "../components/mobile/index.js"
 
 // Active downloads need a snappier refresh than the global SWR default; 1s
 // matches the cadence SteamCMD emits stdout lines.
@@ -185,6 +186,7 @@ interface RowProps {
 }
 
 const DownloadRow = ({ task, onDismiss }: RowProps) => {
+  const { mobile } = useLayout()
   const stageClass =
     task.stage === "error" ? "dl-stage-error" : task.stage === "complete" ? "dl-stage-ok" : ""
 
@@ -195,6 +197,46 @@ const DownloadRow = ({ task, onDismiss }: RowProps) => {
   const determinate = task.percent !== null && task.percent !== undefined
   const percentClamped =
     determinate && task.percent !== null ? Math.max(0, Math.min(100, task.percent)) : 0
+
+  // Mobile: stacked layout so status pill + Dismiss never overflow at 390px.
+  if (mobile && isFinished(task)) {
+    return (
+      <li className="download-row-mobile">
+        <div className="download-row-mobile-head">
+          {task.preview_url ? (
+            <img
+              className="download-row-mobile-thumb"
+              src={task.preview_url}
+              alt={task.title}
+              loading="lazy"
+            />
+          ) : (
+            <div className="download-row-mobile-thumb" />
+          )}
+          <div className="download-row-mobile-copy">
+            <div className="download-row-mobile-title">{task.title}</div>
+            <div className="download-row-mobile-id mono">{task.workshop_id}</div>
+          </div>
+        </div>
+        {task.stage === "error" && task.message && (
+          <div className="download-row-mobile-error mono">{task.message}</div>
+        )}
+        <div className="download-row-mobile-foot">
+          <span className={`status-pill ${stageClass}`}>{stageLabel[task.stage]}</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--paper-faint)" }}>
+            {elapsed}
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => onDismiss(task.workshop_id)}
+          >
+            Dismiss
+          </button>
+        </div>
+      </li>
+    )
+  }
 
   return (
     <li className={`download-row ${isFinished(task) ? "finished" : "active"}`}>

@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { isAdultContent, type DisplayMode, type LibraryItem } from "@pwe/shared"
 import useSWR from "swr"
 import { api } from "../api.js"
+import { useLayout } from "../components/mobile/index.js"
 
 interface Props {
   nowPlayingId: string | null
@@ -28,10 +29,16 @@ const isAdultRow = (row: LibraryItem): boolean =>
   })
 
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
+  const { mobile } = useLayout()
   const [view, setView] = useState<"grid" | "list">("grid")
   const [privacyOpen, setPrivacyOpen] = useState(false)
   const [showAdult, setShowAdult] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Force grid view on mobile; list view's 5-column row would overflow at 390px.
+  useEffect(() => {
+    if (mobile && view !== "grid") setView("grid")
+  }, [mobile, view])
   const { data: rows = [], mutate } = useSWR("library-list", api.libraryList, {
     refreshInterval: 5000,
     revalidateIfStale: true,
@@ -105,22 +112,24 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
             <span className="summary-stat-label mono">size</span>
             <strong>{formatBytes(totalSize)}</strong>
           </div>
-          <div className="segmented">
-            <button
-              type="button"
-              className={`segmented-button ${view === "grid" ? "active" : ""}`}
-              onClick={() => setView("grid")}
-            >
-              Grid
-            </button>
-            <button
-              type="button"
-              className={`segmented-button ${view === "list" ? "active" : ""}`}
-              onClick={() => setView("list")}
-            >
-              List
-            </button>
-          </div>
+          {!mobile && (
+            <div className="segmented">
+              <button
+                type="button"
+                className={`segmented-button ${view === "grid" ? "active" : ""}`}
+                onClick={() => setView("grid")}
+              >
+                Grid
+              </button>
+              <button
+                type="button"
+                className={`segmented-button ${view === "list" ? "active" : ""}`}
+                onClick={() => setView("list")}
+              >
+                List
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
