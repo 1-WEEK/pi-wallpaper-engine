@@ -66,4 +66,29 @@ export const appIcons = {
       <path d="M8 6 V3 M16 6 V3 M8 21 V18 M16 21 V18" />
     </AppIcon>
   ),
+  close: (
+    <AppIcon>
+      <path d="M6 6 L18 18 M18 6 L6 18" />
+    </AppIcon>
+  ),
+  chevDown: (
+    <AppIcon>
+      <path d="M6 9 L12 15 L18 9" />
+    </AppIcon>
+  ),
+  sliders: (
+    <AppIcon>
+      <path d="M4 7 H16 M20 7 H20.01 M8 12 H20 M4 12 H4.01 M12 17 H20 M4 17 H8" />
+    </AppIcon>
+  ),
+  externalLink: (
+    <AppIcon>
+      <path d="M14 4 H20 V10 M20 4 L10 14 M5 8 V19 H16 V14" />
+    </AppIcon>
+  ),
+  downloadArrow: (
+    <AppIcon>
+      <path d="M12 4 V14 M7 9 L12 14 L17 9 M5 19 H19" />
+    </AppIcon>
+  ),
 }

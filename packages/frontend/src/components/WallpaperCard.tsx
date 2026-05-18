@@ -7,6 +7,7 @@ interface Props {
   isInLibrary?: boolean
   downloadTask?: DownloadTask
   onDownloadQueued?: () => void
+  onOpen?: () => void
 }
 
 const isFinishedTask = (task: DownloadTask): boolean =>
@@ -50,6 +51,7 @@ export const WallpaperCard = ({
   isInLibrary,
   downloadTask,
   onDownloadQueued,
+  onOpen,
 }: Props) => {
   const [starting, setStarting] = useState(false)
   const [queued, setQueued] = useState(false)
@@ -84,8 +86,18 @@ export const WallpaperCard = ({
   const readyState = isInLibrary || downloadTask?.stage === "complete"
   const queuedState = queued || starting
 
+  const handleCardClick = onOpen
+    ? (e: React.MouseEvent) => {
+        if ((e.target as HTMLElement).closest("button, a")) return
+        onOpen()
+      }
+    : undefined
+
   return (
-    <article className="wallpaper-card">
+    <article
+      className={`wallpaper-card ${onOpen ? "wallpaper-card-tappable" : ""}`}
+      onClick={handleCardClick}
+    >
       <div className="wallpaper-media">
         {item.preview_url ? (
           <img
