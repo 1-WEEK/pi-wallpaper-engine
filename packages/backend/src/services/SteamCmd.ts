@@ -1,12 +1,14 @@
 import { Context, Effect, Layer, PubSub, Stream } from "effect"
 import { resolve } from "node:path"
 import { existsSync } from "node:fs"
+import { readdir, stat } from "node:fs/promises"
 import { SteamCmdError } from "@pwe/shared"
 import { Config } from "./Config.js"
 import { Logger } from "./Logger.js"
 
 const WE_APPID = "431960"
 const STALE_OUTPUT_TIMEOUT_MS = 60_000
+const STABLE_DOWNLOAD_CHECK_MS = 15_000
 
 export interface DownloadProgress {
   readonly workshopId: string
@@ -48,6 +50,12 @@ export interface DownloadResult {
   readonly sizeBytes: number
 }
 
+export interface DownloadSnapshot {
+  readonly fileCount: number
+  readonly totalBytes: number
+  readonly newestMtimeMs: number
+}
+
 export interface SteamCmdImpl {
   readonly download: (
     workshopId: string,
@@ -58,7 +66,67 @@ export interface SteamCmdImpl {
 
 export class SteamCmd extends Context.Tag("SteamCmd")<SteamCmd, SteamCmdImpl>() {}
 
-const classifyError = (output: string, exitCode: number | null): SteamCmdError => {
+const EMPTY_SNAPSHOT: DownloadSnapshot = {
+  fileCount: 0,
+  totalBytes: 0,
+  newestMtimeMs: 0,
+}
+
+const snapshotDir = async (dir: string): Promise<DownloadSnapshot> => {
+  if (!existsSync(dir)) return EMPTY_SNAPSHOT
+
+  let fileCount = 0
+  let totalBytes = 0
+  let newestMtimeMs = 0
+
+  const walk = async (current: string): Promise<void> => {
+    const entries = await readdir(current, { withFileTypes: true })
+    for (const entry of entries) {
+      const next = resolve(current, entry.name)
+      if (entry.isDirectory()) {
+        await walk(next)
+        continue
+      }
+      if (!entry.isFile()) continue
+
+      const info = await stat(next)
+      fileCount += 1
+      totalBytes += info.size
+      newestMtimeMs = Math.max(newestMtimeMs, info.mtimeMs)
+    }
+  }
+
+  await walk(dir)
+  return { fileCount, totalBytes, newestMtimeMs }
+}
+
+const snapshotWorkshopPaths = async (
+  contentDir: string,
+  downloadsDir: string
+): Promise<DownloadSnapshot> => {
+  const [content, downloads] = await Promise.all([snapshotDir(contentDir), snapshotDir(downloadsDir)])
+  return {
+    fileCount: content.fileCount + downloads.fileCount,
+    totalBytes: content.totalBytes + downloads.totalBytes,
+    newestMtimeMs: Math.max(content.newestMtimeMs, downloads.newestMtimeMs),
+  }
+}
+
+export const shouldTreatQuietDownloadAsFinished = (
+  before: DownloadSnapshot,
+  after: DownloadSnapshot
+): boolean =>
+  before.fileCount > 0 &&
+  after.fileCount > 0 &&
+  before.fileCount === after.fileCount &&
+  before.totalBytes === after.totalBytes &&
+  before.newestMtimeMs === after.newestMtimeMs
+
+export const hasExplicitFailureOutput = (output: string): boolean => /ERROR!/i.test(output)
+
+export const classifyError = (output: string, exitCode: number | null): SteamCmdError => {
+  const explicitError = output.match(/ERROR![^\n]*/gi)?.at(-1)?.trim() ?? null
+
   if (/ERROR! Failed to install app '431960'/.test(output)) {
     return new SteamCmdError({
       kind: "AuthRequired",
@@ -85,6 +153,27 @@ const classifyError = (output: string, exitCode: number | null): SteamCmdError =
     return new SteamCmdError({
       kind: "AuthRequired",
       message: "Steam login failed. Sentry file may be invalid — re-run `steamcmd +login <username>`.",
+      exitCode: exitCode ?? undefined,
+    })
+  }
+  if (/ERROR!\s+Timeout downloading item/i.test(output)) {
+    return new SteamCmdError({
+      kind: "Timeout",
+      message: "SteamCMD timed out while downloading the workshop item before files finalized.",
+      exitCode: exitCode ?? undefined,
+    })
+  }
+  if (/Not enough free disk space/i.test(output)) {
+    return new SteamCmdError({
+      kind: "UnknownFailure",
+      message: "SteamCMD reported not enough free disk space while downloading the workshop item.",
+      exitCode: exitCode ?? undefined,
+    })
+  }
+  if (explicitError) {
+    return new SteamCmdError({
+      kind: "UnknownFailure",
+      message: explicitError,
       exitCode: exitCode ?? undefined,
     })
   }
@@ -149,6 +238,8 @@ export const SteamCmdLive = Layer.effect(
               let lastOutputAt = Date.now()
               let downloadedPath = ""
               let downloadedSize = 0
+              let sawSuccessLine = false
+              let sawExplicitFailure = false
 
               const emit = (p: DownloadProgress) => {
                 onProgress?.(p)
@@ -175,7 +266,18 @@ export const SteamCmdLive = Layer.effect(
                   for (const line of chunk.split("\n")) {
                     const trimmed = line.trim()
                     if (!trimmed) continue
-                    if (/Downloading item/i.test(trimmed) || /Update state/i.test(trimmed)) {
+                    if (hasExplicitFailureOutput(trimmed)) {
+                      sawExplicitFailure = true
+                    }
+                    if (/Success\. Downloaded item/i.test(trimmed)) {
+                      sawSuccessLine = true
+                      const m = trimmed.match(/to "([^"]+)"\s*\((\d+) bytes\)/)
+                      if (m) {
+                        downloadedPath = m[1] ?? ""
+                        downloadedSize = parseInt(m[2] ?? "0", 10)
+                      }
+                      emit({ workshopId, stage: "finalizing", message: "Validating files…" })
+                    } else if (/Downloading item/i.test(trimmed) || /Update state/i.test(trimmed)) {
                       const prog = parseProgress(trimmed)
                       if (prog) {
                         emit({
@@ -189,26 +291,17 @@ export const SteamCmdLive = Layer.effect(
                       } else {
                         emit({ workshopId, stage: "downloading", message: "Connecting…" })
                       }
-                    } else if (/Success\. Downloaded item/i.test(trimmed)) {
-                      const m = trimmed.match(/to "([^"]+)"\s*\((\d+) bytes\)/)
-                      if (m) {
-                        downloadedPath = m[1] ?? ""
-                        downloadedSize = parseInt(m[2] ?? "0", 10)
-                      }
-                      emit({ workshopId, stage: "finalizing", message: "Validating files…" })
                     }
                   }
                 }
               }
 
-              // Stall watcher — fail if no output for STALE_OUTPUT_TIMEOUT_MS
+              // Stall watcher — if SteamCMD goes quiet, only proceed when the
+              // on-disk files have also stopped changing for a short window.
               const stallWatcher = Effect.gen(function* () {
                 while (true) {
                   yield* Effect.sleep("5 seconds")
                   if (Date.now() - lastOutputAt > STALE_OUTPUT_TIMEOUT_MS) {
-                    // Box86 on Pi often stalls after download but before final move.
-                    // If we have files in either downloads/ or content/, assume
-                    // SteamCMD finished but hung on exit.
                     const contentDir = resolve(
                       config.paths.data_root,
                       config.paths.source_dir,
@@ -231,10 +324,42 @@ export const SteamCmdLive = Layer.effect(
                     )
 
                     if (existsSync(contentDir) || existsSync(downloadsDir)) {
-                      yield* logger.warn(
-                        `SteamCMD stalled for ${workshopId}, but files found. Proceeding.`
+                      const before = yield* Effect.tryPromise({
+                        try: () => snapshotWorkshopPaths(contentDir, downloadsDir),
+                        catch: (cause) =>
+                          new SteamCmdError({
+                            kind: "UnknownFailure",
+                            message: `Failed to inspect stalled download: ${cause instanceof Error ? cause.message : String(cause)}`,
+                          }),
+                      })
+
+                      yield* Effect.sleep(`${STABLE_DOWNLOAD_CHECK_MS / 1000} seconds`)
+
+                      if (Date.now() - lastOutputAt <= STALE_OUTPUT_TIMEOUT_MS) {
+                        continue
+                      }
+
+                      const after = yield* Effect.tryPromise({
+                        try: () => snapshotWorkshopPaths(contentDir, downloadsDir),
+                        catch: (cause) =>
+                          new SteamCmdError({
+                            kind: "UnknownFailure",
+                            message: `Failed to inspect stalled download: ${cause instanceof Error ? cause.message : String(cause)}`,
+                          }),
+                      })
+
+                      if (shouldTreatQuietDownloadAsFinished(before, after)) {
+                        yield* logger.warn(
+                          `SteamCMD stalled for ${workshopId}, but files are stable. Proceeding.`
+                        )
+                        return 0 // Success exit code fake
+                      }
+
+                      lastOutputAt = Date.now()
+                      yield* logger.info(
+                        `SteamCMD quiet for ${workshopId}, but files are still changing. Waiting.`
                       )
-                      return 0 // Success exit code fake
+                      continue
                     }
 
                     return yield* Effect.fail(
@@ -262,7 +387,7 @@ export const SteamCmdLive = Layer.effect(
 
               const exitCode = yield* Effect.race(runIO, stallWatcher)
 
-              if (exitCode !== 0) {
+              if (exitCode !== 0 || (sawExplicitFailure && !sawSuccessLine)) {
                 return yield* Effect.fail(classifyError(collected, exitCode))
               }
 
