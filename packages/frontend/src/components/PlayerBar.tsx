@@ -2,6 +2,7 @@ import { useState } from "react"
 import { api } from "../api.js"
 import type { SystemSummary } from "../api.js"
 import { appIcons } from "../icons.js"
+import { DisplayPowerToggle } from "./DisplayPowerToggle.js"
 
 interface Props {
   summary: SystemSummary | null
@@ -12,9 +13,11 @@ const DISPLAY_MODES = ["fill", "fit", "stretch"] as const
 
 export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const [pending, setPending] = useState(false)
+  const [displayPending, setDisplayPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const player = summary?.status.player ?? null
+  const display = summary?.status.display ?? null
   const hasCurrent = !!player?.current_workshop_id
 
   const runAction = async (action: () => Promise<unknown>) => {
@@ -27,6 +30,21 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setPending(false)
+    }
+  }
+
+  const togglePower = async () => {
+    if (!display || !display.configured) return
+    setDisplayPending(true)
+    setError(null)
+    try {
+      if (display.state === "on") await api.displayOff()
+      else await api.displayOn()
+      onRefresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDisplayPending(false)
     }
   }
 
@@ -95,24 +113,32 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
           {player.current_resolution ?? "—"} · {player.current_codec ?? "—"}
         </div>
 
-        <div className="player-segmented">
-          <span className="player-segmented-label mono">display</span>
-          <div className="segmented">
-            {DISPLAY_MODES.map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={`segmented-button ${
-                  player.display_mode === mode ? "active" : ""
-                }`}
-                disabled={pending}
-                onClick={() => {
-                  void runAction(() => api.setDisplayMode(mode))
-                }}
-              >
-                {mode}
-              </button>
-            ))}
+        <div className="player-right">
+          <DisplayPowerToggle
+            state={display?.state ?? "unknown"}
+            configured={!!display?.configured}
+            pending={displayPending}
+            onToggle={togglePower}
+          />
+          <div className="player-segmented">
+            <span className="player-segmented-label mono">display</span>
+            <div className="segmented">
+              {DISPLAY_MODES.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`segmented-button ${
+                    player.display_mode === mode ? "active" : ""
+                  }`}
+                  disabled={pending}
+                  onClick={() => {
+                    void runAction(() => api.setDisplayMode(mode))
+                  }}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>

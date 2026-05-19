@@ -2,6 +2,7 @@ import { useState } from "react"
 import { api } from "../../api.js"
 import type { SystemSummary } from "../../api.js"
 import { appIcons } from "../../icons.js"
+import { DisplayPowerToggle } from "../DisplayPowerToggle.js"
 
 interface Props {
   summary: SystemSummary | null
@@ -10,7 +11,9 @@ interface Props {
 
 export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
   const [pending, setPending] = useState(false)
+  const [displayPending, setDisplayPending] = useState(false)
   const player = summary?.status.player ?? null
+  const display = summary?.status.display ?? null
   const hasCurrent = !!player?.current_workshop_id
 
   const runAction = async (action: () => Promise<unknown>) => {
@@ -20,6 +23,21 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
       onRefresh()
     } finally {
       setPending(false)
+    }
+  }
+
+  const togglePower = async () => {
+    if (!display || !display.configured) return
+    setDisplayPending(true)
+    try {
+      if (display.state === "on") await api.displayOff()
+      else await api.displayOn()
+      onRefresh()
+    } catch (e) {
+      console.error("Display toggle failed", e)
+      onRefresh()
+    } finally {
+      setDisplayPending(false)
     }
   }
 
@@ -50,9 +68,16 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
         </div>
         <div className="mobile-mini-player-meta mono">
           {player?.current_resolution ?? "—"} · HDMI ·{" "}
-          {player ? player.display_mode : "fill"}
+          {display?.configured ? display.state : "n/a"}
         </div>
       </div>
+      <DisplayPowerToggle
+        state={display?.state ?? "unknown"}
+        configured={!!display?.configured}
+        pending={displayPending}
+        onToggle={togglePower}
+        compact
+      />
       <button
         type="button"
         className="mobile-mini-player-btn"
