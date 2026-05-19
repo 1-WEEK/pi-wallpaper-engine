@@ -91,4 +91,12 @@ export const appIcons = {
       <path d="M12 4 V14 M7 9 L12 14 L17 9 M5 19 H19" />
     </AppIcon>
   ),
+  display: (
+    <AppIcon>
+      <rect x="3" y="4" width="18" height="13" rx="2" />
+      <path d="M9 21 H15 M12 17 V21" />
+      <path d="M12 8.5 V11" />
+      <path d="M10.3 10 a2.2 2.2 0 1 0 3.4 0" />
+    </AppIcon>
+  ),
 }

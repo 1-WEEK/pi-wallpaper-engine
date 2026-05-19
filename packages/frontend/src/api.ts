@@ -165,6 +165,15 @@ export const api = {
       }>
     ),
 
+  displayOn: () =>
+    fetch(`/api/display/on`, { method: "POST" }).then(
+      json<{ ok: boolean; state?: "on" | "off"; error?: string; kind?: string }>
+    ),
+  displayOff: () =>
+    fetch(`/api/display/off`, { method: "POST" }).then(
+      json<{ ok: boolean; state?: "on" | "off"; error?: string; kind?: string }>
+    ),
+
   downloadProgressWS: (workshopId: string): WebSocket => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws"
     return new WebSocket(`${proto}://${window.location.host}/api/download/progress/${workshopId}`)
