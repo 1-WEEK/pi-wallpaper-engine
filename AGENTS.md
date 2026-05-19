@@ -51,6 +51,7 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 
 - **steamcmd 走 box86 + Valve 官方 tarball**，**不是** Debian apt 包。Trixie aarch64 上 `steamcmd:i386` 因 libc 版本冲突装不上。`install-pi.sh` 加 `dpkg --add-architecture armhf` + `libc6:armhf` + 从 `Itai-Nelken/weekly-box86-debs` 装 box86，下 tarball 到 `~/.local/share/steamcmd/`，在 `/usr/local/bin/steamcmd` 写 wrapper 调 box86。
 - **SteamCMD 配置在 `~/Steam/config/config.vdf`**（不是 `~/.steam/steam/config/loginusers.vdf`，那是 Steam 客户端的）。preflight 和 install-pi.sh 检查 `Accounts.<username>` 是否存在判断登录状态。
+- **SteamCMD 成功/失败不能只看退出码或目录存在**：在 Pi 上它可能 `exit 0` 但输出 `ERROR! ...`，也可能静默很久但仍在继续写 `downloads/`。判断“已完成”前必须确认下载目录内容已经稳定，而不是只看到文件出现。
 - **mpv 参数实测可用**：`--hwdec=auto --gpu-api=opengl`（Pi 4B V3D 驱动），不是 spec 里的 `auto-safe` + `vo=gpu`。Config 字段 `mpv.hwdec` 和 `mpv.gpu_api` 可调。
 - **mpv 由 backend 拉起**（不是兄弟 systemd unit），acquireRelease 管生命周期。backend 重启 = 短暂黑屏。
 
