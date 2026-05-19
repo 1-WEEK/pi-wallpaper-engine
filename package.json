@@ -13,7 +13,11 @@
     "build": "bun run --filter @pwe/frontend build",
     "check": "bun run --filter @pwe/backend check",
     "test": "bun test",
-    "typecheck": "bun run --filter '*' typecheck"
+    "typecheck": "bun run --filter '*' typecheck",
+    "service:start": "systemctl --user start pi-wallpaper-engine",
+    "service:stop": "systemctl --user stop pi-wallpaper-engine",
+    "service:restart": "systemctl --user restart pi-wallpaper-engine",
+    "service:status": "systemctl --user status pi-wallpaper-engine"
   },
   "devDependencies": {
     "@types/bun": "latest",
