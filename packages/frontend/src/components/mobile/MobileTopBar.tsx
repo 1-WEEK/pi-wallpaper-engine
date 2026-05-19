@@ -1,6 +1,4 @@
-import { Link } from "wouter"
 import type { SystemSummary } from "../../api.js"
-import { appIcons } from "../../icons.js"
 
 interface Props {
   title: string
@@ -23,9 +21,6 @@ export const MobileTopBar = ({ title, summary }: Props) => {
           </span>
         </div>
       </div>
-      <Link href="/settings" className="mobile-top-bar-action" aria-label="Settings">
-        {appIcons.settings}
-      </Link>
     </header>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { isAdultContent, type DisplayMode, type LibraryItem } from "@pwe/shared"
 import useSWR from "swr"
 import { api } from "../api.js"
+import { appIcons } from "../icons.js"
 import { useLayout } from "../components/mobile/index.js"
 
 interface Props {
@@ -28,6 +29,9 @@ const isAdultRow = (row: LibraryItem): boolean =>
     ratingSex: row.rating_sex,
   })
 
+const showsTranscodeBadge = (status: LibraryItem["transcode_status"]): boolean =>
+  status === "failed" || status === "running" || status === "claimed" || status === "pending"
+
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const { mobile } = useLayout()
   const [view, setView] = useState<"grid" | "list">("grid")
@@ -35,7 +39,6 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const [showAdult, setShowAdult] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Force grid view on mobile; list view's 5-column row would overflow at 390px.
   useEffect(() => {
     if (mobile && view !== "grid") setView("grid")
   }, [mobile, view])
@@ -85,33 +88,25 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
       .catch((e: Error) => setError(e.message))
   }
 
+  const countLabel = `${visibleRows.length} wallpaper${visibleRows.length === 1 ? "" : "s"} · ${formatBytes(totalSize)}`
+
   return (
-    <div className="page">
-      <header className="page-header">
-        <div>
-          <div className="page-kicker mono library-kicker-row">
-            <span>Downloaded wallpapers</span>
-            <button
-              type="button"
-              className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
-              aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
-              aria-expanded={privacyOpen}
-              onClick={() => setPrivacyOpen((open) => !open)}
-            >
-              ••
-            </button>
-          </div>
+    <div className="page library-page">
+      <header className="page-header library-page-header">
+        <div className="library-page-title-block">
           <h1 className="page-title">Library</h1>
+          <span className="page-count mono">{countLabel}</span>
         </div>
         <div className="page-actions">
-          <div className="summary-stat compact">
-            <span className="summary-stat-label mono">items</span>
-            <strong>{visibleRows.length}</strong>
-          </div>
-          <div className="summary-stat compact">
-            <span className="summary-stat-label mono">size</span>
-            <strong>{formatBytes(totalSize)}</strong>
-          </div>
+          <button
+            type="button"
+            className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
+            aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
+            aria-expanded={privacyOpen}
+            onClick={() => setPrivacyOpen((open) => !open)}
+          >
+            ••
+          </button>
           {!mobile && (
             <div className="segmented">
               <button
@@ -175,6 +170,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
         <div className="library-grid">
           {visibleRows.map((row) => {
             const active = row.workshop_id === nowPlayingId
+            const showBadge = showsTranscodeBadge(row.transcode_status)
             return (
               <article
                 key={row.workshop_id}
@@ -191,38 +187,58 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                   ) : (
                     <div className="library-card-thumb library-card-thumb-empty" />
                   )}
-                  {active && <span className="library-playing-pill">Now playing</span>}
-                </div>
-                <div className="library-card-body">
-                  <div className="library-card-title-row">
-                    <h2 className="library-card-title" title={row.title}>
-                      {row.title}
-                    </h2>
-                    <span className={`status-pill status-pill-${row.transcode_status}`}>
+                  {active && <span className="library-playing-pill">● Now playing</span>}
+                  {showBadge && (
+                    <span className={`library-card-badge status-pill-${row.transcode_status} mono`}>
                       {row.transcode_status}
                     </span>
-                  </div>
-                  <div className="library-card-meta mono">
-                    {playableResolution(row)} · {playableCodec(row)} ·{" "}
-                    {formatBytes(row.transcoded_size ?? row.source_size)}
-                  </div>
-                  <div className="library-card-footer">
-                    <div className="library-card-actions">
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => handlePlay(row.workshop_id)}
-                      >
-                        Play
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-danger"
-                        onClick={() => handleDelete(row.workshop_id)}
-                      >
-                        Delete
-                      </button>
+                  )}
+                  <div className="library-card-overlay">
+                    <div className="library-card-title" title={row.title}>
+                      {row.title}
                     </div>
+                    <div className="library-card-meta mono">
+                      {playableResolution(row)} · {playableCodec(row)} ·{" "}
+                      {formatBytes(row.transcoded_size ?? row.source_size)}
+                    </div>
+                  </div>
+                </div>
+                <div className="library-card-body">
+                  <button
+                    type="button"
+                    className="btn btn-primary library-card-play"
+                    onClick={() => handlePlay(row.workshop_id)}
+                  >
+                    <span className="library-card-play-icon">{appIcons.play}</span>
+                    Play
+                  </button>
+                  {!mobile && (
+                    <div className="segmented segmented-compact library-card-modes">
+                      {DISPLAY_MODES.map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={`segmented-button ${
+                            row.display_mode === mode ? "active" : ""
+                          }`}
+                          onClick={() => handleDisplayMode(row.workshop_id, mode)}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-ghost-danger library-card-delete"
+                    onClick={() => handleDelete(row.workshop_id)}
+                    aria-label="Delete from library"
+                  >
+                    {mobile ? "✕" : "Delete"}
+                  </button>
+                </div>
+                {mobile && (
+                  <div className="library-card-modes-row">
                     <div className="segmented segmented-compact library-card-modes">
                       {DISPLAY_MODES.map((mode) => (
                         <button
@@ -238,7 +254,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                       ))}
                     </div>
                   </div>
-                </div>
+                )}
               </article>
             )
           })}
@@ -249,6 +265,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
         <ul className="library-list">
           {visibleRows.map((row) => {
             const active = row.workshop_id === nowPlayingId
+            const showBadge = showsTranscodeBadge(row.transcode_status)
             return (
               <li key={row.workshop_id} className={`library-row ${active ? "active" : ""}`}>
                 {row.preview_url ? (
@@ -261,7 +278,12 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     <span className="library-row-title-text" title={row.title}>
                       {row.title}
                     </span>
-                    {active && <span className="library-row-playing mono">now playing</span>}
+                    {active && <span className="library-row-playing mono">● now playing</span>}
+                    {showBadge && (
+                      <span className={`status-pill status-pill-${row.transcode_status} mono`}>
+                        {row.transcode_status}
+                      </span>
+                    )}
                   </div>
                   <div className="library-row-meta mono">
                     {playableResolution(row)} · {playableCodec(row)} ·{" "}
@@ -283,7 +305,11 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                 <button type="button" className="btn btn-primary" onClick={() => handlePlay(row.workshop_id)}>
                   Play
                 </button>
-                <button type="button" className="btn btn-danger" onClick={() => handleDelete(row.workshop_id)}>
+                <button
+                  type="button"
+                  className="btn btn-ghost-danger"
+                  onClick={() => handleDelete(row.workshop_id)}
+                >
                   Delete
                 </button>
               </li>
