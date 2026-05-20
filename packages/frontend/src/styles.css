@@ -1695,9 +1695,10 @@ a {
 .mobile-shell {
   display: grid;
   grid-template-rows: auto 1fr auto auto;
-  grid-template-columns: 1fr;
-  height: 100%;
-  min-height: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
   width: 100%;
   position: relative;
   background: var(--ink);
