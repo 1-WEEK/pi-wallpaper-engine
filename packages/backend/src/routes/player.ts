@@ -13,7 +13,7 @@ export const playerRoutes = (runtime: AppRuntime) =>
             const lib = yield* Library
             const mpv = yield* Mpv
             const item = yield* lib.get(params.workshopId)
-            const path = lib.playablePath(item)
+            const path = yield* lib.playablePath(item)
             yield* mpv.play(item.workshop_id, path)
             yield* lib.update(item.workshop_id, { last_played_at: Date.now() })
             // Apply the item's stored display mode each time
@@ -24,6 +24,12 @@ export const playerRoutes = (runtime: AppRuntime) =>
               Effect.sync(() => {
                 set.status = 404
                 return { error: "Not found" }
+              })
+            ),
+            Effect.catchTag("StorageError", (e) =>
+              Effect.sync(() => {
+                set.status = 503
+                return { error: e.message }
               })
             ),
             Effect.catchTag("MpvIpcError", (e) =>

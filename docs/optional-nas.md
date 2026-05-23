@@ -1,50 +1,91 @@
-# Optional: NAS storage and Phase 2 transcoding
+# Optional: network storage (SMB)
 
-Phase 1 stores everything locally at `~/pi-wallpaper-engine-data/`. If you have a
-NAS and want to:
+By default, wallpapers live on the Pi's SD card at `~/pi-wallpaper-engine-data`.
+If you want them on a NAS or any other SMB share instead, the app can manage the
+mount and the data migration for you — no terminal, no `fstab`, no `mount`
+commands.
 
-- Avoid filling up the Pi's microSD with large 4K source files
-- Prepare for Phase 2 (transcoding worker running on the NAS)
+## How it works
 
-…then point `paths.data_root` in `config.json` at a CIFS/NFS mount of a NAS share.
+- `storage.mode` is either `local` (SD card) or `mounted_share` (SMB).
+- The SQLite state DB is always kept locally at
+  `~/.local/state/pi-wallpaper-engine/`, independent of `mode`.
+- The SMB share is mounted by a privileged helper, with credentials stored in
+  the system keyring (`Bun.secrets` → Secret Service on Linux).
+- Switching `mode` with an existing wallpaper library automatically **moves**
+  the media files to the new location. The source is removed only after the
+  copy is verified.
 
-## CIFS mount example
+## One-time setup on the Pi
+
+Run:
 
 ```bash
-sudo mkdir -p /mnt/nas/wallpapers
-sudo tee /etc/cifs-creds >/dev/null <<EOF
-username=your_nas_user
-password=your_nas_password
-EOF
-sudo chmod 600 /etc/cifs-creds
-
-echo "//<nas-ip>/wallpapers /mnt/nas/wallpapers cifs credentials=/etc/cifs-creds,uid=$(id -u),gid=$(id -g),iocharset=utf8,nofail 0 0" | sudo tee -a /etc/fstab
-
-sudo mount -a
+bash install-pi.sh
 ```
 
-Then in `config.json`:
+That installs:
 
-```json
-"paths": {
-  "data_root": "/mnt/nas/wallpapers",
-  ...
-}
+- `rsync`, `cifs-utils`, `gnome-keyring`
+- the privileged mount helper at `/usr/local/lib/pwe-storage-helper`
+- a sudoers whitelist so the backend can mount and unmount through the helper
+
+A desktop keyring such as `gnome-keyring` must be available in the session so
+`Bun.secrets` can store the SMB password.
+
+## Prepare the SMB share
+
+At the root of the share, create the sentinel file the app expects:
+
+```bash
+touch .pwe-mounted-root
 ```
 
-Restart the service: `systemctl --user restart pi-wallpaper-engine`.
+The backend refuses to mount a share that is missing this file — it's a guard
+against silently writing into the wrong directory when a mount is misconfigured.
 
-If the mount is required for the service to start, add this to
-`~/.config/systemd/user/pi-wallpaper-engine.service`:
+## Configure it in the app
 
-```ini
-[Unit]
-RequiresMountsFor=/mnt/nas/wallpapers
-```
+Open **Settings** → **存储位置** and:
 
-## Phase 2: NAS transcoding worker
+1. Fill in **网络地址**, **共享名**, **用户名**, **密码** and click **保存网络存储设置**.
+2. Click **网络存储** in the mode toggle.
 
-Not implemented yet. When it exists, the worker will run as a Docker container
-on the NAS, share the same filesystem mount that the Pi sees, and pull
-transcoding jobs from the Pi backend. See `packages/worker/README.md` and
-`packages/shared/src/schema/WorkerProtocol.ts` for the planned contract.
+If the library is empty the switch is instant. If the library has wallpapers,
+the app asks you to confirm and then moves the files in the background. A
+progress bar shows `moved / total`, with a **取消** button.
+
+The app stores: server, share, username. Mount options (`vers=3.0`, charset,
+uid/gid, file/dir modes) are fixed safe defaults inside the backend. The
+password is in `Bun.secrets`, never in `config.json`.
+
+## Runtime behavior
+
+- The backend starts even if the SMB share is unreachable.
+- When `mode = mounted_share`, the backend retries the mount every 30s, so a NAS
+  that boots slower than the Pi or briefly drops will come back automatically.
+- If storage is unavailable, new downloads and new play requests return `503`.
+- New downloads are blocked while a migration is running (so files added mid-move
+  aren't missed).
+- Migration is a move, not a copy: the source is deleted only after the
+  destination passes a `rsync --dry-run` integrity check. A failure or cancel at
+  any point leaves the source intact and the mode unchanged.
+
+## Switch back to local
+
+In **Settings**, click **本机 SD 卡**. With an existing library the app
+migrates the files back from the SMB share to the SD card (after a free-space
+check), then unmounts the share. Without enough free space on the SD card the
+switch is rejected before any move starts.
+
+## Replacing the SMB device
+
+To point the app at a different SMB server:
+
+1. Switch back to **本机 SD 卡** (this moves your library to the SD card).
+2. Edit the SMB fields and **保存**.
+3. Switch to **网络存储** (this moves the library to the new share).
+
+Editing the SMB fields directly while in `mounted_share` mode remounts with the
+new credentials but does **not** move data between old and new servers — use
+the round-trip above instead.

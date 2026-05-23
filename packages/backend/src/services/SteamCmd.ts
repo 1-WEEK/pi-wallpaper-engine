@@ -5,6 +5,7 @@ import { readdir, stat } from "node:fs/promises"
 import { SteamCmdError } from "@pwe/shared"
 import { Config } from "./Config.js"
 import { Logger } from "./Logger.js"
+import { Storage } from "./Storage.js"
 
 const WE_APPID = "431960"
 const STALE_OUTPUT_TIMEOUT_MS = 60_000
@@ -189,6 +190,7 @@ export const SteamCmdLive = Layer.effect(
   Effect.gen(function* () {
     const config = yield* Config
     const logger = yield* Logger
+    const storage = yield* Storage
     const pubsub = yield* PubSub.unbounded<DownloadProgress>()
 
     if (!existsSync(config.steam.steamcmd_path)) {
@@ -202,37 +204,47 @@ export const SteamCmdLive = Layer.effect(
       download: (workshopId, onProgress) =>
         Effect.acquireUseRelease(
           // acquire — spawn process
-          Effect.try({
-            try: () => {
-              const child = Bun.spawn(
-                [
-                  config.steam.steamcmd_path,
-                  "+force_install_dir",
-                  resolve(config.paths.data_root, config.paths.source_dir, workshopId),
-                  "+login",
-                  config.steam.username,
-                  "+workshop_download_item",
-                  WE_APPID,
-                  workshopId,
-                  "+quit",
-                ],
-                {
-                  stdout: "pipe",
-                  stderr: "pipe",
-                  stdin: "ignore",
-                }
+          Effect.gen(function* () {
+            const dataRoot = yield* storage.mediaRoot().pipe(
+              Effect.mapError(
+                (error) =>
+                  new SteamCmdError({
+                    kind: "UnknownFailure",
+                  message: error.message,
+                })
               )
-              return child
-            },
-            catch: (cause) =>
-              new SteamCmdError({
-                kind: "BinaryNotFound",
-                message: `Failed to spawn SteamCMD: ${cause instanceof Error ? cause.message : String(cause)}`,
-              }),
+            )
+            const child = yield* Effect.try({
+              try: () =>
+                Bun.spawn(
+                  [
+                    config.steam.steamcmd_path,
+                    "+force_install_dir",
+                    resolve(dataRoot, config.paths.source_dir, workshopId),
+                    "+login",
+                    config.steam.username,
+                    "+workshop_download_item",
+                    WE_APPID,
+                    workshopId,
+                    "+quit",
+                  ],
+                  {
+                    stdout: "pipe",
+                    stderr: "pipe",
+                    stdin: "ignore",
+                  }
+                ),
+              catch: (cause) =>
+                new SteamCmdError({
+                  kind: "BinaryNotFound",
+                  message: `Failed to spawn SteamCMD: ${cause instanceof Error ? cause.message : String(cause)}`,
+                }),
+            })
+            return { child, dataRoot }
           }),
 
           // use — read output, parse progress, await exit
-          (child) =>
+          ({ child, dataRoot }) =>
             Effect.gen(function* () {
               let collected = ""
               let lastOutputAt = Date.now()
@@ -303,7 +315,7 @@ export const SteamCmdLive = Layer.effect(
                   yield* Effect.sleep("5 seconds")
                   if (Date.now() - lastOutputAt > STALE_OUTPUT_TIMEOUT_MS) {
                     const contentDir = resolve(
-                      config.paths.data_root,
+                      dataRoot,
                       config.paths.source_dir,
                       workshopId,
                       "steamapps",
@@ -313,7 +325,7 @@ export const SteamCmdLive = Layer.effect(
                       workshopId
                     )
                     const downloadsDir = resolve(
-                      config.paths.data_root,
+                      dataRoot,
                       config.paths.source_dir,
                       workshopId,
                       "steamapps",
@@ -393,7 +405,7 @@ export const SteamCmdLive = Layer.effect(
 
               if (!downloadedPath) {
                 const contentPath = resolve(
-                  config.paths.data_root,
+                  dataRoot,
                   config.paths.source_dir,
                   workshopId,
                   "steamapps",
@@ -403,7 +415,7 @@ export const SteamCmdLive = Layer.effect(
                   workshopId
                 )
                 const downloadsPath = resolve(
-                  config.paths.data_root,
+                  dataRoot,
                   config.paths.source_dir,
                   workshopId,
                   "steamapps",
@@ -434,7 +446,7 @@ export const SteamCmdLive = Layer.effect(
             }),
 
           // release — kill if still running
-          (child) =>
+          ({ child }) =>
             Effect.sync(() => {
               try {
                 child.kill()

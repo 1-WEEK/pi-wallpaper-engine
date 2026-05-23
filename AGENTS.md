@@ -16,7 +16,7 @@ bun run dev                     # 前后端一起跑（前端 5173 HMR + 后端 
 bun run dev:backend             # 只跑后端
 bun run dev:frontend            # 只跑前端
 
-bun test                        # 跑测试（目前只有 transcode/decide.test.ts）
+bun test                        # 跑测试（transcode/decide、Storage 校验等单测）
 bun run check                   # preflight 13 项诊断
 bun x tsc --noEmit              # 类型检查（在 packages/backend/ 下跑最干净）
 bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
@@ -41,11 +41,16 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 ## 关键设计约束
 
 - **下载必须异步**：`POST /api/download/:id` 立即返回 202，后台 fork workflow。SteamCMD 一次跑 30-60+ 秒，同步 handler 会被浏览器/proxy 当超时报 500。进度走 WS `/api/download/progress/:id`。
-- **路径在 DB 里存相对值**（如 `source/<id>/.../foo.mp4`），运行时拼 `config.paths.data_root`。Phase 2 Worker 用同样的相对路径，各自前缀自己的 root。
+- **路径在 DB 里存相对值**（如 `source/<id>/.../foo.mp4`），运行时拼当前媒体根。媒体根一律走 `Storage.mediaRoot()`，**别再直接读 `config.paths.data_root`**。Phase 2 Worker 用同样的相对路径，各自前缀自己的 root。
 - **非 Video 类型 fail-fast**：`WallpaperFile.resolveWallpaperFiles` 读 `project.json.type`，非 `video` 立刻抛 `NotVideoWallpaperError`，路由 catch 自动清理 `source/<id>/` 半成品。Workshop 搜索 `requiredtags=Video` 不可靠，靠这层兜底。
 - **Phase 1 = `TranscodeQueueNoop`**：所有下载行 `transcode_status="skipped"`。`TranscodeQueueLive` 写好待用，Phase 2 改 `runtime.ts` 一行换 Layer 即可。`transcode_jobs` 表存在但 Phase 1 永远空。
 - **错误用 `Data.TaggedError`**（在 `@pwe/shared/errors.ts`）：`SteamCmdError`（带 `kind: AuthRequired | NotSubscribed | Timeout | BinaryNotFound | UnknownFailure`）、`WorkshopApiError`、`MpvIpcError`、`NotVideoWallpaperError`、`DisplayError` 等。路由 catch 用 `err._tag` 判定状态码。
 - **`display` 配置可选**：`on_command`/`off_command`/`status_command` 都是 argv 数组（`Bun.spawn` 直跑，无 shell 解析、无命令注入）。命令必须非交互（sudo 走 NOPASSWD）。缺 `display` 段时 `/api/display/*` 返 503，其他功能不受影响。5 秒超时杀子进程暴露阻塞型 sudo prompt。
+- **存储声明式 API**：`storage` config = `{ mode: "local"|"mounted_share", smb: {server,share,username}|null }`，密码走 `Bun.secrets`。HTTP 只有 3 个端点：`GET /api/storage`、`PUT /api/storage`（声明 mode+smb）、`POST /api/storage/cancel`。多连接 CRUD / connect / disconnect 不再存在。`mount_base`（`/run/pwe/mounts`）与 `mount_sentinel`（`.pwe-mounted-root`）是 `statePath.ts` 的后端常量，**不进 config**。`Storage` 内含每 30s 的 reconcile fiber，SMB 掉线/晚开会自动恢复。
+- **SQLite 状态库始终本地**：在 `~/.local/state/pi-wallpaper-engine/`（`statePath.ts`），与媒体根解耦，不随 `storage.mode` 变。旧版库存在 `data_root` 下，`DbLive` 启动时做一次性 best-effort 迁移。
+- **特权挂载只走 `scripts/pwe-storage-helper`**：backend 永不直接 `mount`。helper 经 sudoers NOPASSWD 调用，所有入参视为不可信——helper 与 `statePath.ts` **共用同一常量** `/run/pwe/mounts`，mount 选项只接受安全子集。SMB 密码存 `Bun.secrets`，绝不写入 `config.json`。SMB 共享根必须有 sentinel 文件 `.pwe-mounted-root`，否则 backend 拒绝连接。
+- **切换存储 = 声明式移动**：`PUT /api/storage` 改 mode 且 library 非空 → `Migrate.start` 后台跑 rsync 移动 `source/`、`optimized/`（双向），全量校验通过后才翻 mode 并删旧源；202 返回，前端轮询 `GET /api/storage` 里的 `migration` 字段拿进度。迁移中下载被挡（503），播放中触发迁移返回 409。纯拷贝引擎在 `@pwe/migrate` 包（rsync 薄封装，无 effect 依赖），挂载/空间检查/翻 mode/挡下载在 `services/Migrate.ts`。
+- **`Effect.gen` 内 JS `try/catch/finally` 抓不到 Effect 失败**：失败的 `yield*` 会短路，`catch`/`finally` 都不执行。错误恢复用 `Effect.catchAll`/`tapError`，清理用 `Effect.ensuring`。
 
 ## Pi/SteamCMD 特殊性
 
@@ -78,7 +83,7 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 
 ## 配置文件
 
-`config.json` 是用户实际配置（gitignored，含 API key）；`config.example.json` 是模板。schema 在 `packages/shared/src/schema/Config.ts`，启动时 Effect Schema 校验，缺字段 fail-fast。`paths.data_root` 默认 `~/pi-wallpaper-engine-data`，可指向 SMB 挂载启用 NAS 共享存储（见 `docs/optional-nas.md`）。
+`config.json` 是用户实际配置（gitignored，含 API key）；`config.example.json` 是模板。schema 在 `packages/shared/src/schema/Config.ts`，启动时 Effect Schema 校验，缺字段 fail-fast。`paths.data_root` 默认 `~/pi-wallpaper-engine-data`（`local` 模式的媒体根）。NAS 共享存储改用 App 托管的 SMB 模式（`storage` 段，见 `docs/optional-nas.md`），不再手动把 `data_root` 指向挂载点。
 
 ## 不要做的事
 

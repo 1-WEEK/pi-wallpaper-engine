@@ -25,6 +25,42 @@ export interface DownloadTask {
   bytes_total: number | null
 }
 
+export interface MigrationProgress {
+  direction: "to_nas" | "to_local"
+  state: "running" | "done" | "failed"
+  moved_bytes: number
+  total_bytes: number
+  error: string | null
+}
+
+export interface SmbRecord {
+  server: string
+  share: string
+  username: string
+  has_password: boolean
+}
+
+export interface StorageStatus {
+  mode: "local" | "mounted_share"
+  available: boolean
+  data_root: string
+  last_error: string | null
+  smb: SmbRecord | null
+  migration: MigrationProgress | null
+}
+
+export interface SmbInput {
+  server: string
+  share: string
+  username: string
+  password?: string | null
+}
+
+export interface StorageUpdate {
+  mode: "local" | "mounted_share"
+  smb: SmbInput | null
+}
+
 export interface SystemSummary {
   config: {
     steam: {
@@ -73,6 +109,9 @@ export interface SystemSummary {
     storage: {
       available: boolean
       path: string
+      data_root: string
+      mode: "local" | "mounted_share"
+      last_error: string | null
       used_bytes: number | null
       free_bytes: number | null
       total_bytes: number | null
@@ -134,6 +173,15 @@ export const api = {
     fetch(`/api/download/tasks/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
 
   systemSummary: () => fetch(`/api/system/summary`).then(json<SystemSummary>),
+  getStorage: () => fetch(`/api/storage`).then(json<StorageStatus>),
+  updateStorage: (body: StorageUpdate) =>
+    fetch(`/api/storage`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(json<StorageStatus>),
+  cancelMigration: () =>
+    fetch(`/api/storage/cancel`, { method: "POST" }).then(json<StorageStatus>),
 
   libraryList: () => fetch(`/api/library`).then(json<LibraryItem[]>),
   libraryDelete: (id: string) =>

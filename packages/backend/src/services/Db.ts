@@ -1,9 +1,10 @@
 import { Context, Effect, Layer } from "effect"
 import { Database } from "bun:sqlite"
-import { readFileSync, mkdirSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { DbError } from "@pwe/shared"
+import { resolveDbPath } from "../statePath.js"
 import { Config } from "./Config.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -64,12 +65,33 @@ export const DbLive = Layer.scoped(
   Db,
   Effect.gen(function* () {
     const config = yield* Config
-    const dbPath = resolve(config.paths.data_root, "pi-wallpaper-engine.db")
+    const dbPath = resolveDbPath()
 
     yield* Effect.try({
       try: () => mkdirSync(dirname(dbPath), { recursive: true }),
       catch: (cause) => new DbError({ operation: "mkdir", cause }),
     })
+
+    // One-time migration: earlier versions stored the SQLite DB next to the
+    // media files. The DB is now always local state, decoupled from storage
+    // mode. Best-effort — a failed move just starts with a fresh database.
+    const legacyDbPath = resolve(config.paths.data_root, "pi-wallpaper-engine.db")
+    if (legacyDbPath !== dbPath && !existsSync(dbPath) && existsSync(legacyDbPath)) {
+      try {
+        for (const suffix of ["", "-wal", "-shm"]) {
+          if (existsSync(legacyDbPath + suffix)) {
+            renameSync(legacyDbPath + suffix, dbPath + suffix)
+          }
+        }
+        console.log(`Migrated SQLite DB ${legacyDbPath} -> ${dbPath}`)
+      } catch (cause) {
+        console.warn(
+          `Could not migrate legacy SQLite DB from ${legacyDbPath}: ` +
+            `${cause instanceof Error ? cause.message : String(cause)}. ` +
+            `Starting with a fresh database.`
+        )
+      }
+    }
 
     const sqlite = yield* Effect.acquireRelease(
       tryDb<Database>("open")(() => {

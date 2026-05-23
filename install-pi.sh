@@ -52,13 +52,13 @@ if ! sudo -n true 2>/dev/null; then
   warn "This script will use sudo. You may be prompted for your password."
 fi
 
-# ── 3. APT packages (mpv, ffmpeg, deps for box86 install) ─────────────────────
+# ── 3. APT packages (mpv, ffmpeg, deps for box86 install, SMB helper) ─────────
 # Note: Debian's steamcmd package is broken on Trixie/aarch64 (libc6:i386
 # version conflict with libc6:arm64 2.41+). We install SteamCMD via box86 +
 # Valve's official tarball below instead.
 step "Installing system packages (mpv ffmpeg + tools)"
 sudo apt-get update -qq
-sudo apt-get install -y mpv ffmpeg wget gpg ca-certificates
+sudo apt-get install -y mpv ffmpeg wget gpg ca-certificates cifs-utils gnome-keyring libsecret-tools rsync
 ok "System packages installed"
 
 # ── 4. box86 (x86 binary translator for SteamCMD) ─────────────────────────────
@@ -203,7 +203,20 @@ else
   ok "Test asset already present"
 fi
 
-# ── 11. SteamCMD login (manual, requires user interaction for 2FA) ────────────
+# ── 11. Install storage helper + sudoers whitelist ────────────────────────────
+step "Installing storage helper"
+STORAGE_HELPER_SRC="$PROJECT_ROOT/scripts/pwe-storage-helper"
+STORAGE_HELPER_DST="/usr/local/lib/pwe-storage-helper"
+STORAGE_SUDOERS="/etc/sudoers.d/pi-wallpaper-engine-storage"
+
+sudo install -m 0755 "$STORAGE_HELPER_SRC" "$STORAGE_HELPER_DST"
+ok "Installed $STORAGE_HELPER_DST"
+
+printf '%s ALL=(root) NOPASSWD: %s\n' "$USER" "$STORAGE_HELPER_DST" | sudo tee "$STORAGE_SUDOERS" >/dev/null
+sudo chmod 0440 "$STORAGE_SUDOERS"
+ok "Installed sudoers whitelist for storage helper"
+
+# ── 12. SteamCMD login (manual, requires user interaction for 2FA) ────────────
 step "Checking SteamCMD login state"
 STEAM_USER="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).steam.username)")"
 # SteamCMD records auth in ~/Steam/config/config.vdf under "Accounts" + "ConnectCache".
@@ -222,14 +235,14 @@ else
   read -rp "  Press ENTER when done... "
 fi
 
-# ── 12. Preflight diagnostics ─────────────────────────────────────────────────
+# ── 13. Preflight diagnostics ─────────────────────────────────────────────────
 step "Running preflight diagnostics"
 if ! bun run check; then
   err "Preflight failed. Fix the issues above and re-run install-pi.sh."
   exit 1
 fi
 
-# ── 13. systemd user unit (deploy mode only) ─────────────────────────────────
+# ── 14. systemd user unit (deploy mode only) ─────────────────────────────────
 PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 PORT="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).server.port)")"
 

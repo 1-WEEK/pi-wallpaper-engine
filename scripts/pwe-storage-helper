@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# This script runs as root through a NOPASSWD sudoers rule, so every argument
+# is attacker-controlled. The mount base must NOT come from the caller — it is
+# hardcoded here so confining mountpoints to it is a real security boundary.
+# It must match STORAGE_MOUNT_BASE in backend statePath.ts.
+MOUNT_BASE="/run/pwe/mounts"
+
+# mount.cifs options the helper will pass through. Anything else is rejected so
+# a direct invocation cannot smuggle in dangerous options.
+ALLOWED_OPTION_KEYS="vers iocharset uid gid file_mode dir_mode nobrl credentials"
+
+usage() {
+  cat <<'EOF' >&2
+Usage:
+  pwe-storage-helper mount <source> <mountpoint> <options>
+  pwe-storage-helper umount <mountpoint>
+EOF
+  exit 2
+}
+
+canonical_path() {
+  realpath -m "$1"
+}
+
+assert_under_base() {
+  case "$1" in
+    "$MOUNT_BASE"/*) ;;
+    *)
+      echo "mountpoint must stay under $MOUNT_BASE" >&2
+      exit 2
+      ;;
+  esac
+}
+
+validate_options() {
+  local options="$1"
+  local opt key candidate allowed
+  local -a opts
+  IFS=',' read -r -a opts <<< "$options"
+  for opt in "${opts[@]}"; do
+    [ -n "$opt" ] || continue
+    key="${opt%%=*}"
+    allowed=""
+    for candidate in $ALLOWED_OPTION_KEYS; do
+      if [ "$key" = "$candidate" ]; then
+        allowed="yes"
+        break
+      fi
+    done
+    if [ -z "$allowed" ]; then
+      echo "mount option '$opt' is not allowed" >&2
+      exit 2
+    fi
+  done
+}
+
+[ $# -ge 1 ] || usage
+command="$1"
+shift
+
+case "$command" in
+  mount)
+    [ $# -eq 3 ] || usage
+    source_path="$1"
+    mountpoint="$2"
+    options="$3"
+
+    case "$source_path" in
+      //*/*) ;;
+      *)
+        echo "source must be an SMB path (//server/share)" >&2
+        exit 2
+        ;;
+    esac
+
+    validate_options "$options"
+
+    mountpoint_real="$(canonical_path "$mountpoint")"
+    assert_under_base "$mountpoint_real"
+
+    mkdir -p "$MOUNT_BASE"
+    mkdir -p "$mountpoint_real"
+
+    exec mount -t cifs "$source_path" "$mountpoint_real" -o "$options"
+    ;;
+
+  umount)
+    [ $# -eq 1 ] || usage
+    mountpoint="$1"
+    if [ ! -e "$mountpoint" ]; then
+      exit 0
+    fi
+    mountpoint_real="$(canonical_path "$mountpoint")"
+    assert_under_base "$mountpoint_real"
+
+    if mountpoint -q "$mountpoint_real"; then
+      umount "$mountpoint_real"
+    fi
+    rmdir "$mountpoint_real" 2>/dev/null || true
+    exit 0
+    ;;
+
+  *)
+    usage
+    ;;
+esac

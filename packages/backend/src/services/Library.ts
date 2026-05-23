@@ -1,11 +1,12 @@
 import { Context, Effect, Layer } from "effect"
 import { readFile, rm, unlink } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
-import { DbError, LibraryItem, LibraryNotFoundError } from "@pwe/shared"
+import { DbError, LibraryItem, LibraryNotFoundError, StorageError } from "@pwe/shared"
 import { ffprobe } from "../transcode/ffprobe.js"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
 import { Logger } from "./Logger.js"
+import { Storage } from "./Storage.js"
 import { normalizeAdultMetadata } from "./WallpaperFile.js"
 
 type LibraryRow = LibraryItem
@@ -18,8 +19,10 @@ export interface LibraryImpl {
     workshopId: string,
     patch: Partial<LibraryRow>
   ) => Effect.Effect<void, DbError>
-  readonly remove: (workshopId: string) => Effect.Effect<void, DbError | LibraryNotFoundError>
-  readonly playablePath: (row: LibraryRow) => string
+  readonly remove: (
+    workshopId: string
+  ) => Effect.Effect<void, DbError | LibraryNotFoundError | StorageError>
+  readonly playablePath: (row: LibraryRow) => Effect.Effect<string, StorageError>
 }
 
 export class Library extends Context.Tag("Library")<Library, LibraryImpl>() {}
@@ -61,8 +64,7 @@ export const LibraryLive = Layer.effect(
     const config = yield* Config
     const db = yield* Db
     const logger = yield* Logger
-
-    const dataRoot = config.paths.data_root
+    const storage = yield* Storage
 
     const readAdultMetadata = (mediaPath: string) =>
       Effect.tryPromise({
@@ -74,6 +76,12 @@ export const LibraryLive = Layer.effect(
       }).pipe(Effect.catchAll(() => Effect.succeed(normalizeAdultMetadata(null))))
 
     const reconcileSuspectRows = Effect.gen(function* () {
+      const dataRoot = yield* storage.mediaRootOrNull()
+      if (!dataRoot) {
+        yield* logger.warn("Skipping library reconcile because mounted storage is disconnected")
+        return
+      }
+
       const suspectRows = yield* db.query<LibraryRow>(
         `SELECT * FROM library
          WHERE source_codec = 'unknown'
@@ -168,6 +176,7 @@ export const LibraryLive = Layer.effect(
 
       remove: (workshopId) =>
         Effect.gen(function* () {
+          const dataRoot = yield* storage.mediaRoot()
           const row = yield* db.queryOne<LibraryRow>(
             `SELECT * FROM library WHERE workshop_id = ?`,
             [workshopId]
@@ -189,7 +198,10 @@ export const LibraryLive = Layer.effect(
           }
         }),
 
-      playablePath: (row) => resolve(dataRoot, row.transcoded_path ?? row.source_path),
+      playablePath: (row) =>
+        storage.mediaRoot().pipe(
+          Effect.map((dataRoot) => resolve(dataRoot, row.transcoded_path ?? row.source_path))
+        ),
     }
   })
 )
