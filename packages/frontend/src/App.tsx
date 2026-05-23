@@ -77,7 +77,7 @@ const Routes = ({
       <Downloads />
     </Route>
     <Route path="/settings">
-      <Settings summary={summary ?? null} />
+      <Settings summary={summary ?? null} onRefresh={onRefresh} />
     </Route>
     <Route>
       <Redirect to="/browse" />
@@ -257,8 +257,8 @@ const DesktopShell = ({
             <span>storage</span>
             <span className="mono">{storageUsage}</span>
           </div>
-          {storage?.available === false && storage.error && (
-            <div className="sidebar-status-note">{storage.error}</div>
+          {storage?.available === false && (storage.last_error || storage.error) && (
+            <div className="sidebar-status-note">{storage.last_error ?? storage.error}</div>
           )}
         </div>
       </aside>

@@ -9,6 +9,7 @@ import { libraryRoutes } from "./routes/library.js"
 import { playerRoutes } from "./routes/player.js"
 import { downloadRoutes } from "./routes/download.js"
 import { displayRoutes } from "./routes/display.js"
+import { storageRoutes } from "./routes/storage.js"
 import { systemRoutes } from "./routes/system.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -60,6 +61,7 @@ const app = new Elysia()
   .use(playerRoutes(runtime))
   .use(downloadRoutes(runtime))
   .use(displayRoutes(runtime))
+  .use(storageRoutes(runtime))
   .use(systemRoutes(runtime))
 
 if (existsSync(FRONTEND_DIST)) {
@@ -79,6 +81,7 @@ const server = app.listen({ hostname: config.server.host, port: config.server.po
 console.log(`▶ pi-wallpaper-engine listening on http://${config.server.host}:${config.server.port}`)
 console.log(`  Config: ${CONFIG_PATH}`)
 console.log(`  Data root: ${config.paths.data_root}`)
+console.log(`  Storage mode: ${config.storage.mode}`)
 
 const shutdown = async (signal: string) => {
   console.log(`\n${signal} received, shutting down...`)

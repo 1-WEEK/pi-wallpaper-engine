@@ -12,6 +12,9 @@ export type GpuApi = typeof GpuApi.Type
 export const TargetCodec = Schema.Literal("hevc", "h264")
 export type TargetCodec = typeof TargetCodec.Type
 
+export const StorageMode = Schema.Literal("local", "mounted_share")
+export type StorageMode = typeof StorageMode.Type
+
 export const SteamConfig = Schema.Struct({
   username: Schema.String.pipe(Schema.minLength(1)),
   web_api_key: Schema.String.pipe(Schema.minLength(1)),
@@ -23,6 +26,23 @@ export const PathsConfig = Schema.Struct({
   source_dir: Schema.String.pipe(Schema.minLength(1)),
   optimized_dir: Schema.String.pipe(Schema.minLength(1)),
 })
+
+// A single SMB data source (a NAS, a Samba box, a Windows share — anything
+// that speaks SMB). The owner sets this once; there is no multi-server
+// management. Connection name, mount base, sentinel, and mount options are
+// backend constants, not user-facing config.
+export const SmbConfig = Schema.Struct({
+  server: Schema.String.pipe(Schema.minLength(1)),
+  share: Schema.String.pipe(Schema.minLength(1)),
+  username: Schema.String.pipe(Schema.minLength(1)),
+})
+export type SmbConfig = typeof SmbConfig.Type
+
+export const StorageConfig = Schema.Struct({
+  mode: Schema.optional(StorageMode),
+  smb: Schema.optional(Schema.NullOr(SmbConfig)),
+})
+export type StorageConfig = typeof StorageConfig.Type
 
 export const ScreenConfig = Schema.Struct({
   width: Schema.Number.pipe(Schema.int(), Schema.positive()),
@@ -61,6 +81,7 @@ export const DisplayConfig = Schema.Struct({
 export const Config = Schema.Struct({
   steam: SteamConfig,
   paths: PathsConfig,
+  storage: Schema.optional(StorageConfig),
   screen: ScreenConfig,
   mpv: MpvConfig,
   transcode: TranscodeConfig,

@@ -1553,6 +1553,62 @@ a {
   background: var(--paper-faint);
 }
 
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.storage-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.storage-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.storage-field input {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--ink-2);
+}
+
+.migrate-status {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.migrate-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ink-2);
+  overflow: hidden;
+}
+
+.migrate-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.migrate-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
 .callout {
   padding: 16px 18px;
   border: 1px solid var(--accent-border);
@@ -1680,6 +1736,15 @@ a {
 
   .command-bar-submit {
     width: 100%;
+  }
+
+  .storage-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .migrate-line {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .kbd {

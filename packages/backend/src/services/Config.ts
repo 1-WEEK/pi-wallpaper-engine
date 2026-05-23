@@ -2,16 +2,38 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { homedir } from "node:os"
-import { Config as ConfigSchema, ConfigError } from "@pwe/shared"
+import {
+  Config as ConfigSchema,
+  ConfigError,
+  type Config as AppConfig,
+  type SmbConfig,
+} from "@pwe/shared"
 
-export class Config extends Context.Tag("Config")<Config, ConfigSchema>() {}
+export type RuntimeStorageConfig = {
+  mode: "local" | "mounted_share"
+  smb: SmbConfig | null
+}
+
+export type RuntimeConfig = Omit<AppConfig, "storage"> & {
+  storage: RuntimeStorageConfig
+}
+
+export class Config extends Context.Tag("Config")<Config, RuntimeConfig>() {}
 
 const expandHome = (p: string): string =>
   p.startsWith("~/") ? resolve(homedir(), p.slice(2)) : resolve(p)
 
+const withStorageDefaults = (decoded: AppConfig): RuntimeConfig => ({
+  ...decoded,
+  storage: {
+    mode: decoded.storage?.mode ?? "local",
+    smb: decoded.storage?.smb ?? null,
+  },
+})
+
 const decodeConfig = Schema.decodeUnknown(ConfigSchema)
 
-export const loadConfig = (configPath: string): Effect.Effect<ConfigSchema, ConfigError> =>
+export const loadConfig = (configPath: string): Effect.Effect<RuntimeConfig, ConfigError> =>
   Effect.gen(function* () {
     const raw = yield* Effect.tryPromise({
       try: () => readFile(configPath, "utf-8"),
@@ -41,22 +63,24 @@ export const loadConfig = (configPath: string): Effect.Effect<ConfigSchema, Conf
       )
     )
 
+    const hydrated = withStorageDefaults(decoded)
+
     return {
-      ...decoded,
+      ...hydrated,
       paths: {
-        ...decoded.paths,
-        data_root: expandHome(decoded.paths.data_root),
+        ...hydrated.paths,
+        data_root: expandHome(hydrated.paths.data_root),
       },
       mpv: {
-        ...decoded.mpv,
-        binary_path: decoded.mpv.binary_path.startsWith("/")
-          ? decoded.mpv.binary_path
-          : decoded.mpv.binary_path,
-        ipc_socket: expandHome(decoded.mpv.ipc_socket),
+        ...hydrated.mpv,
+        binary_path: hydrated.mpv.binary_path.startsWith("/")
+          ? hydrated.mpv.binary_path
+          : hydrated.mpv.binary_path,
+        ipc_socket: expandHome(hydrated.mpv.ipc_socket),
       },
       steam: {
-        ...decoded.steam,
-        steamcmd_path: decoded.steam.steamcmd_path,
+        ...hydrated.steam,
+        steamcmd_path: hydrated.steam.steamcmd_path,
       },
     }
   })

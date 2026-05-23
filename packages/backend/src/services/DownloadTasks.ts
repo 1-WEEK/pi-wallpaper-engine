@@ -5,6 +5,7 @@ import { Config } from "./Config.js"
 import { Db } from "./Db.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
+import { Storage } from "./Storage.js"
 
 export type DownloadStage =
   | "starting"
@@ -99,6 +100,7 @@ export const DownloadTasksLive = Layer.effect(
     const logger = yield* Logger
     const library = yield* Library
     const config = yield* Config
+    const storage = yield* Storage
 
     const sweep = () =>
       db.exec(`DELETE FROM download_tasks WHERE finished_at IS NOT NULL AND finished_at < ?`, [
@@ -124,12 +126,13 @@ export const DownloadTasksLive = Layer.effect(
         )
         yield* logger.info(`Reconciled ${orphans.length} interrupted download task(s)`)
 
+        const dataRoot = yield* storage.mediaRootOrNull()
         for (const { workshop_id } of orphans) {
           const lib = yield* library
             .get(workshop_id)
             .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
-          if (lib) continue
-          const sourceDir = resolve(config.paths.data_root, config.paths.source_dir, workshop_id)
+          if (lib || !dataRoot) continue
+          const sourceDir = resolve(dataRoot, config.paths.source_dir, workshop_id)
           yield* Effect.tryPromise({
             try: () => rm(sourceDir, { recursive: true, force: true }),
             catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
@@ -137,6 +140,10 @@ export const DownloadTasksLive = Layer.effect(
             Effect.tap(() => logger.info(`Cleaned orphan source dir: ${sourceDir}`)),
             Effect.catchAll((e) => logger.warn(`Failed to clean orphan ${sourceDir}: ${e.message}`))
           )
+        }
+
+        if (!dataRoot) {
+          yield* logger.warn("Skipping orphan source cleanup because mounted storage is disconnected")
         }
       }
 

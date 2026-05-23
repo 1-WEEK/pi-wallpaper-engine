@@ -6,6 +6,7 @@ import { Display } from "../services/Display.js"
 import { DownloadTasks } from "../services/DownloadTasks.js"
 import { Library } from "../services/Library.js"
 import { Mpv } from "../services/Mpv.js"
+import { Storage } from "../services/Storage.js"
 import type { AppRuntime } from "../runtime.js"
 
 const maskSecret = (value: string): string =>
@@ -56,8 +57,9 @@ export const systemRoutes = (runtime: AppRuntime) =>
           const tasks = yield* DownloadTasks
           const library = yield* Library
           const mpv = yield* Mpv
+          const storageService = yield* Storage
 
-          const [player, libraryRows, taskRows, displayStatus, storage] = yield* Effect.all([
+          const [player, libraryRows, taskRows, displayStatus, storageStatus] = yield* Effect.all([
             mpv.status(),
             library.list(),
             tasks.list(),
@@ -77,8 +79,23 @@ export const systemRoutes = (runtime: AppRuntime) =>
                 })
               )
             ),
-            storageSummary(config.paths.data_root),
+            storageService.status(),
           ] as const)
+
+          const storage = yield* storageSummary(storageStatus.data_root).pipe(
+            Effect.map((usage) => ({
+              ...usage,
+              available: storageStatus.available && usage.available,
+              used_bytes: storageStatus.available ? usage.used_bytes : null,
+              free_bytes: storageStatus.available ? usage.free_bytes : null,
+              total_bytes: storageStatus.available ? usage.total_bytes : null,
+              used_percent: storageStatus.available ? usage.used_percent : null,
+              error: storageStatus.available ? usage.error : (storageStatus.last_error ?? usage.error),
+              mode: storageStatus.mode,
+              data_root: storageStatus.data_root,
+              last_error: storageStatus.last_error,
+            }))
+          )
 
           const currentItem = player.current_workshop_id
             ? yield* library

@@ -65,3 +65,25 @@ export class DisplayError extends Data.TaggedError("DisplayError")<{
   readonly exitCode?: number | undefined
   readonly stderr?: string | undefined
 }> {}
+
+export type StorageFailureKind =
+  | "Disconnected"
+  | "Config"
+  | "Secret"
+  | "Mount"
+  | "Validation"
+  | "Busy"
+
+export class StorageError extends Data.TaggedError("StorageError")<{
+  readonly kind: StorageFailureKind
+  readonly message: string
+  readonly cause?: unknown
+}> {}
+
+export type MigrateFailureKind = "Busy" | "Space" | "Copy" | "Verify" | "Cancelled"
+
+export class MigrateError extends Data.TaggedError("MigrateError")<{
+  readonly kind: MigrateFailureKind
+  readonly message: string
+  readonly cause?: unknown
+}> {}
