@@ -1,6 +1,6 @@
 import { Elysia } from "elysia"
 import { Effect, PubSub, Stream } from "effect"
-import { hasAdultTitleHint } from "@pwe/shared"
+import { hasAdultTitleHint, StorageError } from "@pwe/shared"
 import { resolve } from "node:path"
 import { rm } from "node:fs/promises"
 import { Config } from "../services/Config.js"
@@ -8,6 +8,8 @@ import { Db } from "../services/Db.js"
 import { DownloadTasks } from "../services/DownloadTasks.js"
 import { Library } from "../services/Library.js"
 import { Logger } from "../services/Logger.js"
+import { Migrate } from "../services/Migrate.js"
+import { Storage } from "../services/Storage.js"
 import { SteamCmd, type DownloadProgress } from "../services/SteamCmd.js"
 import { SteamWorkshop } from "../services/SteamWorkshop.js"
 import { TranscodeQueue } from "../services/TranscodeQueue.js"
@@ -30,6 +32,31 @@ export const downloadRoutes = (runtime: AppRuntime) => {
     .post("/:workshopId", async ({ params, set }) => {
       const pubsub = await wsPubsubPromise
       const workshopId = params.workshopId
+
+      const storageReady = await runtime.runPromise(
+        Effect.gen(function* () {
+          const storage = yield* Storage
+          return yield* storage.mediaRoot()
+        })
+      ).catch((error) => error)
+
+      if (storageReady instanceof StorageError) {
+        set.status = 503
+        return { ok: false, error: storageReady.message }
+      }
+
+      // Block new downloads while a storage migration is moving media files —
+      // a concurrent write into source/ would be missed by the migration.
+      const migrating = await runtime.runPromise(
+        Effect.gen(function* () {
+          const migrate = yield* Migrate
+          return yield* migrate.isRunning()
+        })
+      )
+      if (migrating) {
+        set.status = 503
+        return { ok: false, error: "正在迁移存储,请稍候。" }
+      }
 
       // Idempotency: reject if a task for this workshopId is already in flight.
       // Without this guard, a double-click or retry spawns a second SteamCMD
@@ -59,6 +86,8 @@ export const downloadRoutes = (runtime: AppRuntime) => {
         const queue = yield* TranscodeQueue
         const logger = yield* Logger
         const tasks = yield* DownloadTasks
+        const storage = yield* Storage
+        const dataRoot = yield* storage.mediaRoot()
 
         yield* logger.info(`Download requested: ${workshopId}`)
         yield* tasks.upsert(workshopId, {
@@ -118,7 +147,7 @@ export const downloadRoutes = (runtime: AppRuntime) => {
           Effect.tapError((e) => logger.warn(`ffprobe failed: ${e.reason}`))
         )
 
-        const sourceRel = toRelative(config.paths.data_root, files.videoAbs)
+        const sourceRel = toRelative(dataRoot, files.videoAbs)
         const decision = decideTranscode(probe, config.screen, config.transcode.target_codec)
 
         // Finalize: library row + transcode enqueue + task completion all
@@ -185,12 +214,15 @@ export const downloadRoutes = (runtime: AppRuntime) => {
         const config = yield* Config
         const lib = yield* Library
         const logger = yield* Logger
+        const storage = yield* Storage
         const existing = yield* lib
           .get(workshopId)
           .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
         if (existing) return
+        const dataRoot = yield* storage.mediaRootOrNull()
+        if (!dataRoot) return
         const sourceDir = resolve(
-          config.paths.data_root,
+          dataRoot,
           config.paths.source_dir,
           workshopId
         )

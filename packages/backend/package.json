@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@pwe/shared": "workspace:*",
+    "@pwe/migrate": "workspace:*",
     "effect": "^3.10.0",
     "elysia": "^1.1.0",
     "@elysiajs/static": "^1.1.0",

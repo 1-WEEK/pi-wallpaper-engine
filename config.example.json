@@ -9,6 +9,10 @@
     "source_dir": "source",
     "optimized_dir": "optimized"
   },
+  "storage": {
+    "mode": "local",
+    "smb": null
+  },
   "screen": {
     "width": 1200,
     "height": 1080,

@@ -27,6 +27,12 @@ export const libraryRoutes = (runtime: AppRuntime) =>
                 set.status = 404
                 return { error: "Not found" }
               })
+            ),
+            Effect.catchTag("StorageError", (e) =>
+              Effect.sync(() => {
+                set.status = 503
+                return { error: e.message }
+              })
             )
           )
         )
