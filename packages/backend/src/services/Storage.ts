@@ -25,6 +25,7 @@ export interface SmbInput {
   readonly server: string
   readonly share: string
   readonly username: string
+  readonly path?: string | null
   readonly password?: string | null
 }
 
@@ -32,6 +33,7 @@ export interface SmbRecord {
   readonly server: string
   readonly share: string
   readonly username: string
+  readonly path: string
   readonly has_password: boolean
 }
 
@@ -49,7 +51,7 @@ export interface StorageImpl {
   readonly mediaRoot: () => Effect.Effect<string, StorageError>
   readonly mediaRootOrNull: () => Effect.Effect<string | null>
   /** Media root a given mode would use, regardless of the current mode. */
-  readonly mediaRootFor: (mode: "local" | "mounted_share") => string
+  readonly mediaRootFor: (mode: "local" | "mounted_share") => Effect.Effect<string, StorageError>
   /** Persist SMB credentials/config. Does not change mode or mount anything. */
   readonly saveSmb: (input: SmbInput) => Effect.Effect<StorageState, StorageError>
   /** Set storage mode and reconcile the mount. Used for instant (no-move) switches and after a migration. */
@@ -93,6 +95,7 @@ const FORBIDDEN_MOUNT_OPTIONS = [
 
 const FORBIDDEN_CREDENTIAL_VALUE_RE = /[\r\n\0]/
 const FORBIDDEN_SMB_COMPONENT_RE = /[\/\\\r\n\0]/
+const FORBIDDEN_SMB_PATH_RE = /[\\\r\n\0]/
 
 export const assertCredentialFileValue = (
   field: string,
@@ -120,6 +123,32 @@ export const assertSmbComponentValue = (
         })
       )
     : Effect.succeed(value)
+
+export const normalizeSmbRelativePath = (
+  field: string,
+  value: string | null | undefined
+): Effect.Effect<string, StorageError> => {
+  const trimmed = (value ?? "").trim()
+  if (!trimmed) return Effect.succeed("")
+  if (trimmed.startsWith("/") || FORBIDDEN_SMB_PATH_RE.test(trimmed)) {
+    return Effect.fail(
+      new StorageError({
+        kind: "Config",
+        message: `${field} must be a relative path inside the SMB share.`,
+      })
+    )
+  }
+  const segments = trimmed.split("/")
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    return Effect.fail(
+      new StorageError({
+        kind: "Config",
+        message: `${field} cannot contain empty, current, or parent path segments.`,
+      })
+    )
+  }
+  return Effect.succeed(segments.join("/"))
+}
 
 export const isPathInsideRoot = (candidatePath: string, rootPath: string): boolean => {
   const rel = relative(rootPath, candidatePath)
@@ -190,8 +219,16 @@ export const StorageLive = (configPath: string) =>
 
       const getStorage = () => Ref.get(storageRef)
 
-      const mediaRootFor = (mode: "local" | "mounted_share"): string =>
-        mode === "local" ? config.paths.data_root : MOUNT_ROOT
+      const smbMediaRoot = (smb: RuntimeStorageConfig["smb"]) =>
+        Effect.gen(function* () {
+          const path = yield* normalizeSmbRelativePath("SMB path", smb?.path ?? "")
+          return path ? resolve(MOUNT_ROOT, ...path.split("/")) : MOUNT_ROOT
+        })
+
+      const mediaRootFor = (mode: "local" | "mounted_share") =>
+        mode === "local"
+          ? Effect.succeed(config.paths.data_root)
+          : Effect.flatMap(getStorage(), (storage) => smbMediaRoot(storage.smb))
 
       const getPersistedConfig = () =>
         Effect.tryPromise({
@@ -313,8 +350,23 @@ export const StorageLive = (configPath: string) =>
             )
           }
 
+          const mediaRoot = yield* smbMediaRoot(smb)
+          const ensureMediaRoot = Effect.tryPromise({
+            try: async () => {
+              await mkdir(mediaRoot, { recursive: true })
+              await access(mediaRoot, constants.R_OK | constants.W_OK)
+            },
+            catch: (cause) =>
+              new StorageError({
+                kind: "Validation",
+                message: `SMB media path is not accessible at ${mediaRoot}.`,
+                cause,
+              }),
+          })
+          const verifyReady = verifyMountedRoot().pipe(Effect.zipRight(ensureMediaRoot))
+
           // Already mounted and healthy → nothing to do.
-          const healthy = yield* verifyMountedRoot().pipe(
+          const healthy = yield* verifyReady.pipe(
             Effect.as(true),
             Effect.catchTag("StorageError", () => Effect.succeed(false))
           )
@@ -363,7 +415,7 @@ export const StorageLive = (configPath: string) =>
               ["mount", `//${server}/${share}`, MOUNT_ROOT, optionList],
               "Mount"
             )
-            yield* verifyMountedRoot()
+            yield* verifyReady
             yield* setState("connected", null)
             yield* logger.info("Connected SMB storage")
           }).pipe(
@@ -385,16 +437,18 @@ export const StorageLive = (configPath: string) =>
           const storage = yield* getStorage()
           const state = yield* Ref.get(stateRef)
           const hasPassword = storage.smb ? yield* hasStoredPassword() : false
+          const dataRoot = yield* mediaRootFor(storage.mode)
           return {
             mode: storage.mode,
             available: state.kind === "local" || state.kind === "connected",
-            data_root: mediaRootFor(storage.mode),
+            data_root: dataRoot,
             last_error: state.lastError,
             smb: storage.smb
               ? {
                   server: storage.smb.server,
                   share: storage.smb.share,
                   username: storage.smb.username,
+                  path: storage.smb.path,
                   has_password: hasPassword,
                 }
               : null,
@@ -411,7 +465,7 @@ export const StorageLive = (configPath: string) =>
               new StorageError({ kind: "Disconnected", message: "SMB storage is not connected." })
             )
           }
-          return MOUNT_ROOT
+          return yield* mediaRootFor("mounted_share")
         })
 
       const mediaRootOrNull = () =>
@@ -419,9 +473,14 @@ export const StorageLive = (configPath: string) =>
 
       const saveSmb = (input: SmbInput) =>
         Effect.gen(function* () {
+          const storage = yield* getStorage()
           const server = input.server.trim()
           const share = input.share.trim()
           const username = input.username.trim()
+          const path = yield* normalizeSmbRelativePath(
+            "SMB path",
+            input.path ?? storage.smb?.path ?? ""
+          )
           if (!server || !share || !username) {
             return yield* Effect.fail(
               new StorageError({
@@ -446,8 +505,16 @@ export const StorageLive = (configPath: string) =>
             yield* setStoredPassword(password)
           }
 
-          const storage = yield* getStorage()
-          yield* writePersistedStorage({ ...storage, smb: { server, share, username } })
+          const shouldUnmountCurrentShare =
+            storage.mode === "mounted_share" &&
+            storage.smb !== null &&
+            (storage.smb.server !== server || storage.smb.share !== share)
+
+          yield* writePersistedStorage({ ...storage, smb: { server, share, username, path } })
+          if (shouldUnmountCurrentShare) {
+            yield* disconnectMount()
+            yield* setState("disconnected", null)
+          }
           return yield* buildStatus()
         })
 

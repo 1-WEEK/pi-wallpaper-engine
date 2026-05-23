@@ -96,8 +96,8 @@ export const MigrateLive = Layer.effect(
 
         const current = (yield* storage.status()).mode
         const direction = current === "local" ? ("to_nas" as const) : ("to_local" as const)
-        const fromRoot = storage.mediaRootFor(current)
-        const toRoot = storage.mediaRootFor(targetMode)
+        const fromRoot = yield* storage.mediaRootFor(current)
+        const toRoot = yield* storage.mediaRootFor(targetMode)
 
         // Both directions need the SMB share mounted (copy into or out of it).
         yield* storage.connect()

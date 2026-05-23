@@ -35,6 +35,9 @@ export const SmbConfig = Schema.Struct({
   server: Schema.String.pipe(Schema.minLength(1)),
   share: Schema.String.pipe(Schema.minLength(1)),
   username: Schema.String.pipe(Schema.minLength(1)),
+  // Relative path inside the SMB share where media files live. Empty means the
+  // share root, preserving compatibility with older configs.
+  path: Schema.optional(Schema.String),
 })
 export type SmbConfig = typeof SmbConfig.Type
 

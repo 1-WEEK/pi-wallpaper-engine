@@ -4,7 +4,7 @@ import { MigrateError, StorageError } from "@pwe/shared"
 import { DownloadTasks } from "../services/DownloadTasks.js"
 import { Library } from "../services/Library.js"
 import { Migrate, friendlyMigrateError } from "../services/Migrate.js"
-import { Storage, friendlyStorageError } from "../services/Storage.js"
+import { Storage, friendlyStorageError, normalizeSmbRelativePath } from "../services/Storage.js"
 import type { AppRuntime } from "../runtime.js"
 
 const updateBody = t.Object({
@@ -15,6 +15,7 @@ const updateBody = t.Object({
       server: t.String(),
       share: t.String(),
       username: t.String(),
+      path: t.Optional(t.Nullable(t.String())),
       password: t.Optional(t.Nullable(t.String())),
     }),
   ]),
@@ -68,7 +69,8 @@ export const storageRoutes = (runtime: AppRuntime) =>
               const library = yield* Library
               const tasks = yield* DownloadTasks
 
-              const current = (yield* storage.status()).mode
+              const currentStatus = yield* storage.status()
+              const current = currentStatus.mode
               const mutatesActiveRoot =
                 body.mode !== current || (body.smb !== null && current === "mounted_share")
               if (mutatesActiveRoot) {
@@ -85,11 +87,35 @@ export const storageRoutes = (runtime: AppRuntime) =>
                 }
               }
 
+              const libraryRows = yield* library.list()
+              if (body.smb && current === "mounted_share" && libraryRows.length > 0) {
+                const nextServer = body.smb.server.trim()
+                const nextShare = body.smb.share.trim()
+                const nextPath = yield* normalizeSmbRelativePath(
+                  "SMB path",
+                  body.smb.path ?? currentStatus.smb?.path ?? ""
+                )
+                const changesCurrentRoot =
+                  !currentStatus.smb ||
+                  currentStatus.smb.server !== nextServer ||
+                  currentStatus.smb.share !== nextShare ||
+                  currentStatus.smb.path !== nextPath
+
+                if (changesCurrentRoot) {
+                  return yield* Effect.fail(
+                    new MigrateError({
+                      kind: "Busy",
+                      message:
+                        "已有壁纸保存在当前网络存储路径。请先切回本机,再修改共享或存放路径。",
+                    })
+                  )
+                }
+              }
+
               if (body.smb) {
                 yield* storage.saveSmb(body.smb)
               }
 
-              const libraryRows = yield* library.list()
               // Switching with a populated library moves the media files; this
               // runs as a background job. An empty library (or no mode change)
               // switches instantly.

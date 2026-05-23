@@ -4,6 +4,7 @@ import {
   assertCredentialFileValue,
   assertSmbComponentValue,
   isPathInsideRoot,
+  normalizeSmbRelativePath,
   normalizeMountOptions,
 } from "./Storage.js"
 
@@ -114,5 +115,35 @@ describe("assertSmbComponentValue", () => {
     await expect(Effect.runPromise(assertSmbComponentValue("Share", "abc\0def"))).rejects.toThrow(
       "cannot contain slashes"
     )
+  })
+})
+
+describe("normalizeSmbRelativePath", () => {
+  test("accepts empty and nested relative paths", async () => {
+    await expect(Effect.runPromise(normalizeSmbRelativePath("Path", ""))).resolves.toBe("")
+    await expect(
+      Effect.runPromise(normalizeSmbRelativePath("Path", " pi-wallpaper-engine "))
+    ).resolves.toBe("pi-wallpaper-engine")
+    await expect(
+      Effect.runPromise(normalizeSmbRelativePath("Path", "media/wallpapers"))
+    ).resolves.toBe("media/wallpapers")
+  })
+
+  test("rejects absolute, parent, empty, and control segments", async () => {
+    await expect(Effect.runPromise(normalizeSmbRelativePath("Path", "/media"))).rejects.toThrow(
+      "relative path"
+    )
+    await expect(
+      Effect.runPromise(normalizeSmbRelativePath("Path", "media/../wallpapers"))
+    ).rejects.toThrow("path segments")
+    await expect(
+      Effect.runPromise(normalizeSmbRelativePath("Path", "media//wallpapers"))
+    ).rejects.toThrow("path segments")
+    await expect(
+      Effect.runPromise(normalizeSmbRelativePath("Path", "media\\wallpapers"))
+    ).rejects.toThrow("relative path")
+    await expect(
+      Effect.runPromise(normalizeSmbRelativePath("Path", "media\nwallpapers"))
+    ).rejects.toThrow("relative path")
   })
 })
