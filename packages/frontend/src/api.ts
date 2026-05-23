@@ -37,6 +37,7 @@ export interface SmbRecord {
   server: string
   share: string
   username: string
+  path: string
   has_password: boolean
 }
 
@@ -53,6 +54,7 @@ export interface SmbInput {
   server: string
   share: string
   username: string
+  path?: string | null
   password?: string | null
 }
 

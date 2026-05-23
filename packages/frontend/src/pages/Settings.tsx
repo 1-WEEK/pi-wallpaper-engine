@@ -12,6 +12,7 @@ interface Props {
 interface SmbFormState {
   server: string
   share: string
+  path: string
   username: string
   password: string
 }
@@ -67,6 +68,7 @@ export const Settings = ({ summary, onRefresh }: Props) => {
   const [form, setForm] = useState<SmbFormState>({
     server: "",
     share: "",
+    path: "pi-wallpaper-engine",
     username: "",
     password: "",
   })
@@ -81,6 +83,7 @@ export const Settings = ({ summary, onRefresh }: Props) => {
       setForm({
         server: storage.smb.server,
         share: storage.smb.share,
+        path: storage.smb.path,
         username: storage.smb.username,
         password: "",
       })
@@ -163,6 +166,7 @@ export const Settings = ({ summary, onRefresh }: Props) => {
         smb: {
           server: form.server.trim(),
           share: form.share.trim(),
+          path: form.path.trim(),
           username: form.username.trim(),
           password: form.password.trim() ? form.password : null,
         },
@@ -330,6 +334,15 @@ export const Settings = ({ summary, onRefresh }: Props) => {
               onChange={(event) =>
                 setForm((current) => ({ ...current, username: event.target.value }))
               }
+              disabled={locked}
+            />
+          </label>
+          <label className="storage-field">
+            <span className="setting-label">存放路径</span>
+            <input
+              value={form.path}
+              onChange={(event) => setForm((current) => ({ ...current, path: event.target.value }))}
+              placeholder="pi-wallpaper-engine"
               disabled={locked}
             />
           </label>

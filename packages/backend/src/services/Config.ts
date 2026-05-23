@@ -9,9 +9,13 @@ import {
   type SmbConfig,
 } from "@pwe/shared"
 
+export type RuntimeSmbConfig = Omit<SmbConfig, "path"> & {
+  path: string
+}
+
 export type RuntimeStorageConfig = {
   mode: "local" | "mounted_share"
-  smb: SmbConfig | null
+  smb: RuntimeSmbConfig | null
 }
 
 export type RuntimeConfig = Omit<AppConfig, "storage"> & {
@@ -23,13 +27,22 @@ export class Config extends Context.Tag("Config")<Config, RuntimeConfig>() {}
 const expandHome = (p: string): string =>
   p.startsWith("~/") ? resolve(homedir(), p.slice(2)) : resolve(p)
 
-const withStorageDefaults = (decoded: AppConfig): RuntimeConfig => ({
-  ...decoded,
-  storage: {
-    mode: decoded.storage?.mode ?? "local",
-    smb: decoded.storage?.smb ?? null,
-  },
-})
+const withStorageDefaults = (decoded: AppConfig): RuntimeConfig => {
+  const smb = decoded.storage?.smb
+    ? {
+        ...decoded.storage.smb,
+        path: decoded.storage.smb.path ?? "",
+      }
+    : null
+
+  return {
+    ...decoded,
+    storage: {
+      mode: decoded.storage?.mode ?? "local",
+      smb,
+    },
+  }
+}
 
 const decodeConfig = Schema.decodeUnknown(ConfigSchema)
 

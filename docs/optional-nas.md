@@ -12,6 +12,8 @@ commands.
   `~/.local/state/pi-wallpaper-engine/`, independent of `mode`.
 - The SMB share is mounted by a privileged helper, with credentials stored in
   the system keyring (`Bun.secrets` → Secret Service on Linux).
+- Media files can live in a relative folder inside the share, such as
+  `pi-wallpaper-engine`, instead of at the share root.
 - Switching `mode` with an existing wallpaper library automatically **moves**
   the media files to the new location. The source is removed only after the
   copy is verified.
@@ -43,21 +45,28 @@ touch .pwe-mounted-root
 
 The backend refuses to mount a share that is missing this file — it's a guard
 against silently writing into the wrong directory when a mount is misconfigured.
+The media folder you set in the app is separate from this sentinel and is
+created automatically after the share is mounted.
 
 ## Configure it in the app
 
 Open **Settings** → **存储位置** and:
 
-1. Fill in **网络地址**, **共享名**, **用户名**, **密码** and click **保存网络存储设置**.
+1. Fill in **网络地址**, **共享名**, **存放路径**, **用户名**, **密码** and click **保存网络存储设置**.
 2. Click **网络存储** in the mode toggle.
 
 If the library is empty the switch is instant. If the library has wallpapers,
 the app asks you to confirm and then moves the files in the background. A
 progress bar shows `moved / total`, with a **取消** button.
 
-The app stores: server, share, username. Mount options (`vers=3.0`, charset,
-uid/gid, file/dir modes) are fixed safe defaults inside the backend. The
-password is in `Bun.secrets`, never in `config.json`.
+The app stores: server, share, username, and the relative media path inside the
+share. Mount options (`vers=3.0`, charset, uid/gid, file/dir modes) are fixed
+safe defaults inside the backend. The password is in `Bun.secrets`, never in
+`config.json`.
+
+The media path may be empty to use the share root, but `pi-wallpaper-engine` is
+recommended so the app writes under `<share>/pi-wallpaper-engine/source` and
+`<share>/pi-wallpaper-engine/optimized`.
 
 ## Runtime behavior
 
@@ -83,9 +92,9 @@ switch is rejected before any move starts.
 To point the app at a different SMB server:
 
 1. Switch back to **本机 SD 卡** (this moves your library to the SD card).
-2. Edit the SMB fields and **保存**.
+2. Edit the SMB fields, including **存放路径**, and **保存**.
 3. Switch to **网络存储** (this moves the library to the new share).
 
-Editing the SMB fields directly while in `mounted_share` mode remounts with the
-new credentials but does **not** move data between old and new servers — use
-the round-trip above instead.
+Editing credentials directly while in `mounted_share` mode saves them for the
+next reconnect. Editing the server, share, or media path while a library
+already exists is rejected; switch back to local first so the files move safely.
