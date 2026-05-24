@@ -17,6 +17,9 @@ able to restore the last wallpaper that was stopped for power saving.
   wallpaper when one is active, calls `mpv.stop()`, then calls `display.off()`.
 - User `/api/display/on` calls `display.on()` first, then tries to restore the
   saved wallpaper from the beginning.
+- User `/api/player/play/:workshopId` cancels any pending auto-off, clears
+  restore state, and powers the display on first when the display is known to be
+  off.
 - Restore success clears the saved state.
 - Restore failure leaves the display on, logs a warning, and keeps the saved
   state for the next attempt.
@@ -53,7 +56,9 @@ restore is enabled by that runtime condition.
 - `PlayerState` service owns the singleton restore row.
 - `PlayerPower` service coordinates `Mpv`, `Display`, `Library`, and
   `PlayerState`.
-- `/api/player/play` cancels pending auto-off and clears restore state.
+- `/api/player/play` cancels pending auto-off, clears restore state, and
+  best-effort powers on the display before calling mpv when display status is
+  known `off`.
 - `/api/player/stop` delegates to `PlayerPower.stopForIdle()`.
 - `/api/display/on` and `/api/display/off` delegate to `PlayerPower`.
 
@@ -70,5 +75,7 @@ Manual on Pi:
 2. Click Display On: display turns on and the stopped wallpaper starts from the beginning.
 3. Play a wallpaper, click Display Off: mpv stops first, display turns off.
 4. Click Display On: wallpaper restores.
-5. Delete the saved wallpaper before Display On: display turns on and restore state clears without user-visible error.
-6. Restart backend while display is on and restore state exists: wallpaper restores automatically.
+5. With the display off, click Play on any wallpaper: display turns on and the
+   selected wallpaper starts.
+6. Delete the saved wallpaper before Display On: display turns on and restore state clears without user-visible error.
+7. Restart backend while display is on and restore state exists: wallpaper restores automatically.
