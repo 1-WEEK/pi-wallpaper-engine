@@ -30,6 +30,7 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 - `@pwe/shared` — Effect Schema、Data.TaggedError、跨包共享类型
 - `@pwe/backend` — Bun + Elysia + Effect-TS，端口 8080
 - `@pwe/frontend` — Vite + React，端口 5173 dev（HMR + 代理 `/api` 到后端）
+- `@pwe/migrate` — Phase 1 存储迁移用的 rsync 薄封装，无 Effect/Elysia 依赖
 - `@pwe/worker` — Phase 2 占位，只有 README
 
 **Effect Layer 装配（`packages/backend/src/runtime.ts`）**：用 `.pipe(Layer.provideMerge(...))` 链式注入，**顺序敏感** — 叶子依赖（Config、Logger）放链末。`Layer.mergeAll` 不做交叉解析，别用。Runtime 是 `ManagedRuntime.make(buildLayer(configPath))`，Elysia 路由通过 `runtime.runPromise(Effect.gen(...))` 桥接业务逻辑。
@@ -49,7 +50,8 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 - **存储声明式 API**：`storage` config = `{ mode: "local"|"mounted_share", smb: {server,share,username,path?}|null }`，密码走 `Bun.secrets`。`smb.path` 是 SMB share 内的相对媒体目录（如 `pi-wallpaper-engine`，空值兼容共享根），不允许绝对路径、`..`、空 path segment、反斜杠或控制字符。HTTP 只有 3 个端点：`GET /api/storage`、`PUT /api/storage`（声明 mode+smb）、`POST /api/storage/cancel`。多连接 CRUD / connect / disconnect 不再存在。`mount_base`（`/run/pwe/mounts`）与 `mount_sentinel`（`.pwe-mounted-root`）是 `statePath.ts` 的后端常量，**不进 config**。`Storage` 内含每 30s 的 reconcile fiber，SMB 掉线/晚开会自动恢复。
 - **SQLite 状态库始终本地**：在 `~/.local/state/pi-wallpaper-engine/`（`statePath.ts`），与媒体根解耦，不随 `storage.mode` 变。旧版库存在 `data_root` 下，`DbLive` 启动时做一次性 best-effort 迁移。
 - **特权挂载只走 `scripts/pwe-storage-helper`**：backend 永不直接 `mount`。helper 经 sudoers NOPASSWD 调用，所有入参视为不可信——helper 与 `statePath.ts` **共用同一常量** `/run/pwe/mounts`，mount 选项只接受安全子集。SMB 密码存 `Bun.secrets`，绝不写入 `config.json`。SMB 共享根必须有 sentinel 文件 `.pwe-mounted-root`，否则 backend 拒绝连接；壁纸文件可放在 `smb.path` 子目录下，backend 挂载后自动创建并使用该目录作为媒体根。
-- **切换存储 = 声明式移动**：`PUT /api/storage` 改 mode 且 library 非空 → `Migrate.start` 后台跑 rsync 移动 `source/`、`optimized/`（双向），全量校验通过后才翻 mode 并删旧源；202 返回，前端轮询 `GET /api/storage` 里的 `migration` 字段拿进度。迁移中下载被挡（503），播放中触发迁移返回 409。纯拷贝引擎在 `@pwe/migrate` 包（rsync 薄封装，无 effect 依赖），挂载/空间检查/翻 mode/挡下载在 `services/Migrate.ts`。
+- **切换存储 = 声明式移动**：`PUT /api/storage` 改 mode 且 library 非空 → `Migrate.start` 后台跑 rsync 移动 `source/`、`optimized/`（双向）。安全顺序是先复制全部目录、全量校验、持久化目标 `storage.mode`，再删旧源；NAS→local 时删完远端源后再卸载 SMB。202 返回，前端轮询 `GET /api/storage` 里的 `migration` 字段拿进度。迁移中下载被挡（503），播放中触发迁移返回 409。纯拷贝引擎在 `@pwe/migrate` 包（rsync 薄封装，无 effect 依赖），挂载/空间检查/翻 mode/挡下载在 `services/Migrate.ts`。
+- **应用层鉴权尚未实现**：`plans/auth-passkey-betterauth.md` 是已收敛方案，不是当前代码事实。现在除外部网络边界外，业务 API 仍未校验用户 session；不要在文档或 UI 里暗示已有 passkey/auth。
 - **`Effect.gen` 内 JS `try/catch/finally` 抓不到 Effect 失败**：失败的 `yield*` 会短路，`catch`/`finally` 都不执行。错误恢复用 `Effect.catchAll`/`tapError`，清理用 `Effect.ensuring`。
 
 ## Pi/SteamCMD 特殊性
