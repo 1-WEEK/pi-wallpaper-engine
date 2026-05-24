@@ -206,9 +206,8 @@ See [docs/optional-nas.md](docs/optional-nas.md) for details.
 
 Near-term work is ordered as:
 
-1. Finish documentation cleanup and commit the current status.
-2. Add player/display power linkage so stopping playback can power down the
-   display and later restore the last wallpaper.
+1. Documentation cleanup and current-status roadmap. Done.
+2. Player/display power linkage. Implemented; needs Pi manual validation.
 3. Validate SMB storage migration on the real Pi/NAS setup.
 4. Add Passkey authentication for the Cloudflare Tunnel deployment.
 5. Implement the Phase 2 NAS transcoding Worker.

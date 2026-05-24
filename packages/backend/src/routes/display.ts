@@ -1,6 +1,7 @@
 import { Elysia } from "elysia"
 import { Effect } from "effect"
 import { Display } from "../services/Display.js"
+import { PlayerPower } from "../services/PlayerPower.js"
 import type { AppRuntime } from "../runtime.js"
 
 export const displayRoutes = (runtime: AppRuntime) =>
@@ -9,9 +10,8 @@ export const displayRoutes = (runtime: AppRuntime) =>
       runtime
         .runPromise(
           Effect.gen(function* () {
-            const display = yield* Display
-            yield* display.on()
-            return { ok: true, state: "on" }
+            const playerPower = yield* PlayerPower
+            return yield* playerPower.displayOn()
           })
         )
         .catch((err) => {
@@ -29,9 +29,8 @@ export const displayRoutes = (runtime: AppRuntime) =>
       runtime
         .runPromise(
           Effect.gen(function* () {
-            const display = yield* Display
-            yield* display.off()
-            return { ok: true, state: "off" }
+            const playerPower = yield* PlayerPower
+            return yield* playerPower.displayOff()
           })
         )
         .catch((err) => {
