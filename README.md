@@ -8,6 +8,20 @@ The current phase plays source video files directly. It does not transcode.
 Non-Video Wallpaper Engine projects fail fast during download finalization and
 partial files are cleaned up.
 
+## Current Status
+
+- Phase 1 is the active product line: browse, download, library management, mpv
+  playback, display power controls, mobile UI, and declarative storage are
+  implemented.
+- Phase 2 transcoding is reserved but not wired. `TranscodeQueueNoop` is active,
+  `transcode_jobs` and Worker protocol schemas are kept for the future, and the
+  `@pwe/worker` package is still a placeholder.
+- SMB storage is optional. The app can mount one SMB share, use a relative media
+  path inside that share, and move `source/` plus `optimized/` between local and
+  SMB storage.
+- Application auth is not implemented yet. Keep the origin behind a trusted LAN,
+  Cloudflare Access, or another external access-control layer if exposing it.
+
 ## Requirements
 
 - Raspberry Pi 4B
@@ -143,7 +157,16 @@ The backend entrypoint is `packages/backend/src/index.ts`. Effect Layer assembly
 lives in `packages/backend/src/runtime.ts`. The frontend entrypoint is
 `packages/frontend/src/App.tsx`.
 
-The Vite dev server listens on port 5173 and proxies `/api` to the backend.
+The Vite dev server listens on port 5173, binds to `0.0.0.0`, and proxies
+`/api` to the backend.
+
+Workspace packages:
+
+- `@pwe/shared` — schemas, tagged errors, shared browser/backend types
+- `@pwe/backend` — Elysia API, Effect services, mpv, SteamCMD, storage
+- `@pwe/frontend` — Vite + React UI
+- `@pwe/migrate` — small rsync wrapper used by storage migration
+- `@pwe/worker` — Phase 2 placeholder, not implemented in Phase 1
 
 ## Network Storage
 
@@ -178,6 +201,19 @@ deleted only after the copy verifies successfully and the mode is committed.
 New downloads are blocked while migration is running.
 
 See [docs/optional-nas.md](docs/optional-nas.md) for details.
+
+## Roadmap
+
+Near-term work is ordered as:
+
+1. Finish documentation cleanup and commit the current status.
+2. Add player/display power linkage so stopping playback can power down the
+   display and later restore the last wallpaper.
+3. Validate SMB storage migration on the real Pi/NAS setup.
+4. Add Passkey authentication for the Cloudflare Tunnel deployment.
+5. Implement the Phase 2 NAS transcoding Worker.
+
+See [plans/roadmap.md](plans/roadmap.md) for the working roadmap.
 
 ## Validation And Troubleshooting
 
