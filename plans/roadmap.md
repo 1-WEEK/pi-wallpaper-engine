@@ -19,11 +19,12 @@ Goal: finish the current documentation reset and commit it cleanly.
 
 ## 2. Player And Display Linkage
 
+Status: implemented; needs Pi manual validation.
+
 Goal: make display power behavior follow the actual resource-saving intent.
 
-- User stop starts a 30-second auto-off timer.
-- Auto-off and manual display off both call `mpv.stop()` before turning the
-  display off.
+- User stop starts a 30-second auto-off timer after stopping mpv.
+- Manual display off calls `mpv.stop()` before turning the display off.
 - A singleton `player_state` row records the wallpaper stopped for power saving.
 - Display on restores that wallpaper from the beginning, then clears the
   restore state.

@@ -217,7 +217,14 @@ export const api = {
 
   displayOn: () =>
     fetch(`/api/display/on`, { method: "POST" }).then(
-      json<{ ok: boolean; state?: "on" | "off"; error?: string; kind?: string }>
+      json<{
+        ok: boolean
+        state?: "on" | "off"
+        restored?: boolean
+        restore_error?: string
+        error?: string
+        kind?: string
+      }>
     ),
   displayOff: () =>
     fetch(`/api/display/off`, { method: "POST" }).then(

@@ -7,6 +7,8 @@ import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
 import { MigrateLive } from "./services/Migrate.js"
 import { MpvLive } from "./services/Mpv.js"
+import { PlayerPowerLive } from "./services/PlayerPower.js"
+import { PlayerStateLive } from "./services/PlayerState.js"
 import { SteamCmdLive } from "./services/SteamCmd.js"
 import { SteamWorkshopLive } from "./services/SteamWorkshop.js"
 import { StorageLive } from "./services/Storage.js"
@@ -20,6 +22,8 @@ import { TranscodeQueueNoop } from "./services/TranscodeQueue.js"
  */
 export const buildLayer = (configPath: string) =>
   TranscodeQueueNoop.pipe(
+    Layer.provideMerge(PlayerPowerLive),
+    Layer.provideMerge(PlayerStateLive),
     Layer.provideMerge(DownloadTasksLive),
     Layer.provideMerge(MigrateLive),
     Layer.provideMerge(LibraryLive),
