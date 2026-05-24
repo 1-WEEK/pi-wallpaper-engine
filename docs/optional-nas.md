@@ -14,6 +14,8 @@ commands.
   the system keyring (`Bun.secrets` → Secret Service on Linux).
 - Media files can live in a relative folder inside the share, such as
   `pi-wallpaper-engine`, instead of at the share root.
+- The app mounts exactly one share. Multi-connection management, custom mount
+  options, and `fstab` entries are intentionally not part of the UI.
 - Switching `mode` with an existing wallpaper library automatically **moves**
   the media files to the new location. The source is removed only after the
   copy is verified.
@@ -68,6 +70,13 @@ The media path may be empty to use the share root, but `pi-wallpaper-engine` is
 recommended so the app writes under `<share>/pi-wallpaper-engine/source` and
 `<share>/pi-wallpaper-engine/optimized`.
 
+Validation is intentionally strict:
+
+- server and share cannot contain slashes, newlines, or NUL bytes
+- media path must be relative inside the share
+- media path cannot contain `..`, `.`, empty segments, backslashes, newlines, or
+  NUL bytes
+
 ## Runtime behavior
 
 - The backend starts even if the SMB share is unreachable.
@@ -77,8 +86,11 @@ recommended so the app writes under `<share>/pi-wallpaper-engine/source` and
 - New downloads are blocked while a migration is running (so files added mid-move
   aren't missed).
 - Migration is a move, not a copy: the source is deleted only after the
-  destination passes a `rsync --dry-run` integrity check. A failure or cancel at
-  any point leaves the source intact and the mode unchanged.
+  destination passes a `rsync --dry-run` integrity check and the target mode has
+  been written to config. A failure or cancel before commit leaves the source
+  intact and the mode unchanged.
+- A migration request while mpv is playing a file from the source root is
+  rejected with `409`; stop playback first.
 
 ## Switch back to local
 
