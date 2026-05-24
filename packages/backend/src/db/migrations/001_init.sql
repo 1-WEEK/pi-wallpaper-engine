@@ -59,3 +59,10 @@ CREATE TABLE IF NOT EXISTS download_tasks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_download_tasks_started_at ON download_tasks(started_at DESC);
+
+CREATE TABLE IF NOT EXISTS player_state (
+  id                  TEXT PRIMARY KEY CHECK (id = 'singleton'),
+  restore_workshop_id TEXT NOT NULL,
+  restore_reason      TEXT NOT NULL,
+  updated_at          INTEGER NOT NULL
+);

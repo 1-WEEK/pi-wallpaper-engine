@@ -14,7 +14,8 @@
 - Phase 2 转码 Worker 未实现：没有 `/api/transcode/*` 路由，没有 Worker 代码、
   Dockerfile、compose、心跳/进度/完成上报闭环。
 - Passkey auth 未实现：`plans/auth-passkey-betterauth.md` 是方案文档，不是代码事实。
-- 播放与显示器自动联动未实现：现在只有手动 display power API/UI。
+- 播放与显示器联动已实现：stop 后 30 秒自动关屏，Display Off 先 stop mpv，
+  Display On 可从 `player_state` 恢复壁纸；仍需 Pi 手动验收。
 
 ## 已完成
 
@@ -30,6 +31,7 @@
 - Library 列表、删除、display_mode 更新
 - mpv backend-owned process、Unix socket IPC、命令队列
 - Display API：可选 `on/off/status` argv 命令，未配置返回 503
+- Player/display linkage：`player_state` 持久化恢复，stop/off/on 省电语义
 - system summary、SPA fallback、systemd user service scripts
 
 ### Storage Productization
@@ -96,7 +98,7 @@
 | Phase 2 Worker | 仅 schema/table/service draft，占位 |
 | Phase 3 UX | 大量提前完成，但播放队列/随机/恢复还缺 |
 | Auth | 方案收敛，未实现 |
-| Player-display linkage | 方案草案，未实现 |
+| Player-display linkage | 已实现，待 Pi 手动验收 |
 | Phase 4/5 | 未开始 |
 
 ## 下一步建议
@@ -106,7 +108,7 @@
 1. 先把 Phase 1 产品化补齐：Pi 实机 SMB 验收、安装/卸载文档验证、播放稳定性。
 2. 决定是否真的要做 Phase 2 Worker；如果要做，再补 `/api/transcode/*` 路由和 Worker。
 3. 如果要公网暴露，先实现 passkey auth 或在 Cloudflare Access 下保护 origin。
-4. 再考虑播放队列、随机播放、开机恢复、播放器/显示器自动联动。
+4. 再考虑播放队列、随机播放、开机恢复等播放体验增强。
 
 ## 一句话总结
 

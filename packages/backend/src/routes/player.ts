@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia"
 import { Effect } from "effect"
-import { Library } from "../services/Library.js"
 import { Mpv } from "../services/Mpv.js"
+import { PlayerPower } from "../services/PlayerPower.js"
 import type { AppRuntime } from "../runtime.js"
 
 export const playerRoutes = (runtime: AppRuntime) =>
@@ -10,15 +10,8 @@ export const playerRoutes = (runtime: AppRuntime) =>
       runtime
         .runPromise(
           Effect.gen(function* () {
-            const lib = yield* Library
-            const mpv = yield* Mpv
-            const item = yield* lib.get(params.workshopId)
-            const path = yield* lib.playablePath(item)
-            yield* mpv.play(item.workshop_id, path)
-            yield* lib.update(item.workshop_id, { last_played_at: Date.now() })
-            // Apply the item's stored display mode each time
-            yield* mpv.setDisplayMode(item.display_mode)
-            return { ok: true, path }
+            const playerPower = yield* PlayerPower
+            return yield* playerPower.play(params.workshopId)
           }).pipe(
             Effect.catchTag("LibraryNotFoundError", () =>
               Effect.sync(() => {
@@ -75,14 +68,25 @@ export const playerRoutes = (runtime: AppRuntime) =>
         }).pipe(Effect.catchAll((e) => Effect.succeed({ error: String(e) })))
       )
     )
-    .post("/stop", () =>
-      runtime.runPromise(
-        Effect.gen(function* () {
-          const mpv = yield* Mpv
-          yield* mpv.stop()
-          return { ok: true }
-        }).pipe(Effect.catchAll((e) => Effect.succeed({ error: String(e) })))
-      )
+    .post("/stop", ({ set }) =>
+      runtime
+        .runPromise(
+          Effect.gen(function* () {
+            const playerPower = yield* PlayerPower
+            return yield* playerPower.stopForIdle()
+          }).pipe(
+            Effect.catchTag("MpvIpcError", (e) =>
+              Effect.sync(() => {
+                set.status = 500
+                return { error: e.reason }
+              })
+            )
+          )
+        )
+        .catch((e) => {
+          set.status = 500
+          return { error: e instanceof Error ? e.message : String(e) }
+        })
     )
     .post(
       "/display-mode",

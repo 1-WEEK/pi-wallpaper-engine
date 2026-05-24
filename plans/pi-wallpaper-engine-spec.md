@@ -69,6 +69,7 @@ Browser
        ├─ Migrate: background rsync media moves between roots
        ├─ Mpv: backend-owned mpv process + queued IPC commands
        ├─ Display: optional argv-based display power commands
+       ├─ PlayerState/PlayerPower: display-off restore intent and power saving
        └─ TranscodeQueueNoop: Phase 1 marks all rows skipped
 ```
 
@@ -268,9 +269,16 @@ Display modes:
 - `fit`: keep aspect, panscan 0.0
 - `stretch`: disable keepaspect, panscan 0.0
 
-Playback and display power are currently independent. Manual display power UI
-exists, but automatic "play turns display on" or idle auto-off is only planned
-in `plans/player-display-linkage.md`.
+Playback and display power are linked for resource saving:
+
+- `/api/player/stop` records the current wallpaper, stops mpv, and starts a
+  30-second auto-off timer.
+- `/api/display/off` records the current wallpaper when one is active, stops
+  mpv, then turns the display off.
+- `/api/display/on` turns the display on and tries to restore the saved
+  wallpaper from the beginning.
+- Restore intent is stored in the local `player_state` singleton table.
+- `pause` does not participate in display power saving.
 
 ## Frontend
 
@@ -326,7 +334,7 @@ port availability, and mpv hardware decode when a graphical session is present.
 | Phase 1 storage productization | Implemented: declarative SMB + migration |
 | Phase 2: NAS transcoding Worker | Reserved only: schemas/table/service draft exist, routes/worker not implemented |
 | Auth/passkey | Planned only in `plans/auth-passkey-betterauth.md` |
-| Player/display linkage | Planned only in `plans/player-display-linkage.md` |
+| Player/display linkage | Implemented; needs Pi manual validation |
 | Playback queue/random/restore | Not implemented |
 | Ink TUI | Not implemented |
 
