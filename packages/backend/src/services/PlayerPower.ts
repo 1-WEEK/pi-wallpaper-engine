@@ -42,6 +42,9 @@ export class PlayerPower extends Context.Tag("PlayerPower")<
 export const shouldAutoRestoreOnStartup = (status: DisplayStatus): boolean =>
   status.state === "on" && status.source === "probed"
 
+export const shouldPowerOnBeforePlay = (status: DisplayStatus): boolean =>
+  status.state === "off"
+
 export const PlayerPowerLive = Layer.scoped(
   PlayerPower,
   Effect.gen(function* () {
@@ -89,6 +92,28 @@ export const PlayerPowerLive = Layer.scoped(
           logWarn(`Failed to clear player restore state after ${context}: ${String(e.cause)}`)
         )
       )
+
+    const formatDisplayError = (error: DisplayError): string =>
+      `${error.kind}: ${error.message}${error.stderr ? `; stderr=${error.stderr}` : ""}`
+
+    const powerOnDisplayIfKnownOff = Effect.gen(function* () {
+      const status = yield* display.status().pipe(
+        Effect.catchTag("DisplayError", (e) =>
+          Effect.gen(function* () {
+            yield* logWarn(`Could not read display status before play: ${formatDisplayError(e)}`)
+            return null
+          })
+        )
+      )
+
+      if (!status || !shouldPowerOnBeforePlay(status)) return
+
+      yield* display.on().pipe(
+        Effect.catchTag("DisplayError", (e) =>
+          logWarn(`Could not power on display before play: ${formatDisplayError(e)}`)
+        )
+      )
+    })
 
     const restoreSaved = (source: "display_on" | "startup") =>
       Effect.gen(function* () {
@@ -188,6 +213,7 @@ export const PlayerPowerLive = Layer.scoped(
           yield* clearRestoreBestEffort("explicit play")
           const item = yield* library.get(workshopId)
           const path = yield* library.playablePath(item)
+          yield* powerOnDisplayIfKnownOff
           yield* mpv.play(item.workshop_id, path)
           yield* library.update(item.workshop_id, { last_played_at: Date.now() })
           yield* mpv.setDisplayMode(item.display_mode)
