@@ -7,6 +7,15 @@ shared filesystem.
 Not implemented in Phase 1. The Pi backend plays source files directly; 4K and
 oddly-shaped sources are handled by mpv at runtime (CPU-heavy but functional).
 
+Current repository state:
+
+- `packages/worker` has no Worker implementation, Dockerfile, or compose file.
+- `@pwe/shared/schema/WorkerProtocol` defines the intended request/response
+  schemas.
+- `packages/backend/src/services/TranscodeQueue.ts` contains `TranscodeQueueLive`,
+  but runtime currently wires `TranscodeQueueNoop`.
+- No `/api/transcode/*` routes are mounted yet.
+
 When implementing:
 
 - Long-poll `POST /api/transcode/claim` on the Pi
@@ -16,5 +25,5 @@ When implementing:
 - Report progress to `/api/transcode/:jobId/progress`
 - Report completion / failure to `/api/transcode/:jobId/complete` or `/fail`
 
-Schemas in `@pwe/shared/schema/WorkerProtocol` are stable and match the Pi-side
-routes — the contract is ready, only the implementation is missing.
+Schemas in `@pwe/shared/schema/WorkerProtocol` are the draft contract to wire
+against when Phase 2 starts.
