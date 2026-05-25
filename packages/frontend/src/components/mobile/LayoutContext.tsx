@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo } from "react"
+import { createContext, use, useMemo } from "react"
 import type { ReactNode } from "react"
 
 export interface LayoutValue {
@@ -28,7 +28,7 @@ export const LayoutProvider = ({
     }),
     [width]
   )
-  return <LayoutCtx.Provider value={value}>{children}</LayoutCtx.Provider>
+  return <LayoutCtx value={value}>{children}</LayoutCtx>
 }
 
-export const useLayout = (): LayoutValue => useContext(LayoutCtx)
+export const useLayout = (): LayoutValue => use(LayoutCtx)
