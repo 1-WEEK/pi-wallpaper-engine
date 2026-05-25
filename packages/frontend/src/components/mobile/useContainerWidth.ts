@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react"
 import type { RefObject } from "react"
 
-export const useContainerWidth = (): [RefObject<HTMLDivElement>, number] => {
+export const useContainerWidth = (): [RefObject<HTMLDivElement | null>, number] => {
   const ref = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState<number>(
     typeof window !== "undefined" ? window.innerWidth : 1280
