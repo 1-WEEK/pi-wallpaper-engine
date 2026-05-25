@@ -223,8 +223,7 @@ export const Browse = () => {
 
       <form
         className="command-bar"
-        onSubmit={(e) => {
-          e.preventDefault()
+        action={() => {
           writeParams({ query: queryDraft })
         }}
       >
