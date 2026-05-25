@@ -375,6 +375,12 @@ export const Settings = ({ summary, onRefresh }: Props) => {
           网络存储让壁纸文件存放在 NAS 等设备上,而不是占用本机 SD 卡。切换存放位置时,
           已下载的壁纸会自动迁移到新位置,期间请勿断电。
         </p>
+        <p>
+          <strong>重要提示：</strong>为了防止挂载失败时意外将文件写入树莓派本地磁盘，
+          请确保在你 NAS 共享名所对应的<strong>根目录</strong>下，手动新建一个名为 
+          <code className="kbd mono" style={{ marginLeft: "6px", marginRight: "6px" }}>.pwe-mounted-root</code> 
+          的空文件。如果后台检测不到此文件，将拒绝连接。
+        </p>
       </div>
     </div>
   )
