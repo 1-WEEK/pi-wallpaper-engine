@@ -8,6 +8,8 @@ planned after the deployed system is safer and better validated.
 
 ## 1. Documentation Cleanup
 
+Status: completed.
+
 Goal: finish the current documentation reset and commit it cleanly.
 
 - Keep `plans/pi-wallpaper-engine-spec.md` as the current v4 spec.
@@ -19,7 +21,7 @@ Goal: finish the current documentation reset and commit it cleanly.
 
 ## 2. Player And Display Linkage
 
-Status: implemented; needs Pi manual validation.
+Status: validated and completed.
 
 Goal: make display power behavior follow the actual resource-saving intent.
 
