@@ -8,7 +8,7 @@ export default defineConfig({
     // Vite 5 blocks unknown Host headers for DNS-rebinding protection. Leading
     // dot = subdomain wildcard, so this covers pi4.1week.home and any other
     // local-DNS .home hostnames on the LAN.
-    allowedHosts: [".home", ".local"],
+    allowedHosts: true,
     proxy: {
       "/api": {
         target: "http://localhost:8080",
