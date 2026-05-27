@@ -14,6 +14,9 @@ pi-wallpaper-engine-data/
 .vscode/
 .idea/
 
+# Agent local settings
+.claude/
+
 # TypeScript
 *.tsbuildinfo
 
