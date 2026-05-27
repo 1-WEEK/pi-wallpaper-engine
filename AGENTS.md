@@ -47,10 +47,9 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 - **Phase 1 = `TranscodeQueueNoop`**：所有下载行 `transcode_status="skipped"`。`TranscodeQueueLive` 写好待用，Phase 2 改 `runtime.ts` 一行换 Layer 即可。`transcode_jobs` 表存在但 Phase 1 永远空。
 - **错误用 `Data.TaggedError`**（在 `@pwe/shared/errors.ts`）：`SteamCmdError`（带 `kind: AuthRequired | NotSubscribed | Timeout | BinaryNotFound | UnknownFailure`）、`WorkshopApiError`、`MpvIpcError`、`NotVideoWallpaperError`、`DisplayError` 等。路由 catch 用 `err._tag` 判定状态码。
 - **`display` 配置可选**：`on_command`/`off_command`/`status_command` 都是 argv 数组（`Bun.spawn` 直跑，无 shell 解析、无命令注入）。命令必须非交互（sudo 走 NOPASSWD）。缺 `display` 段时 `/api/display/*` 返 503，其他功能不受影响。5 秒超时杀子进程暴露阻塞型 sudo prompt。
-- **存储声明式 API**：`storage` config = `{ mode: "local"|"mounted_share", smb: {server,share,username,path?}|null }`，密码走 `Bun.secrets`。`smb.path` 是 SMB share 内的相对媒体目录（如 `pi-wallpaper-engine`，空值兼容共享根），不允许绝对路径、`..`、空 path segment、反斜杠或控制字符。HTTP 只有 3 个端点：`GET /api/storage`、`PUT /api/storage`（声明 mode+smb）、`POST /api/storage/cancel`。多连接 CRUD / connect / disconnect 不再存在。`mount_base`（`/run/pwe/mounts`）与 `mount_sentinel`（`.pwe-mounted-root`）是 `statePath.ts` 的后端常量，**不进 config**。`Storage` 内含每 30s 的 reconcile fiber，SMB 掉线/晚开会自动恢复。
-- **SQLite 状态库始终本地**：在 `~/.local/state/pi-wallpaper-engine/`（`statePath.ts`），与媒体根解耦，不随 `storage.mode` 变。旧版库存在 `data_root` 下，`DbLive` 启动时做一次性 best-effort 迁移。
-- **特权挂载只走 `scripts/pwe-storage-helper`**：backend 永不直接 `mount`。helper 经 sudoers NOPASSWD 调用，所有入参视为不可信——helper 与 `statePath.ts` **共用同一常量** `/run/pwe/mounts`，mount 选项只接受安全子集。SMB 密码存 `Bun.secrets`，绝不写入 `config.json`。SMB 共享根必须有 sentinel 文件 `.pwe-mounted-root`，否则 backend 拒绝连接；壁纸文件可放在 `smb.path` 子目录下，backend 挂载后自动创建并使用该目录作为媒体根。
-- **切换存储 = 声明式移动**：`PUT /api/storage` 改 mode 且 library 非空 → `Migrate.start` 后台跑 rsync 移动 `source/`、`optimized/`（双向）。安全顺序是先复制全部目录、全量校验、持久化目标 `storage.mode`，再删旧源；NAS→local 时删完远端源后再卸载 SMB。202 返回，前端轮询 `GET /api/storage` 里的 `migration` 字段拿进度。迁移中下载被挡（503），播放中触发迁移返回 409。纯拷贝引擎在 `@pwe/migrate` 包（rsync 薄封装，无 effect 依赖），挂载/空间检查/翻 mode/挡下载在 `services/Migrate.ts`。
+- **存储是目录模型**：`storage` config 只保留 `{ root?: string | null }`。`null` 表示使用 `paths.data_root`，非空表示当前媒体目录。Settings 通过目录浏览器选择 Pi 上可访问的目录，辅助接口是 `GET /api/storage/locations`、`GET /api/storage/directories?path=...`、`POST /api/storage/directories`、`POST /api/storage/validate-target`、`POST /api/storage/root`、`POST /api/storage/cancel`。目录浏览必须限制在允许根目录内，拒绝越界、symlink 逃逸、控制字符和相对路径。
+- **SQLite 状态库始终本地**：在 `~/.local/state/pi-wallpaper-engine/`（`statePath.ts`），与媒体根解耦，不随 `storage.root` 变。旧版库存在 `data_root` 下，`DbLive` 启动时做一次性 best-effort 迁移。
+- **切换媒体目录 = 后台迁移**：library 非空时，`POST /api/storage/root` 会触发 `Migrate.start(targetRoot)`，后台用 rsync 移动 `source/`、`optimized/`。顺序是先复制、再全量校验、持久化新的 `storage.root`，最后删除旧源。202 返回，前端轮询 `GET /api/storage` 的 `migration` 字段拿进度；迁移中下载被挡，播放中切换返回 409。
 - **应用层鉴权尚未实现**：`plans/auth-passkey-betterauth.md` 是已收敛方案，不是当前代码事实。现在除外部网络边界外，业务 API 仍未校验用户 session；不要在文档或 UI 里暗示已有 passkey/auth。
 - **`Effect.gen` 内 JS `try/catch/finally` 抓不到 Effect 失败**：失败的 `yield*` 会短路，`catch`/`finally` 都不执行。错误恢复用 `Effect.catchAll`/`tapError`，清理用 `Effect.ensuring`。
 
@@ -85,7 +84,7 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 
 ## 配置文件
 
-`config.json` 是用户实际配置（gitignored，含 API key）；`config.example.json` 是模板。schema 在 `packages/shared/src/schema/Config.ts`，启动时 Effect Schema 校验，缺字段 fail-fast。`paths.data_root` 默认 `~/pi-wallpaper-engine-data`（`local` 模式的媒体根）。NAS 共享存储改用 App 托管的 SMB 模式（`storage` 段，见 `docs/optional-nas.md`），不再手动把 `data_root` 指向挂载点。
+`config.json` 是用户实际配置（gitignored，含 API key）；`config.example.json` 是模板。schema 在 `packages/shared/src/schema/Config.ts`，启动时 Effect Schema 校验，缺字段 fail-fast。`paths.data_root` 是默认媒体目录；若设置 `storage.root`，运行时改用该目录作为当前媒体根。
 
 ## 不要做的事
 
@@ -93,4 +92,4 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 - 不要在 `Layer.mergeAll` 里塞需要交叉解析依赖的 service — 必须 `provideMerge` 链
 - 不要把 `transcode_jobs` 表 / `WorkerProtocol` schema 删掉 — Phase 2 要用
 - 不要假设 SteamCMD 在 `/usr/games/steamcmd`（apt 包路径）— 实际在 `/usr/local/bin/steamcmd`（box86 wrapper）
-- 不要给路由加 `RequiresMountsFor=` 之类 SMB 挂载依赖 — 默认本地存储，NAS 是可选
+- 不要把媒体目录逻辑重新做回 SMB / mode 切换产品面 — 当前产品只做“选择目录 + 校验 + 迁移”

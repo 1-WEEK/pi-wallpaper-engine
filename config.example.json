@@ -10,8 +10,7 @@
     "optimized_dir": "optimized"
   },
   "storage": {
-    "mode": "local",
-    "smb": null
+    "root": null
   },
   "screen": {
     "width": 1200,

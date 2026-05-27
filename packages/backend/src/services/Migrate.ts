@@ -8,7 +8,6 @@ import { Mpv } from "./Mpv.js"
 import { Storage, friendlyStorageError, isPathInsideRoot } from "./Storage.js"
 
 export interface MigrationProgress {
-  readonly direction: "to_nas" | "to_local"
   readonly state: "running" | "done" | "failed"
   readonly moved_bytes: number
   readonly total_bytes: number
@@ -16,11 +15,8 @@ export interface MigrationProgress {
 }
 
 export interface MigrateImpl {
-  /** Begin migrating media to the storage `targetMode` uses. Returns once the
-   *  background job is forked; progress is tracked via status. */
-  readonly start: (
-    targetMode: "local" | "mounted_share"
-  ) => Effect.Effect<MigrationProgress, MigrateError | StorageError>
+  /** Begin migrating media to `targetRoot`. Returns once the background job is forked. */
+  readonly start: (targetRoot: string) => Effect.Effect<MigrationProgress, MigrateError | StorageError>
   readonly status: () => Effect.Effect<MigrationProgress | null>
   readonly cancel: () => Effect.Effect<MigrationProgress | null>
   readonly isRunning: () => Effect.Effect<boolean>
@@ -46,11 +42,11 @@ export const friendlyMigrateError = (error: MigrateError): string => {
     case "Space":
       return error.message
     case "Copy":
-      return "迁移文件时出错,请重试。"
+      return "Migration failed. Please retry."
     case "Verify":
-      return "迁移校验未通过,文件可能未完整复制,请重试。"
+      return "Migration verification failed. Files may not have been fully copied. Please retry."
     case "Cancelled":
-      return "迁移已取消。"
+      return "Migration cancelled."
   }
 }
 
@@ -86,26 +82,21 @@ export const MigrateLive = Layer.effect(
           new MigrateError({ kind: "Space", message: "Failed to check free space.", cause }),
       })
 
-    const start = (targetMode: "local" | "mounted_share") =>
+    const start = (targetRoot: string) =>
       Effect.gen(function* () {
         if (yield* isRunning()) {
           return yield* Effect.fail(
-            new MigrateError({ kind: "Busy", message: "已有迁移正在进行,请稍候。" })
+            new MigrateError({ kind: "Busy", message: "A migration is already in progress. Please wait." })
           )
         }
 
-        const current = (yield* storage.status()).mode
-        const direction = current === "local" ? ("to_nas" as const) : ("to_local" as const)
-        const fromRoot = yield* storage.mediaRootFor(current)
-        const toRoot = yield* storage.mediaRootFor(targetMode)
-
-        // Both directions need the SMB share mounted (copy into or out of it).
-        yield* storage.connect()
+        const fromRoot = yield* storage.mediaRoot()
+        const toRoot = targetRoot
 
         const player = yield* mpv.status()
         if (player.path && isPathInsideRoot(player.path, fromRoot)) {
           return yield* Effect.fail(
-            new MigrateError({ kind: "Busy", message: "请先停止播放,再切换存储。" })
+            new MigrateError({ kind: "Busy", message: "Please stop playback before switching roots." })
           )
         }
 
@@ -113,7 +104,6 @@ export const MigrateLive = Layer.effect(
         const sized = yield* Effect.forEach(subdirs, (sub) =>
           Effect.promise(() => estimateSize(resolve(fromRoot, sub))).pipe(
             Effect.map((bytes) => ({
-              sub,
               bytes,
               from: resolve(fromRoot, sub),
               to: resolve(toRoot, sub),
@@ -127,13 +117,12 @@ export const MigrateLive = Layer.effect(
           return yield* Effect.fail(
             new MigrateError({
               kind: "Space",
-              message: `目标空间不足,无法迁移(需 ${formatGb(totalBytes)},可用 ${formatGb(avail)})。`,
+              message: `Not enough space for migration (needs ${formatGb(totalBytes)}, available ${formatGb(avail)}).`,
             })
           )
         }
 
         const initial: MigrationProgress = {
-          direction,
           state: "running",
           moved_bytes: 0,
           total_bytes: totalBytes,
@@ -153,7 +142,6 @@ export const MigrateLive = Layer.effect(
                   onProgress: (moved) => {
                     Effect.runSync(
                       Ref.set(jobRef, {
-                        direction,
                         state: "running",
                         moved_bytes: movedBase + moved,
                         total_bytes: totalBytes,
@@ -166,7 +154,6 @@ export const MigrateLive = Layer.effect(
             })
             movedBase += bytes
             yield* Ref.set(jobRef, {
-              direction,
               state: "running",
               moved_bytes: movedBase,
               total_bytes: totalBytes,
@@ -181,34 +168,25 @@ export const MigrateLive = Layer.effect(
             })
           }
 
-          // Commit only after every directory has copied and verified. Persist
-          // the target mode before deleting the old source so a config write
-          // failure cannot leave mode pointing at a root whose files were already
-          // removed. For NAS→local, finishMigration intentionally keeps the NAS
-          // mount alive until the remote source tree is cleaned up.
           yield* Effect.uninterruptible(
             Effect.gen(function* () {
-              yield* storage.finishMigration(targetMode)
+              yield* storage.saveRoot(toRoot)
               for (const { from } of sized) {
                 yield* Effect.tryPromise({
                   try: () => removeTree(from),
                   catch: toMigrateError,
                 })
               }
-              if (targetMode === "local") {
-                yield* storage.applyMode("local")
-              }
             })
           )
 
           yield* Ref.set(jobRef, {
-            direction,
             state: "done",
             moved_bytes: totalBytes,
             total_bytes: totalBytes,
             error: null,
           })
-          yield* logger.info(`Storage migration ${direction} complete`)
+          yield* logger.info(`Storage migration complete: ${fromRoot} -> ${toRoot}`)
         }).pipe(
           Effect.catchAll((error) =>
             Effect.gen(function* () {
@@ -220,7 +198,6 @@ export const MigrateLive = Layer.effect(
                 `Storage migration failed: ${error instanceof Error ? error.message : String(error)}`
               )
               yield* Ref.set(jobRef, {
-                direction,
                 state: "failed",
                 moved_bytes: 0,
                 total_bytes: totalBytes,
@@ -228,9 +205,6 @@ export const MigrateLive = Layer.effect(
               })
             })
           ),
-          // Cancellation interrupts the fiber before the commit phase: drop the
-          // job, leaving the source intact. The final delete + mode switch is
-          // intentionally uninterruptible.
           Effect.onInterrupt(() => Ref.set(jobRef, null))
         )
 

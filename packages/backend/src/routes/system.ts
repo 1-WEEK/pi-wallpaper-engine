@@ -91,8 +91,9 @@ export const systemRoutes = (runtime: AppRuntime) =>
               total_bytes: storageStatus.available ? usage.total_bytes : null,
               used_percent: storageStatus.available ? usage.used_percent : null,
               error: storageStatus.available ? usage.error : (storageStatus.last_error ?? usage.error),
-              mode: storageStatus.mode,
               data_root: storageStatus.data_root,
+              default_root: storageStatus.default_root,
+              using_default: storageStatus.using_default,
               last_error: storageStatus.last_error,
             }))
           )
