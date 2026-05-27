@@ -1,14 +1,17 @@
-import { useRef } from "react"
+import { useEffect, useRef } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { Link, Redirect, Route, Switch, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
-import { SWRConfig } from "swr"
-import { api } from "./api.js"
+import { SWRConfig, useSWRConfig } from "swr"
+import { api, onAuthChange } from "./api.js"
 import type { SystemSummary } from "./api.js"
+import { fetchSession, fetchSetupState } from "./auth.js"
 import { appIcons } from "./icons.js"
 import { Browse } from "./pages/Browse.js"
 import { Downloads } from "./pages/Downloads.js"
 import { Library } from "./pages/Library.js"
+import { Login } from "./pages/Login.js"
+import { Setup } from "./pages/Setup.js"
 import { Settings } from "./pages/Settings.js"
 import { PlayerBar } from "./components/PlayerBar.js"
 import {
@@ -284,6 +287,45 @@ const AppShell = () => {
   )
 }
 
+const AuthGate = () => {
+  const { mutate } = useSWRConfig()
+  const { data: setupState, isLoading: setupLoading, mutate: refetchSetup } = useSWR(
+    "auth-setup-state",
+    fetchSetupState
+  )
+  const { data: session, isLoading: sessionLoading, mutate: refetchSession } = useSWR(
+    setupState?.enabled ? "auth-session" : null,
+    fetchSession
+  )
+
+  useEffect(() => {
+    const off = onAuthChange(() => {
+      void refetchSession()
+      void refetchSetup()
+      void mutate(() => true, undefined, { revalidate: false })
+    })
+    return off
+  }, [mutate, refetchSession, refetchSetup])
+
+  if (setupLoading || (setupState?.enabled && sessionLoading)) {
+    return <div className="auth-shell" />
+  }
+
+  if (!setupState?.enabled) {
+    return <AppShell />
+  }
+
+  if (!setupState.setup_complete) {
+    return <Setup />
+  }
+
+  if (!session) {
+    return <Login />
+  }
+
+  return <AppShell />
+}
+
 export const App = () => (
   <SWRConfig
     value={{
@@ -293,6 +335,6 @@ export const App = () => (
       shouldRetryOnError: false,
     }}
   >
-    <AppShell />
+    <AuthGate />
   </SWRConfig>
 )
