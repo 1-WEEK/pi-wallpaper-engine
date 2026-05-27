@@ -81,7 +81,7 @@ const server = app.listen({ hostname: config.server.host, port: config.server.po
 console.log(`▶ pi-wallpaper-engine listening on http://${config.server.host}:${config.server.port}`)
 console.log(`  Config: ${CONFIG_PATH}`)
 console.log(`  Data root: ${config.paths.data_root}`)
-console.log(`  Storage mode: ${config.storage.mode}`)
+console.log(`  Media root: ${config.storage.root ?? config.paths.data_root}`)
 
 const shutdown = async (signal: string) => {
   console.log(`\n${signal} received, shutting down...`)

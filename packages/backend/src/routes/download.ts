@@ -55,7 +55,7 @@ export const downloadRoutes = (runtime: AppRuntime) => {
       )
       if (migrating) {
         set.status = 503
-        return { ok: false, error: "正在迁移存储,请稍候。" }
+        return { ok: false, error: "Storage migration in progress. Please wait." }
       }
 
       // Idempotency: reject if a task for this workshopId is already in flight.
