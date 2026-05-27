@@ -79,6 +79,8 @@ export const DirectoryPickerDialog = ({
     setNewDirName("pi-wallpaper-engine")
     if (initialPath) {
       void loadDirectory(initialPath)
+      // Silently fetch locations so `atLocationRoot` can detect when we navigate up to a root.
+      void api.storageLocations().then(setLocations).catch(console.error)
     } else {
       void loadLocations()
     }
