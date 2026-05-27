@@ -63,6 +63,21 @@ export const DisplayConfig = Schema.Struct({
   status_command: Schema.optional(Schema.Array(Schema.String).pipe(Schema.minItems(1))),
 })
 
+const HttpsUrl = Schema.String.pipe(Schema.pattern(/^https:\/\/[^\s]+$/))
+
+export const AuthConfig = Schema.Struct({
+  enabled: Schema.Boolean,
+  base_url: HttpsUrl,
+  trusted_origins: Schema.Array(HttpsUrl).pipe(Schema.minItems(1)),
+  rp_id: Schema.String.pipe(Schema.minLength(1)),
+  admin_email: Schema.String.pipe(Schema.minLength(1)),
+  secret_env: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  setup_token_env: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  session_days: Schema.optional(Schema.Number.pipe(Schema.positive())),
+  max_passkeys: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(1))),
+})
+export type AuthConfig = typeof AuthConfig.Type
+
 export const Config = Schema.Struct({
   steam: SteamConfig,
   paths: PathsConfig,
@@ -72,6 +87,7 @@ export const Config = Schema.Struct({
   transcode: TranscodeConfig,
   server: ServerConfig,
   display: Schema.optional(DisplayConfig),
+  auth: Schema.optional(AuthConfig),
 })
 
 export type Config = typeof Config.Type
