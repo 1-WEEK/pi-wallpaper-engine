@@ -71,9 +71,33 @@ export const appIcons = {
       <path d="M6 6 L18 18 M18 6 L6 18" />
     </AppIcon>
   ),
+  folder: (
+    <AppIcon>
+      <path d="M3 7.5 H9 L11 10 H21 V18.5 A1.5 1.5 0 0 1 19.5 20 H4.5 A1.5 1.5 0 0 1 3 18.5 Z" />
+      <path d="M3 7.5 V6 A1.5 1.5 0 0 1 4.5 4.5 H8 L10 7.5" />
+    </AppIcon>
+  ),
+  chevLeft: (
+    <AppIcon>
+      <path d="M15 6 L9 12 L15 18" />
+    </AppIcon>
+  ),
   chevDown: (
     <AppIcon>
       <path d="M6 9 L12 15 L18 9" />
+    </AppIcon>
+  ),
+  refresh: (
+    <AppIcon>
+      <path d="M20 6 V11 H15" />
+      <path d="M4 18 V13 H9" />
+      <path d="M18 9 A7 7 0 0 0 6.2 7.2 L4 9" />
+      <path d="M6 15 A7 7 0 0 0 17.8 16.8 L20 15" />
+    </AppIcon>
+  ),
+  plus: (
+    <AppIcon>
+      <path d="M12 5 V19 M5 12 H19" />
     </AppIcon>
   ),
   sliders: (

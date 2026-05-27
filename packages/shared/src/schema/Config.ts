@@ -12,9 +12,6 @@ export type GpuApi = typeof GpuApi.Type
 export const TargetCodec = Schema.Literal("hevc", "h264")
 export type TargetCodec = typeof TargetCodec.Type
 
-export const StorageMode = Schema.Literal("local", "mounted_share")
-export type StorageMode = typeof StorageMode.Type
-
 export const SteamConfig = Schema.Struct({
   username: Schema.String.pipe(Schema.minLength(1)),
   web_api_key: Schema.String.pipe(Schema.minLength(1)),
@@ -27,23 +24,8 @@ export const PathsConfig = Schema.Struct({
   optimized_dir: Schema.String.pipe(Schema.minLength(1)),
 })
 
-// A single SMB data source (a NAS, a Samba box, a Windows share — anything
-// that speaks SMB). The owner sets this once; there is no multi-server
-// management. Connection name, mount base, sentinel, and mount options are
-// backend constants, not user-facing config.
-export const SmbConfig = Schema.Struct({
-  server: Schema.String.pipe(Schema.minLength(1)),
-  share: Schema.String.pipe(Schema.minLength(1)),
-  username: Schema.String.pipe(Schema.minLength(1)),
-  // Relative path inside the SMB share where media files live. Empty means the
-  // share root, preserving compatibility with older configs.
-  path: Schema.optional(Schema.String),
-})
-export type SmbConfig = typeof SmbConfig.Type
-
 export const StorageConfig = Schema.Struct({
-  mode: Schema.optional(StorageMode),
-  smb: Schema.optional(Schema.NullOr(SmbConfig)),
+  root: Schema.optional(Schema.NullOr(Schema.String.pipe(Schema.minLength(1)))),
 })
 export type StorageConfig = typeof StorageConfig.Type
 

@@ -11,16 +11,14 @@ partial files are cleaned up.
 ## Current Status
 
 - Phase 1 is the active product line: browse, download, library management, mpv
-  playback, display power controls, mobile UI, and declarative storage are
+  playback, display power controls, mobile UI, and media-directory migration are
   implemented.
 - Phase 2 transcoding is reserved but not wired. `TranscodeQueueNoop` is active,
   `transcode_jobs` and Worker protocol schemas are kept for the future, and the
   `@pwe/worker` package is still a placeholder.
-- SMB storage is optional. The app can mount one SMB share, use a relative media
-  path inside that share, and move `source/` plus `optimized/` between local and
-  SMB storage.
-- Application auth is not implemented yet. Keep the origin behind a trusted LAN,
-  Cloudflare Access, or another external access-control layer if exposing it.
+- Full application auth is not implemented yet. Keep the origin behind a trusted
+  LAN, Cloudflare Access, or another external access-control layer if exposing
+  it.
 
 ## Requirements
 
@@ -43,13 +41,11 @@ bash install-pi.sh
 
 The installer will:
 
-- Install system packages: mpv, ffmpeg, cifs-utils, gnome-keyring, rsync, and
-  supporting tools
+- Install system packages: mpv, ffmpeg, rsync, and supporting tools
 - Install box86 and the `/usr/local/bin/steamcmd` wrapper
 - Install Bun workspace dependencies
 - Build the frontend into `packages/frontend/dist/`
 - Create and populate `config.json`
-- Install the SMB storage helper and sudoers whitelist
 - Check SteamCMD login state
 - Run `bun run check`
 
@@ -70,14 +66,16 @@ bash install-pi.sh --service
 - `steam.steamcmd_path`
 - `paths.data_root`
 
-Local media files live under `paths.data_root` in `source/` and `optimized/`.
-The SQLite state database always stays local at:
+Local media files live under the current media directory in `source/` and
+`optimized/`. By default this is `paths.data_root`; Settings can later switch to
+another directory and migrate the existing files. The SQLite state database
+always stays local at:
 
 ```text
 ~/.local/state/pi-wallpaper-engine/
 ```
 
-It does not move when the media storage mode changes.
+It does not move when the media directory changes.
 
 ## Start
 
@@ -168,39 +166,20 @@ Workspace packages:
 - `@pwe/migrate` — small rsync wrapper used by storage migration
 - `@pwe/worker` — Phase 2 placeholder, not implemented in Phase 1
 
-## Network Storage
+## Media Directory
 
-By default, wallpapers are stored on the Pi's SD card. You can also configure
-SMB network storage from **Settings** -> **Storage**.
+By default, wallpapers are stored under `paths.data_root` on the Pi. In
+**Settings** -> **存储位置**, you can:
 
-The SMB form includes:
+- browse a limited set of safe root directories
+- enter subdirectories and create a new directory
+- validate the selected target before applying it
+- migrate `source/` and `optimized/` to the new directory in the background
 
-- Server address
-- Share name
-- Username
-- Password
-- Storage path
-
-`Storage path` is a relative directory inside the SMB share, for example
-`pi-wallpaper-engine`. With that value, files are stored at:
-
-```text
-<share>/pi-wallpaper-engine/source
-<share>/pi-wallpaper-engine/optimized
-```
-
-The SMB share root must still contain the sentinel file:
-
-```bash
-touch .pwe-mounted-root
-```
-
-When switching between local and SMB storage with an existing library, the
-backend migrates `source/` and `optimized/` in the background. Source files are
-deleted only after the copy verifies successfully and the mode is committed.
-New downloads are blocked while migration is running.
-
-See [docs/optional-nas.md](docs/optional-nas.md) for details.
+If the library is empty, switching only updates the active directory. If the
+library already has wallpapers, the backend copies files first, verifies the
+result, updates `storage.root`, and only then removes the old files. Downloads
+are blocked while migration is running.
 
 ## Roadmap
 
@@ -208,9 +187,9 @@ Near-term work is ordered as:
 
 1. Documentation cleanup and current-status roadmap. Done.
 2. Player/display power linkage. Implemented; needs Pi manual validation.
-3. Validate SMB storage migration on the real Pi/NAS setup.
+3. Validate media-directory migration on the real Pi with removable storage.
 4. Add Passkey authentication for the Cloudflare Tunnel deployment.
-5. Implement the Phase 2 NAS transcoding Worker.
+5. Implement the Phase 2 transcoding Worker.
 
 See [plans/roadmap.md](plans/roadmap.md) for the working roadmap.
 

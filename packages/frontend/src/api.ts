@@ -26,42 +26,56 @@ export interface DownloadTask {
 }
 
 export interface MigrationProgress {
-  direction: "to_nas" | "to_local"
   state: "running" | "done" | "failed"
   moved_bytes: number
   total_bytes: number
   error: string | null
 }
 
-export interface SmbRecord {
-  server: string
-  share: string
-  username: string
-  path: string
-  has_password: boolean
-}
-
 export interface StorageStatus {
-  mode: "local" | "mounted_share"
   available: boolean
   data_root: string
+  default_root: string
+  using_default: boolean
   last_error: string | null
-  smb: SmbRecord | null
   migration: MigrationProgress | null
 }
 
-export interface SmbInput {
-  server: string
-  share: string
-  username: string
-  path?: string | null
-  password?: string | null
+export interface StorageLocation {
+  id: string
+  label: string
+  path: string
+  display_path: string
 }
 
-export interface StorageUpdate {
-  mode: "local" | "mounted_share"
-  smb: SmbInput | null
+export interface StorageDirectoryEntry {
+  name: string
+  path: string
 }
+
+export interface StorageDirectoryListing {
+  path: string
+  display_path: string
+  entries: StorageDirectoryEntry[]
+}
+
+export type StorageTargetValidation =
+  | {
+      ok: true
+      path: string
+      display_path: string
+      free_bytes: number
+      total_bytes: number
+      used_bytes: number
+      is_empty: boolean
+      has_source: boolean
+      has_optimized: boolean
+      message: string
+    }
+  | {
+      ok: false
+      error: string
+    }
 
 export interface SystemSummary {
   config: {
@@ -112,7 +126,8 @@ export interface SystemSummary {
       available: boolean
       path: string
       data_root: string
-      mode: "local" | "mounted_share"
+      default_root: string
+      using_default: boolean
       last_error: string | null
       used_bytes: number | null
       free_bytes: number | null
@@ -176,11 +191,28 @@ export const api = {
 
   systemSummary: () => fetch(`/api/system/summary`).then(json<SystemSummary>),
   getStorage: () => fetch(`/api/storage`).then(json<StorageStatus>),
-  updateStorage: (body: StorageUpdate) =>
-    fetch(`/api/storage`, {
-      method: "PUT",
+  storageLocations: () => fetch(`/api/storage/locations`).then(json<StorageLocation[]>),
+  storageDirectories: (path: string) =>
+    fetch(`/api/storage/directories?${new URLSearchParams({ path }).toString()}`).then(
+      json<StorageDirectoryListing>
+    ),
+  createStorageDirectory: (body: { parent: string; name: string }) =>
+    fetch(`/api/storage/directories`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+    }).then(json<{ path: string; display_path: string }>),
+  validateStorageTarget: (targetRoot: string) =>
+    fetch(`/api/storage/validate-target`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_root: targetRoot }),
+    }).then(json<StorageTargetValidation>),
+  switchStorageRoot: (targetRoot: string) =>
+    fetch(`/api/storage/root`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_root: targetRoot }),
     }).then(json<StorageStatus>),
   cancelMigration: () =>
     fetch(`/api/storage/cancel`, { method: "POST" }).then(json<StorageStatus>),

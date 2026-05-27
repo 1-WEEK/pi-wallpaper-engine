@@ -11,13 +11,7 @@ import { resolve, dirname } from "node:path"
 import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { Config as ConfigSchema } from "@pwe/shared"
-import {
-  resolveStateRoot,
-  SMB_CONNECTION_NAME,
-  STORAGE_HELPER_PATH,
-  STORAGE_MOUNT_BASE,
-  storageSecretKey,
-} from "./statePath.js"
+import { resolveStateRoot } from "./statePath.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -48,7 +42,7 @@ console.log("Pi Wallpaper Engine — Preflight\n" + "─".repeat(36))
 
 // 1. Config file present + parses + schema valid
 let config: typeof ConfigSchema.Type | null = null
-let storageMode: "local" | "mounted_share" = "local"
+let mediaRoot: string | null = null
 if (!existsSync(CONFIG_PATH)) {
   fail(
     "Config file",
@@ -60,7 +54,7 @@ if (!existsSync(CONFIG_PATH)) {
     const raw = readFileSync(CONFIG_PATH, "utf-8")
     const parsed = JSON.parse(raw)
     config = Schema.decodeUnknownSync(ConfigSchema)(parsed)
-    storageMode = config.storage?.mode ?? "local"
+    mediaRoot = expandHome(config.storage?.root ?? config.paths.data_root)
     pass("Config valid", CONFIG_PATH)
   } catch (e) {
     fail(
@@ -123,114 +117,76 @@ await checkBinary(
 )
 await checkBinary(
   "SteamCMD binary",
-  [config?.steam.steamcmd_path ?? "/usr/games/steamcmd", "+quit"],
-  "sudo apt install -y steamcmd (and accept the Valve license prompt)"
+  [config?.steam.steamcmd_path ?? "/usr/local/bin/steamcmd", "+quit"],
+  "Run install-pi.sh to install the box86 SteamCMD wrapper"
 )
 await checkBinary("ffprobe", ["ffprobe", "-version"], "sudo apt install -y ffmpeg")
 await checkBinary("rsync", ["rsync", "--version"], "sudo apt install -y rsync")
-if (storageMode === "mounted_share") {
-  await checkBinary("mount.cifs", ["mount.cifs", "--version"], "sudo apt install -y cifs-utils")
-  if (existsSync(STORAGE_HELPER_PATH)) {
-    pass("storage helper", STORAGE_HELPER_PATH)
-  } else {
-    fail(
-      "storage helper",
-      `Not found at ${STORAGE_HELPER_PATH}`,
-      "Re-run install-pi.sh to install the SMB mount helper"
-    )
-  }
-}
 
 // 6-8. storage root checks
-if (config) {
-  if (storageMode === "local") {
-    const dataRoot = expandHome(config.paths.data_root)
-    if (!existsSync(dataRoot)) {
-      if (fixDirs) {
-        try {
-          mkdirSync(dataRoot, { recursive: true })
-          pass("data_root", `${dataRoot} (created)`)
-        } catch (e) {
-          fail(
-            "data_root",
-            `Cannot create ${dataRoot}: ${e instanceof Error ? e.message : String(e)}`,
-            `Check parent directory permissions, or pass --fix-dirs`
-          )
-        }
-      } else {
+if (config && mediaRoot) {
+  if (!existsSync(mediaRoot)) {
+    if (fixDirs) {
+      try {
+        mkdirSync(mediaRoot, { recursive: true })
+        pass("media_root", `${mediaRoot} (created)`)
+      } catch (e) {
         fail(
-          "data_root",
-          `${dataRoot} does not exist`,
-          `Create it: mkdir -p ${dataRoot}  (or re-run with --fix-dirs)`
+          "media_root",
+          `Cannot create ${mediaRoot}: ${e instanceof Error ? e.message : String(e)}`,
+          `Check parent directory permissions, or pass --fix-dirs`
         )
       }
     } else {
-      try {
-        accessSync(dataRoot, constants.R_OK | constants.W_OK)
-        pass("data_root", dataRoot)
-      } catch {
-        fail(
-          "data_root",
-          `${dataRoot} exists but is not readable/writable`,
-          `chown to current user, or pick a different paths.data_root`
-        )
-      }
-    }
-
-    if (existsSync(dataRoot)) {
-      const probe = resolve(dataRoot, `.preflight-${Date.now()}.tmp`)
-      try {
-        writeFileSync(probe, "ok")
-        unlinkSync(probe)
-        pass("data_root writable")
-      } catch (e) {
-        fail(
-          "data_root writable",
-          e instanceof Error ? e.message : String(e),
-          `chmod u+rw ${dataRoot}`
-        )
-      }
-
-      for (const sub of [config.paths.source_dir, config.paths.optimized_dir]) {
-        const subAbs = resolve(dataRoot, sub)
-        if (existsSync(subAbs)) {
-          pass(`${sub}/ exists`)
-        } else {
-          try {
-            mkdirSync(subAbs, { recursive: true })
-            pass(`${sub}/ created`)
-          } catch (e) {
-            fail(
-              `${sub}/ directory`,
-              e instanceof Error ? e.message : String(e),
-              `mkdir -p ${subAbs}`
-            )
-          }
-        }
-      }
+      fail(
+        "media_root",
+        `${mediaRoot} does not exist`,
+        `Create it: mkdir -p ${mediaRoot}  (or re-run with --fix-dirs)`
+      )
     }
   } else {
-    pass("mount_base", STORAGE_MOUNT_BASE)
+    try {
+      accessSync(mediaRoot, constants.R_OK | constants.W_OK)
+      pass("media_root", mediaRoot)
+    } catch {
+      fail(
+        "media_root",
+        `${mediaRoot} exists but is not readable/writable`,
+        `chown to current user, or pick a different storage.root`
+      )
+    }
+  }
 
-    if (config.storage?.smb) {
-      try {
-        const secret = await Bun.secrets.get({
-          service: "pi-wallpaper-engine",
-          name: storageSecretKey(SMB_CONNECTION_NAME),
-        })
-        if (secret) {
-          pass("SMB password", config.storage.smb.server)
-        } else {
-          warn(
-            "SMB password",
-            "No SMB password stored; connect will fail until the app saves one"
+  if (existsSync(mediaRoot)) {
+    const probe = resolve(mediaRoot, `.preflight-${Date.now()}.tmp`)
+    try {
+      writeFileSync(probe, "ok")
+      unlinkSync(probe)
+      pass("media_root writable")
+    } catch (e) {
+      fail(
+        "media_root writable",
+        e instanceof Error ? e.message : String(e),
+        `chmod u+rw ${mediaRoot}`
+      )
+    }
+
+    for (const sub of [config.paths.source_dir, config.paths.optimized_dir]) {
+      const subAbs = resolve(mediaRoot, sub)
+      if (existsSync(subAbs)) {
+        pass(`${sub}/ exists`)
+      } else {
+        try {
+          mkdirSync(subAbs, { recursive: true })
+          pass(`${sub}/ created`)
+        } catch (e) {
+          fail(
+            `${sub}/ directory`,
+            e instanceof Error ? e.message : String(e),
+            `mkdir -p ${subAbs}`
           )
         }
-      } catch (e) {
-        warn("SMB password", e instanceof Error ? e.message : String(e))
       }
-    } else {
-      warn("SMB config", "Storage mode is mounted_share but no SMB share is configured")
     }
   }
 }

@@ -2,20 +2,10 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { homedir } from "node:os"
-import {
-  Config as ConfigSchema,
-  ConfigError,
-  type Config as AppConfig,
-  type SmbConfig,
-} from "@pwe/shared"
-
-export type RuntimeSmbConfig = Omit<SmbConfig, "path"> & {
-  path: string
-}
+import { Config as ConfigSchema, ConfigError, type Config as AppConfig } from "@pwe/shared"
 
 export type RuntimeStorageConfig = {
-  mode: "local" | "mounted_share"
-  smb: RuntimeSmbConfig | null
+  root: string | null
 }
 
 export type RuntimeConfig = Omit<AppConfig, "storage"> & {
@@ -28,18 +18,10 @@ const expandHome = (p: string): string =>
   p.startsWith("~/") ? resolve(homedir(), p.slice(2)) : resolve(p)
 
 const withStorageDefaults = (decoded: AppConfig): RuntimeConfig => {
-  const smb = decoded.storage?.smb
-    ? {
-        ...decoded.storage.smb,
-        path: decoded.storage.smb.path ?? "",
-      }
-    : null
-
   return {
     ...decoded,
     storage: {
-      mode: decoded.storage?.mode ?? "local",
-      smb,
+      root: decoded.storage?.root ? expandHome(decoded.storage.root) : null,
     },
   }
 }
