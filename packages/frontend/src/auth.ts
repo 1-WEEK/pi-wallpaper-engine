@@ -15,6 +15,36 @@ export const fetchSession = async (): Promise<Session | null> => {
 export interface SetupState {
   enabled: boolean
   setup_complete: boolean
+  max_passkeys?: number
+}
+
+export interface PasskeyRecord {
+  id: string
+  name?: string | null
+  createdAt: string
+  deviceType?: string | null
+  backedUp?: boolean
+}
+
+export const listPasskeys = async (): Promise<PasskeyRecord[]> => {
+  const res = await fetch("/api/auth/passkey/list-user-passkeys")
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`)
+  }
+  return (await res.json()) as PasskeyRecord[]
+}
+
+export const deletePasskey = async (id: string): Promise<void> => {
+  const res = await fetch("/api/auth/passkey/delete-passkey", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`)
+  }
 }
 
 export const fetchSetupState = async (): Promise<SetupState> => {

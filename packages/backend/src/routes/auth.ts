@@ -8,6 +8,7 @@ export const authRoutes = (auth: AuthService) =>
     .get("/setup-state", () => ({
       enabled: true,
       setup_complete: auth.handle.isSetupComplete(),
+      max_passkeys: auth.maxPasskeys,
     }))
     .all("/*", async ({ request }) => {
       const response = await auth.instance.handler(request)
