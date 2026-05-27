@@ -11,6 +11,8 @@ import { downloadRoutes } from "./routes/download.js"
 import { displayRoutes } from "./routes/display.js"
 import { storageRoutes } from "./routes/storage.js"
 import { systemRoutes } from "./routes/system.js"
+import { authRoutes } from "./routes/auth.js"
+import { createAuth, type AuthService } from "./services/Auth.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -35,6 +37,17 @@ try {
   process.exit(1)
 }
 
+let auth: AuthService | null = null
+if (config.auth?.enabled) {
+  try {
+    auth = await createAuth(config.auth)
+  } catch (e) {
+    console.error("✗ Failed to initialize auth:", e instanceof Error ? e.message : String(e))
+    await runtime.dispose()
+    process.exit(1)
+  }
+}
+
 const app = new Elysia()
   .onError(({ code, error, request, set }) => {
     if (code === "NOT_FOUND") {
@@ -56,6 +69,14 @@ const app = new Elysia()
     return { error: error instanceof Error ? error.message : String(error) }
   })
   .get("/api/health", () => ({ ok: true, version: "0.1.0" }))
+
+if (auth) {
+  app.use(authRoutes(auth))
+} else {
+  app.get("/api/auth/setup-state", () => ({ enabled: false, setup_complete: false }))
+}
+
+app
   .use(workshopRoutes(runtime))
   .use(libraryRoutes(runtime))
   .use(playerRoutes(runtime))
@@ -82,10 +103,16 @@ console.log(`▶ pi-wallpaper-engine listening on http://${config.server.host}:$
 console.log(`  Config: ${CONFIG_PATH}`)
 console.log(`  Data root: ${config.paths.data_root}`)
 console.log(`  Media root: ${config.storage.root ?? config.paths.data_root}`)
+if (auth) {
+  console.log(`  Auth: enabled (db ${auth.path}, setup ${auth.handle.isSetupComplete() ? "complete" : "pending"})`)
+} else {
+  console.log("  Auth: disabled (config.auth.enabled is false or absent)")
+}
 
 const shutdown = async (signal: string) => {
   console.log(`\n${signal} received, shutting down...`)
   await server.stop()
+  if (auth) auth.dispose()
   await runtime.dispose()
   process.exit(0)
 }
