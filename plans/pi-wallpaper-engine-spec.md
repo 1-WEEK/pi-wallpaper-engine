@@ -1,8 +1,8 @@
 # Pi Wallpaper Engine — Current Project Spec (v4)
 
-> Updated: 2026-05-24. This supersedes the old v3 assumption that NAS
+> Updated: 2026-05-27. This supersedes the old v3 assumption that NAS
 > transcoding is required for the mainline product. The current implementation
-> is a Phase 1 direct-play player with optional managed SMB storage. Phase 2
+> is a Phase 1 direct-play player with support for custom directory storage migration. Phase 2
 > transcoding remains reserved but is not wired.
 
 ## Product Goal
@@ -16,7 +16,7 @@ Current baseline:
 - Video wallpapers only. `project.json.type !== "video"` fails fast during
   download finalization and the partial `source/<id>/` directory is cleaned up.
 - Source files are played directly by mpv. No transcoding runs in Phase 1.
-- Storage can be local SD/SSD or one SMB share managed by the app.
+- Storage can be the default local path or a custom directory path chosen by the user.
 - The SQLite state DB is always local and never follows media storage.
 - Application-layer auth is not implemented yet.
 
@@ -31,7 +31,7 @@ Current baseline:
 | Frontend | Vite + React, dev port 5173 |
 | Player | mpv spawned by backend, JSON IPC over Unix socket |
 | Download | Valve SteamCMD tarball through box86 wrapper at `/usr/local/bin/steamcmd` |
-| Storage | local `paths.data_root` or app-managed SMB share |
+| Storage | default `paths.data_root` or custom absolute path `storage.root` |
 | State DB | `~/.local/state/pi-wallpaper-engine/pi-wallpaper-engine.db` |
 
 Do not use Debian's `steamcmd:i386` package on Trixie aarch64. The installer
@@ -49,7 +49,6 @@ pi-wallpaper-engine/
 ├── packages/worker     # Phase 2 placeholder only
 ├── docs                # operator docs
 ├── plans               # design records and implementation plans
-├── scripts             # privileged SMB helper source
 └── install-pi.sh       # Pi installer and preflight driver
 ```
 
@@ -65,7 +64,7 @@ Browser
        ├─ WallpaperFile + ffprobe: resolve project.json and video metadata
        ├─ Library: relative media paths in SQLite
        ├─ DownloadTasks: SQLite-backed task progress and startup reconcile
-       ├─ Storage: local root or one SMB root, 30s reconcile loop
+       ├─ Storage: default local root or custom directory root
        ├─ Migrate: background rsync media moves between roots
        ├─ Mpv: backend-owned mpv process + queued IPC commands
        ├─ Display: optional argv-based display power commands
@@ -92,41 +91,26 @@ optimized/<workshopId>.mp4
 
 At runtime every consumer resolves through `Storage.mediaRoot()`.
 
-Local mode:
+Default mode (`storage.root` is null):
 
 ```text
 paths.data_root/source
 paths.data_root/optimized
 ```
 
-SMB mode:
+Custom directory mode (`storage.root` is a string):
 
 ```text
-/run/pwe/mounts/smb/<smb.path>/source
-/run/pwe/mounts/smb/<smb.path>/optimized
+<storage.root>/source
+<storage.root>/optimized
 ```
 
-`storage.smb.path` is a relative media directory inside the share. Empty path is
-allowed for compatibility with share-root storage, but the UI defaults new
-configs to `pi-wallpaper-engine`.
-
-The SMB share root must contain:
-
-```text
-.pwe-mounted-root
-```
-
-The backend mounts through `/usr/local/lib/pwe-storage-helper` via sudoers
-NOPASSWD. Backend code never calls `mount` directly. SMB credentials are stored
-with `Bun.secrets`, not in `config.json`.
-
-Switching storage mode with a non-empty library starts a background migration:
+Switching the storage root with a non-empty library starts a background migration:
 
 1. Copy every media directory (`source/`, `optimized/`) to the target root.
 2. Verify every directory with rsync dry-run.
-3. Persist the target `storage.mode`.
+3. Persist the target `storage.root`.
 4. Delete the old source directories.
-5. For NAS→local, unmount SMB only after remote cleanup.
 
 Downloads are blocked while migration runs. Migration is rejected if mpv is
 currently playing from the source root.
@@ -148,8 +132,7 @@ currently playing from the source root.
     "optimized_dir": "optimized"
   },
   "storage": {
-    "mode": "local",
-    "smb": null
+    "root": null
   },
   "screen": {
     "width": 1200,
@@ -214,8 +197,11 @@ POST /api/display/off
 GET  /api/display/status
 
 GET  /api/storage
-PUT  /api/storage
 POST /api/storage/cancel
+GET  /api/storage/locations
+GET  /api/storage/directories
+POST /api/storage/validate-target
+POST /api/storage/root
 
 GET  /api/system/summary
 ```
@@ -290,8 +276,7 @@ Current pages:
   play/delete/display-mode controls.
 - Downloads: active/finished task rows, structured progress, elapsed time,
   mature-item hiding, dismiss controls.
-- Settings: Steam/config summary, display/mpv status, declarative local/SMB
-  storage card, migration progress and cancellation.
+- Settings: Steam/config summary, display/mpv status, custom directory storage picker, migration progress and cancellation.
 
 The frontend uses plain CSS in `packages/frontend/src/styles.css`. Do not add
 Tailwind, CSS Modules, or component-local hardcoded color systems.
@@ -331,7 +316,7 @@ port availability, and mpv hardware decode when a graphical session is present.
 | Phase | Current status |
 |---|---|
 | Phase 1: direct-play player | Active and usable |
-| Phase 1 storage productization | Implemented: declarative SMB + migration |
+| Phase 1 storage productization | Implemented: custom directory picker + migration |
 | Phase 2: NAS transcoding Worker | Reserved only: schemas/table/service draft exist, routes/worker not implemented |
 | Auth/passkey | Planned only in `plans/auth-passkey-betterauth.md` |
 | Player/display linkage | Implemented; needs Pi manual validation |
@@ -343,8 +328,7 @@ port availability, and mpv hardware decode when a graphical session is present.
 - Do not make `POST /api/download/:id` wait synchronously for SteamCMD.
 - Do not store absolute media paths in SQLite library rows.
 - Do not read `config.paths.data_root` directly when resolving playable media.
-- Do not mount SMB from backend code except through the storage helper.
-- Do not add `RequiresMountsFor=` to the service; SMB is optional.
+- Do not re-introduce SMB-specific or mount-specific logic into the application layer.
 - Do not delete `transcode_jobs`, `WorkerProtocol`, or `TranscodeQueueLive`.
 - Do not document passkey/auth as implemented until code, config schema, and
   route guards actually exist.

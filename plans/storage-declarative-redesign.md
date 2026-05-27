@@ -1,8 +1,10 @@
 # Plan — Storage 声明式重设计 + 双向迁移
 
-> 状态：已实施并提交到 `main`（`4321441` + `cb2fc36`）。本文前半部分保留设计推理，
-> “实施结果(2026-05-23)”记录实际落地。当前用户文档以 `README.md` 和
-> `docs/optional-nas.md` 为准。
+> **STATUS: DEPRECATED (2026-05-27)**
+> This SMB-specific design has been replaced by the simpler, safer "Directory Picker" custom absolute path model. All SMB-specific mount logic and configuration was removed from the codebase.
+> 
+> 状态：已实施并提交到 `main`（`4321441` + `cb2fc36`），但随后被弃用。本文前半部分保留设计推理，
+> “实施结果(2026-05-23)”记录实际落地。当前用户文档以 `README.md` 为准，不再支持 `optional-nas.md`。
 
 ## 背景
 
