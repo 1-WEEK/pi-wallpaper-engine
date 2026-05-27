@@ -13,6 +13,8 @@ import { storageRoutes } from "./routes/storage.js"
 import { systemRoutes } from "./routes/system.js"
 import { authRoutes } from "./routes/auth.js"
 import { createAuth, type AuthService } from "./services/Auth.js"
+import { originGuard } from "./middleware/originGuard.js"
+import { sessionGuard } from "./middleware/sessionGuard.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -70,8 +72,10 @@ const app = new Elysia()
   })
   .get("/api/health", () => ({ ok: true, version: "0.1.0" }))
 
-if (auth) {
+if (auth && config.auth) {
+  app.use(originGuard(config.auth))
   app.use(authRoutes(auth))
+  app.use(sessionGuard(auth))
 } else {
   app.get("/api/auth/setup-state", () => ({ enabled: false, setup_complete: false }))
 }
@@ -80,7 +84,7 @@ app
   .use(workshopRoutes(runtime))
   .use(libraryRoutes(runtime))
   .use(playerRoutes(runtime))
-  .use(downloadRoutes(runtime))
+  .use(downloadRoutes(runtime, auth))
   .use(displayRoutes(runtime))
   .use(storageRoutes(runtime))
   .use(systemRoutes(runtime))
