@@ -27,8 +27,10 @@
       "name": "@pwe/frontend",
       "version": "0.1.0",
       "dependencies": {
+        "@better-auth/passkey": "^1.6.11",
         "@pwe/shared": "workspace:*",
         "@radix-ui/react-dialog": "^1.1.15",
+        "better-auth": "^1.6.11",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "swr": "^2.4.1",
