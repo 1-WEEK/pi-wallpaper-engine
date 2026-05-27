@@ -8,7 +8,8 @@
     "start": "bun src/index.ts",
     "check": "bun src/preflight.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "auth:reset": "bun scripts/auth-reset.ts"
   },
   "dependencies": {
     "@better-auth/passkey": "^1.6.11",

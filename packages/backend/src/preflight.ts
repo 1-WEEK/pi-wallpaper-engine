@@ -303,6 +303,43 @@ if (config) {
   }
 }
 
+// 12b. Auth env vars (only when auth.enabled)
+if (config?.auth?.enabled) {
+  const secretEnv = config.auth.secret_env ?? "PWE_AUTH_SECRET"
+  const setupTokenEnv = config.auth.setup_token_env ?? "PWE_AUTH_SETUP_TOKEN"
+  const secret = process.env[secretEnv]
+  if (!secret || secret.length < 16) {
+    fail(
+      `auth env ${secretEnv}`,
+      "Missing or shorter than 16 characters",
+      `export ${secretEnv}="$(openssl rand -hex 32)" before starting the server`
+    )
+  } else {
+    pass(`auth env ${secretEnv}`, "set")
+  }
+
+  const authDbPath = resolve(resolveStateRoot(), "auth.db")
+  if (!existsSync(authDbPath)) {
+    const tokenValue = process.env[setupTokenEnv]
+    if (!tokenValue || tokenValue.length < 8) {
+      fail(
+        `auth env ${setupTokenEnv}`,
+        "First-run setup not done and setup token missing",
+        `export ${setupTokenEnv}="$(openssl rand -hex 16)" then open the dev URL to register the first passkey`
+      )
+    } else {
+      pass(`auth env ${setupTokenEnv}`, "set; first-run setup pending")
+    }
+  } else {
+    pass("auth.db", `present at ${authDbPath}`)
+  }
+} else if (config && config.auth === undefined) {
+  warn(
+    "auth",
+    "config.auth is absent — backend will boot in legacy open mode. Set auth.enabled=true to protect business APIs."
+  )
+}
+
 // 13. mpv hardware decode — requires DISPLAY; downgrade to warn if headless
 if (config && process.env["DISPLAY"] === undefined && process.env["WAYLAND_DISPLAY"] === undefined) {
   warn("mpv hwdec check", "No DISPLAY/WAYLAND_DISPLAY — skipped (run from a graphical session)")

@@ -15,6 +15,7 @@ import { authRoutes } from "./routes/auth.js"
 import { createAuth, type AuthService } from "./services/Auth.js"
 import { originGuard } from "./middleware/originGuard.js"
 import { sessionGuard } from "./middleware/sessionGuard.js"
+import { authRateLimit } from "./middleware/authRateLimit.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -74,6 +75,7 @@ const app = new Elysia()
 
 if (auth && config.auth) {
   app.use(originGuard(config.auth))
+  app.use(authRateLimit())
   app.use(authRoutes(auth))
   app.use(sessionGuard(auth))
 } else {
