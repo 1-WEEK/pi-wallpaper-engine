@@ -50,7 +50,7 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 - **存储是目录模型**：`storage` config 只保留 `{ root?: string | null }`。`null` 表示使用 `paths.data_root`，非空表示当前媒体目录。Settings 通过目录浏览器选择 Pi 上可访问的目录，辅助接口是 `GET /api/storage/locations`、`GET /api/storage/directories?path=...`、`POST /api/storage/directories`、`POST /api/storage/validate-target`、`POST /api/storage/root`、`POST /api/storage/cancel`。目录浏览必须限制在允许根目录内，拒绝越界、symlink 逃逸、控制字符和相对路径。
 - **SQLite 状态库始终本地**：在 `~/.local/state/pi-wallpaper-engine/`（`statePath.ts`），与媒体根解耦，不随 `storage.root` 变。旧版库存在 `data_root` 下，`DbLive` 启动时做一次性 best-effort 迁移。
 - **切换媒体目录 = 后台迁移**：library 非空时，`POST /api/storage/root` 会触发 `Migrate.start(targetRoot)`，后台用 rsync 移动 `source/`、`optimized/`。顺序是先复制、再全量校验、持久化新的 `storage.root`，最后删除旧源。202 返回，前端轮询 `GET /api/storage` 的 `migration` 字段拿进度；迁移中下载被挡，播放中切换返回 409。
-- **应用层鉴权尚未实现**：`plans/auth-passkey-betterauth.md` 是已收敛方案，不是当前代码事实。现在除外部网络边界外，业务 API 仍未校验用户 session；不要在文档或 UI 里暗示已有 passkey/auth。
+- **鉴权可选、默认关闭**：Better Auth + Passkey 已实装（见 `docs/auth.md`），`config.auth.enabled=false` 时业务 API 不校验 session，LAN-only 部署可以这样跑。公网暴露（Cloudflare Tunnel 等）必须 `enabled=true`：originGuard 校验 `trusted_origins`，sessionGuard 给 `/api/*` 加 401 闸（公开例外是 `/api/health` 和 `/api/auth/*`），WebSocket 也走 session。Setup 完成状态从 "至少存在一个 passkey" 派生，不是单独 flag——sign-up 中断不会永久 lockout；忘 passkey 走 `bun run --filter @pwe/backend auth:reset -- --yes` 重置 auth.db。
 - **`Effect.gen` 内 JS `try/catch/finally` 抓不到 Effect 失败**：失败的 `yield*` 会短路，`catch`/`finally` 都不执行。错误恢复用 `Effect.catchAll`/`tapError`，清理用 `Effect.ensuring`。
 
 ## Pi/SteamCMD 特殊性
