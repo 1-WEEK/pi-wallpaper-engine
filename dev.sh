@@ -10,8 +10,9 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-if [ ! -f config.json ]; then
-  echo "✗ config.json not found. Run ./install-pi.sh first." >&2
+CONFIG_PATH="${PWE_CONFIG:-$HOME/.config/pi-wallpaper-engine/config.json}"
+if [ ! -f "$CONFIG_PATH" ]; then
+  echo "✗ config.json not found at $CONFIG_PATH. Run ./install-pi.sh first." >&2
   exit 1
 fi
 
@@ -35,7 +36,7 @@ BACKEND_PID=$!
 bun run --filter @pwe/frontend dev 2>&1 | sed -u 's/^/[frontend] /' &
 FRONTEND_PID=$!
 
-PORT="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).server.port)")"
+PORT="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('$CONFIG_PATH','utf-8')).server.port)")"
 PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
 cat <<EOF

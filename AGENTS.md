@@ -84,7 +84,7 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 
 ## 配置文件
 
-`config.json` 是用户实际配置（gitignored，含 API key）；`config.example.json` 是模板。schema 在 `packages/shared/src/schema/Config.ts`，启动时 Effect Schema 校验，缺字段 fail-fast。`paths.data_root` 是默认媒体目录；若设置 `storage.root`，运行时改用该目录作为当前媒体根。
+`~/.config/pi-wallpaper-engine/config.json` 是用户实际配置（含 API key）；`config.example.json` 是模板。schema 在 `packages/shared/src/schema/Config.ts`，启动时 Effect Schema 校验，缺字段 fail-fast。`paths.data_root` 是默认媒体目录；若设置 `storage.root`，运行时改用该目录作为当前媒体根。可通过 `PWE_CONFIG` 环境变量覆盖配置路径。
 
 ## 不要做的事
 
