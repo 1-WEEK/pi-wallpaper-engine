@@ -145,9 +145,23 @@ export interface SystemSummary {
   }
 }
 
+const AUTH_EVENT = "pwe-auth-changed"
+
+export const dispatchAuthChange = () => {
+  window.dispatchEvent(new Event(AUTH_EVENT))
+}
+
+export const onAuthChange = (handler: () => void): (() => void) => {
+  window.addEventListener(AUTH_EVENT, handler)
+  return () => window.removeEventListener(AUTH_EVENT, handler)
+}
+
 const json = async <T>(res: Response): Promise<T> => {
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
+    if (res.status === 401) {
+      dispatchAuthChange()
+    }
     throw new Error(body.error ?? `HTTP ${res.status}`)
   }
   return res.json() as Promise<T>

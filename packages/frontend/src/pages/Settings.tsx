@@ -4,10 +4,132 @@ import useSWR from "swr"
 import { api, type StorageStatus, type StorageTargetValidation, type SystemSummary } from "../api.js"
 import { DirectoryPickerDialog } from "../components/DirectoryPickerDialog.js"
 import { appIcons } from "../icons.js"
+import {
+  deletePasskey,
+  fetchSetupState,
+  listPasskeys,
+  registerPasskey,
+  signOut,
+  type PasskeyRecord,
+} from "../auth.js"
+import { dispatchAuthChange } from "../api.js"
 
 interface Props {
   summary: SystemSummary | null
   onRefresh: () => void
+}
+
+const formatPasskeyDate = (value: string): string => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+const PasskeySection = () => {
+  const { data: setupState } = useSWR("auth-setup-state", fetchSetupState)
+  const {
+    data: passkeys,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<PasskeyRecord[]>(setupState?.enabled ? "auth-passkeys" : null, listPasskeys)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  if (!setupState?.enabled) return null
+
+  const maxKeys = setupState.max_passkeys ?? 3
+  const count = passkeys?.length ?? 0
+  const atLimit = count >= maxKeys
+
+  const onAdd = async () => {
+    setBusy("add")
+    setActionError(null)
+    try {
+      await registerPasskey(`Passkey ${count + 1}`)
+      await mutate()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const onDelete = async (id: string) => {
+    setBusy(id)
+    setActionError(null)
+    try {
+      await deletePasskey(id)
+      await mutate()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section className="settings-group">
+      <h2 className="settings-group-title mono">Passkeys</h2>
+      <SettingRow
+        label="status"
+        value={
+          <span className="setting-value-subtle">
+            {count} of {maxKeys} registered
+          </span>
+        }
+      />
+      {isLoading && <SettingRow label="loading" value={<span className="setting-value-subtle">…</span>} />}
+      {error && <SettingRow label="error" value={<StatusDot tone="off">{String(error.message ?? error)}</StatusDot>} />}
+      {passkeys?.map((pk) => (
+        <SettingRow
+          key={pk.id}
+          label={pk.name || "Unnamed"}
+          value={
+            <div className="storage-root-value">
+              <span className="setting-value-subtle">{formatPasskeyDate(pk.createdAt)}</span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => void onDelete(pk.id)}
+                disabled={busy !== null || count <= 1}
+                title={count <= 1 ? "Cannot remove your last passkey" : undefined}
+              >
+                {busy === pk.id ? "Removing…" : "Remove"}
+              </button>
+            </div>
+          }
+        />
+      ))}
+      <div className="settings-actions">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => void onAdd()}
+          disabled={busy !== null || atLimit}
+        >
+          {busy === "add" ? "Waiting for passkey…" : atLimit ? `Limit reached (${maxKeys})` : "Add passkey"}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={async () => {
+            setBusy("signout")
+            try {
+              await signOut()
+              dispatchAuthChange()
+            } finally {
+              setBusy(null)
+            }
+          }}
+          disabled={busy !== null}
+        >
+          {busy === "signout" ? "Signing out…" : "Sign out"}
+        </button>
+      </div>
+      {actionError && <div className="error-banner">{actionError}</div>}
+    </section>
+  )
 }
 
 const formatBytes = (bytes: number | null): string => {
@@ -327,6 +449,8 @@ export const Settings = ({ summary, onRefresh }: Props) => {
             </div>
           )}
         </section>
+
+        <PasskeySection />
       </div>
 
       <div className="callout">
