@@ -2,6 +2,7 @@ import { Elysia } from "elysia"
 import staticPlugin from "@elysiajs/static"
 import { existsSync } from "node:fs"
 import { resolve, dirname } from "node:path"
+import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { makeRuntime, getConfig } from "./runtime.js"
 import { workshopRoutes } from "./routes/workshop.js"
@@ -20,12 +21,14 @@ import { authRateLimit } from "./middleware/authRateLimit.js"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const PROJECT_ROOT = resolve(__dirname, "../../..")
-const CONFIG_PATH = process.env["PWE_CONFIG"] ?? resolve(PROJECT_ROOT, "config.json")
+const CONFIG_DIR = resolve(homedir(), ".config/pi-wallpaper-engine")
+const DEFAULT_CONFIG_PATH = resolve(CONFIG_DIR, "config.json")
+const CONFIG_PATH = process.env["PWE_CONFIG"] ?? DEFAULT_CONFIG_PATH
 const FRONTEND_DIST = resolve(PROJECT_ROOT, "packages/frontend/dist")
 
 if (!existsSync(CONFIG_PATH)) {
   console.error(`✗ Config not found: ${CONFIG_PATH}`)
-  console.error("  Run install-pi.sh, or copy config.example.json to config.json and edit it.")
+  console.error("  Run install-pi.sh, or copy config.example.json to ~/.config/pi-wallpaper-engine/config.json and edit it.")
   process.exit(1)
 }
 
