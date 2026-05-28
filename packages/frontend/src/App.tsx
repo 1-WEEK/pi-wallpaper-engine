@@ -1,14 +1,17 @@
-import { useRef } from "react"
+import { useEffect, useRef } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { Link, Redirect, Route, Switch, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
-import { SWRConfig } from "swr"
-import { api } from "./api.js"
+import { SWRConfig, useSWRConfig } from "swr"
+import { api, onAuthChange } from "./api.js"
 import type { SystemSummary } from "./api.js"
+import { fetchSession, fetchSetupState } from "./auth.js"
 import { appIcons } from "./icons.js"
 import { Browse } from "./pages/Browse.js"
 import { Downloads } from "./pages/Downloads.js"
 import { Library } from "./pages/Library.js"
+import { Login } from "./pages/Login.js"
+import { Setup } from "./pages/Setup.js"
 import { Settings } from "./pages/Settings.js"
 import { PlayerBar } from "./components/PlayerBar.js"
 import {
@@ -284,6 +287,77 @@ const AppShell = () => {
   )
 }
 
+const AuthGate = () => {
+  const { mutate } = useSWRConfig()
+  const {
+    data: setupState,
+    isLoading: setupLoading,
+    error: setupError,
+    mutate: refetchSetup,
+  } = useSWR("auth-setup-state", fetchSetupState)
+  const { data: session, isLoading: sessionLoading, mutate: refetchSession } = useSWR(
+    setupState?.enabled ? "auth-session" : null,
+    fetchSession
+  )
+
+  useEffect(() => {
+    const off = onAuthChange(() => {
+      void refetchSession()
+      void refetchSetup()
+      // Trigger an immediate revalidation on every non-auth cache key. We pass
+      // no data argument so SWR keeps the old (often errored) value visible
+      // until the new fetch returns — the alternative,
+      // `mutate(..., undefined, { revalidate: false })`, wipes the cache to
+      // `undefined` and then nothing refetches because the previous fetch
+      // sits inside the 60s dedup window and blocks the 5s refreshInterval
+      // tick, leaving PlayerBar stuck on "Connecting to Pi…" until the user
+      // reloads.
+      void mutate((key) => typeof key === "string" && !key.startsWith("auth-"))
+    })
+    return off
+  }, [mutate, refetchSession, refetchSetup])
+
+  if (setupLoading || (setupState?.enabled && sessionLoading)) {
+    return <div className="auth-shell" />
+  }
+
+  // Fail closed: distinguish a true backend failure (setupError set) from a
+  // transient undefined cache during refetch. Only the former should escalate
+  // to the error UI.
+  if (setupError) {
+    return (
+      <div className="auth-shell auth-shell-error">
+        <h1>Backend unreachable</h1>
+        <p>
+          Could not load authentication state from <code>/api/auth/setup-state</code>.
+          Check that the backend is running and the dev proxy points to the right port.
+        </p>
+        <button type="button" onClick={() => void refetchSetup()}>
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  if (!setupState) {
+    return <div className="auth-shell" />
+  }
+
+  if (!setupState.enabled) {
+    return <AppShell />
+  }
+
+  if (!setupState.setup_complete) {
+    return <Setup />
+  }
+
+  if (!session) {
+    return <Login />
+  }
+
+  return <AppShell />
+}
+
 export const App = () => (
   <SWRConfig
     value={{
@@ -293,6 +367,6 @@ export const App = () => (
       shouldRetryOnError: false,
     }}
   >
-    <AppShell />
+    <AuthGate />
   </SWRConfig>
 )

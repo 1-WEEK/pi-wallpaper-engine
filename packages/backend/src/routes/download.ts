@@ -17,6 +17,7 @@ import { decideTranscode } from "../transcode/decide.js"
 import { ffprobe } from "../transcode/ffprobe.js"
 import { resolveWallpaperFiles, toRelative } from "../services/WallpaperFile.js"
 import type { AppRuntime } from "../runtime.js"
+import type { AuthService } from "../services/Auth.js"
 
 const WE_APPID = "431960"
 
@@ -25,7 +26,7 @@ type ProgressEvent =
   | { readonly workshopId: string; readonly stage: "error"; readonly message: string }
   | { readonly workshopId: string; readonly stage: "complete"; readonly message: string }
 
-export const downloadRoutes = (runtime: AppRuntime) => {
+export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = null) => {
   const wsPubsubPromise = runtime.runPromise(PubSub.unbounded<ProgressEvent>())
 
   return new Elysia({ prefix: "/api/download" })
@@ -285,6 +286,24 @@ export const downloadRoutes = (runtime: AppRuntime) => {
 
     .ws("/progress/:workshopId", {
       open: async (ws) => {
+        if (auth) {
+          const headers = new Headers()
+          const cookieHeader = (ws.data as { headers?: Record<string, string | undefined> }).headers
+            ?.cookie
+          if (cookieHeader) headers.set("cookie", cookieHeader)
+          const session = await auth.instance.api
+            .getSession({ headers })
+            .catch(() => null)
+          if (!session) {
+            try {
+              ws.send(JSON.stringify({ stage: "error", message: "Authentication required" }))
+            } catch {
+              // ignore
+            }
+            ws.close()
+            return
+          }
+        }
         const pubsub = await wsPubsubPromise
         const workshopId = (ws.data.params as { workshopId: string }).workshopId
         const stream = Stream.fromPubSub(pubsub).pipe(
