@@ -11,7 +11,7 @@ import { downloadRoutes } from "./routes/download.js"
 import { displayRoutes } from "./routes/display.js"
 import { storageRoutes } from "./routes/storage.js"
 import { systemRoutes } from "./routes/system.js"
-import { authRoutes } from "./routes/auth.js"
+import { buildAuthHandler } from "./routes/auth.js"
 import { createAuth, type AuthService } from "./services/Auth.js"
 import { originGuard } from "./middleware/originGuard.js"
 import { sessionGuard } from "./middleware/sessionGuard.js"
@@ -76,7 +76,19 @@ const app = new Elysia()
 if (auth && config.auth) {
   app.use(originGuard(config.auth))
   app.use(authRateLimit())
-  app.use(authRoutes(auth))
+  // Bind the Better Auth handler under /api/auth/*. The `.all()` line catches
+  // every HTTP method via memoirist's ALL-trie fallback. The explicit `.get()`
+  // is needed only because `staticPlugin({ prefix: "/" })` registers a GET
+  // catch-all (`/*`) further down — memoirist looks up routes per-method, so
+  // for GET it finds the static plugin's wildcard first and never falls back
+  // to the ALL trie. A same-method, more-specific GET route here wins the
+  // per-method match and pre-empts the shadowing. Other methods (POST/PUT/
+  // DELETE/PATCH/OPTIONS/HEAD) are not registered by staticPlugin, so their
+  // tries miss and Elysia falls back to ALL cleanly.
+  const authHandler = buildAuthHandler(auth, config.auth)
+  const forward = ({ request }: { request: Request }) => authHandler(request)
+  app.get("/api/auth/*", forward)
+  app.all("/api/auth/*", forward)
   app.use(sessionGuard(auth))
 } else {
   app.get("/api/auth/setup-state", () => ({ enabled: false, setup_complete: false }))
@@ -110,7 +122,7 @@ console.log(`  Config: ${CONFIG_PATH}`)
 console.log(`  Data root: ${config.paths.data_root}`)
 console.log(`  Media root: ${config.storage.root ?? config.paths.data_root}`)
 if (auth) {
-  console.log(`  Auth: enabled (db ${auth.path}, setup ${auth.handle.isSetupComplete() ? "complete" : "pending"})`)
+  console.log(`  Auth: enabled (db ${auth.path}, setup ${auth.handle.hasAnyPasskey() ? "complete" : "pending"})`)
 } else {
   console.log("  Auth: disabled (config.auth.enabled is false or absent)")
 }
