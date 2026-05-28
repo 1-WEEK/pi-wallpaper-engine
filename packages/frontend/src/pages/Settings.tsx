@@ -9,8 +9,10 @@ import {
   fetchSetupState,
   listPasskeys,
   registerPasskey,
+  signOut,
   type PasskeyRecord,
 } from "../auth.js"
+import { dispatchAuthChange } from "../api.js"
 
 interface Props {
   summary: SystemSummary | null
@@ -107,6 +109,22 @@ const PasskeySection = () => {
           disabled={busy !== null || atLimit}
         >
           {busy === "add" ? "Waiting for passkey…" : atLimit ? `Limit reached (${maxKeys})` : "Add passkey"}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={async () => {
+            setBusy("signout")
+            try {
+              await signOut()
+              dispatchAuthChange()
+            } finally {
+              setBusy(null)
+            }
+          }}
+          disabled={busy !== null}
+        >
+          {busy === "signout" ? "Signing out…" : "Sign out"}
         </button>
       </div>
       {actionError && <div className="error-banner">{actionError}</div>}
