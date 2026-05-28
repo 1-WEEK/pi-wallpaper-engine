@@ -16,7 +16,39 @@ export interface AuthService {
   readonly dispose: () => void
 }
 
+const validateAuthConfig = (config: AuthConfig): void => {
+  let baseUrl: URL
+  try {
+    baseUrl = new URL(config.base_url)
+  } catch {
+    throw new Error(`auth.base_url is not a valid URL: ${config.base_url}`)
+  }
+  if (config.rp_id !== baseUrl.host) {
+    throw new Error(
+      `auth.rp_id (${config.rp_id}) must equal the host of base_url (${baseUrl.host}). ` +
+        `WebAuthn binds passkeys to rp_id; a mismatch causes login to fail with an opaque error.`
+    )
+  }
+  const trustedOrigins = config.trusted_origins
+    .map((o) => {
+      try {
+        return new URL(o).origin
+      } catch {
+        return null
+      }
+    })
+    .filter((o): o is string => o !== null)
+  if (!trustedOrigins.includes(baseUrl.origin)) {
+    throw new Error(
+      `auth.trusted_origins must include base_url's origin (${baseUrl.origin}). ` +
+        `Got: [${trustedOrigins.join(", ")}]`
+    )
+  }
+}
+
 export const createAuth = async (config: AuthConfig): Promise<AuthService> => {
+  validateAuthConfig(config)
+
   const secretEnv = config.secret_env ?? "PWE_AUTH_SECRET"
   const secret = process.env[secretEnv]
   if (!secret || secret.length < 16) {
@@ -33,13 +65,6 @@ export const createAuth = async (config: AuthConfig): Promise<AuthService> => {
   // Captured after betterAuth() returns; safe to use inside hooks which fire
   // at request time, after init has completed.
   let instanceRef: ReturnType<typeof betterAuth> | null = null
-
-  const countUserPasskeys = (userId: string): number => {
-    const row = handle.db
-      .prepare<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM passkey WHERE userId = ?")
-      .get(userId)
-    return row?.n ?? 0
-  }
 
   const options: BetterAuthOptions = {
     database: handle.db,
@@ -70,8 +95,23 @@ export const createAuth = async (config: AuthConfig): Promise<AuthService> => {
     ],
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        // Email/password sign-in is never the right path here. emailAndPassword
+        // is enabled only so Better Auth can create the initial admin user
+        // during /sign-up/email (which is gated by the setup token). After
+        // that, the admin is meant to use passkeys exclusively. Refuse any
+        // email/password sign-in attempt explicitly rather than leaving the
+        // endpoint silently 401-ing against an unguessable random password.
+        if (ctx.path === "/sign-in/email") {
+          throw new APIError("FORBIDDEN", {
+            message: "Email/password sign-in is disabled. Use a passkey.",
+          })
+        }
+
         if (ctx.path === "/sign-up/email") {
-          if (handle.isSetupComplete()) {
+          // Setup is "complete" iff a passkey already exists. A bare user
+          // without passkeys is treated as an abandoned setup and cleaned up
+          // below, so the admin can retry without ssh+auth-reset.
+          if (handle.hasAnyPasskey()) {
             throw new APIError("FORBIDDEN", { message: "Setup is already complete." })
           }
           const expected = process.env[setupTokenEnv]
@@ -84,6 +124,13 @@ export const createAuth = async (config: AuthConfig): Promise<AuthService> => {
           if (provided !== expected) {
             throw new APIError("FORBIDDEN", { message: "Invalid setup token." })
           }
+          // Token valid, no passkey yet. Delete any orphan user records left
+          // from a prior abandoned attempt; otherwise Better Auth would reject
+          // this sign-up with "email already exists" and the admin would be
+          // locked out without DB-level recovery.
+          for (const orphanId of handle.listOrphanUserIds()) {
+            handle.deleteUser(orphanId)
+          }
           return
         }
 
@@ -93,7 +140,7 @@ export const createAuth = async (config: AuthConfig): Promise<AuthService> => {
             .getSession({ headers: ctx.request?.headers ?? new Headers() })
             .catch(() => null)
           if (!session) return
-          if (countUserPasskeys(session.user.id) >= maxPasskeys) {
+          if (handle.countUserPasskeys(session.user.id) >= maxPasskeys) {
             throw new APIError("FORBIDDEN", {
               message: `Passkey limit reached (${maxPasskeys}). Remove an existing passkey first.`,
             })
@@ -107,7 +154,7 @@ export const createAuth = async (config: AuthConfig): Promise<AuthService> => {
             .getSession({ headers: ctx.request?.headers ?? new Headers() })
             .catch(() => null)
           if (!session) return
-          if (countUserPasskeys(session.user.id) <= 1) {
+          if (handle.countUserPasskeys(session.user.id) <= 1) {
             throw new APIError("FORBIDDEN", {
               message:
                 "Cannot delete your last passkey — you would be locked out. Register a second passkey first.",

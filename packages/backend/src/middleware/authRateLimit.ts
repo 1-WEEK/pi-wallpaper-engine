@@ -31,11 +31,21 @@ const RULES: ReadonlyArray<Rule> = [
 const HISTORY_CAP = 1024
 const SWEEP_INTERVAL_MS = 5 * 60_000
 
-const clientKey = (request: Request): string => {
+// Identify the client for rate-limiting. Through Cloudflare Tunnel the
+// connector sets cf-connecting-ip; behind a reverse proxy x-forwarded-for is
+// set. For LAN-direct connections neither header exists — fall back to the
+// remote peer address from Bun's Server (the parameter is optional because
+// the Server reference isn't always available, e.g. in tests).
+const clientKey = (
+  request: Request,
+  server: { requestIP: (r: Request) => { address: string } | null } | null
+): string => {
   const forwarded = request.headers.get("x-forwarded-for")
   if (forwarded) return forwarded.split(",")[0]!.trim()
   const cfIp = request.headers.get("cf-connecting-ip")
   if (cfIp) return cfIp.trim()
+  const peer = server?.requestIP(request)?.address
+  if (peer) return peer
   return "anon"
 }
 
@@ -56,7 +66,7 @@ export const authRateLimit = () => {
 
   return new Elysia({ name: "pwe-auth-rate-limit" }).onBeforeHandle(
     { as: "global" },
-    ({ request, set }) => {
+    ({ request, server, set }) => {
       const url = new URL(request.url)
       const pathname = url.pathname
       const method = request.method
@@ -65,7 +75,7 @@ export const authRateLimit = () => {
 
       const now = Date.now()
       sweep(now)
-      const key = `${rule.label}:${clientKey(request)}`
+      const key = `${rule.label}:${clientKey(request, server)}`
       const cutoff = now - rule.windowMs
       const hits = (buckets.get(key) ?? []).filter((t) => t > cutoff)
       if (hits.length >= rule.limit) {

@@ -29,13 +29,15 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
+PORT="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).server.port)")"
+export VITE_BACKEND_PORT="$PORT"
+
 bun run --filter @pwe/backend dev 2>&1 | sed -u 's/^/[backend ] /' &
 BACKEND_PID=$!
 
 bun run --filter @pwe/frontend dev 2>&1 | sed -u 's/^/[frontend] /' &
 FRONTEND_PID=$!
 
-PORT="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).server.port)")"
 PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
 cat <<EOF
