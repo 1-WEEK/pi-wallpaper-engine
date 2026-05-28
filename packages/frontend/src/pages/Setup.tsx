@@ -97,6 +97,22 @@ export const Setup = () => {
             <button className="auth-btn" type="button" onClick={onRegisterPasskey} disabled={busy}>
               {busy ? "Waiting for passkey…" : "Register passkey"}
             </button>
+            {error && (
+              // Passkey registration failed. The backend created the admin
+              // user but no passkey is bound — login is impossible until one
+              // is. The backend's orphan-user cleanup makes restarting safe:
+              // re-submitting the form will delete the half-baked user.
+              <button
+                className="auth-btn auth-btn-secondary"
+                type="button"
+                onClick={() => {
+                  setStep("form")
+                  setError(null)
+                }}
+              >
+                Restart setup
+              </button>
+            )}
           </>
         )}
 
