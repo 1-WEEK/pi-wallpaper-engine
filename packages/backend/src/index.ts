@@ -12,6 +12,11 @@ import { downloadRoutes } from "./routes/download.js"
 import { displayRoutes } from "./routes/display.js"
 import { storageRoutes } from "./routes/storage.js"
 import { systemRoutes } from "./routes/system.js"
+import { buildAuthHandler } from "./routes/auth.js"
+import { createAuth, type AuthService } from "./services/Auth.js"
+import { originGuard } from "./middleware/originGuard.js"
+import { sessionGuard } from "./middleware/sessionGuard.js"
+import { authRateLimit } from "./middleware/authRateLimit.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -38,6 +43,17 @@ try {
   process.exit(1)
 }
 
+let auth: AuthService | null = null
+if (config.auth?.enabled) {
+  try {
+    auth = await createAuth(config.auth)
+  } catch (e) {
+    console.error("✗ Failed to initialize auth:", e instanceof Error ? e.message : String(e))
+    await runtime.dispose()
+    process.exit(1)
+  }
+}
+
 const app = new Elysia()
   .onError(({ code, error, request, set }) => {
     if (code === "NOT_FOUND") {
@@ -59,10 +75,33 @@ const app = new Elysia()
     return { error: error instanceof Error ? error.message : String(error) }
   })
   .get("/api/health", () => ({ ok: true, version: "0.1.0" }))
+
+if (auth && config.auth) {
+  app.use(originGuard(config.auth))
+  app.use(authRateLimit())
+  // Bind the Better Auth handler under /api/auth/*. The `.all()` line catches
+  // every HTTP method via memoirist's ALL-trie fallback. The explicit `.get()`
+  // is needed only because `staticPlugin({ prefix: "/" })` registers a GET
+  // catch-all (`/*`) further down — memoirist looks up routes per-method, so
+  // for GET it finds the static plugin's wildcard first and never falls back
+  // to the ALL trie. A same-method, more-specific GET route here wins the
+  // per-method match and pre-empts the shadowing. Other methods (POST/PUT/
+  // DELETE/PATCH/OPTIONS/HEAD) are not registered by staticPlugin, so their
+  // tries miss and Elysia falls back to ALL cleanly.
+  const authHandler = buildAuthHandler(auth, config.auth)
+  const forward = ({ request }: { request: Request }) => authHandler(request)
+  app.get("/api/auth/*", forward)
+  app.all("/api/auth/*", forward)
+  app.use(sessionGuard(auth))
+} else {
+  app.get("/api/auth/setup-state", () => ({ enabled: false, setup_complete: false }))
+}
+
+app
   .use(workshopRoutes(runtime))
   .use(libraryRoutes(runtime))
   .use(playerRoutes(runtime))
-  .use(downloadRoutes(runtime))
+  .use(downloadRoutes(runtime, auth))
   .use(displayRoutes(runtime))
   .use(storageRoutes(runtime))
   .use(systemRoutes(runtime))
@@ -85,10 +124,16 @@ console.log(`▶ pi-wallpaper-engine listening on http://${config.server.host}:$
 console.log(`  Config: ${CONFIG_PATH}`)
 console.log(`  Data root: ${config.paths.data_root}`)
 console.log(`  Media root: ${config.storage.root ?? config.paths.data_root}`)
+if (auth) {
+  console.log(`  Auth: enabled (db ${auth.path}, setup ${auth.handle.hasAnyPasskey() ? "complete" : "pending"})`)
+} else {
+  console.log("  Auth: disabled (config.auth.enabled is false or absent)")
+}
 
 const shutdown = async (signal: string) => {
   console.log(`\n${signal} received, shutting down...`)
   await server.stop()
+  if (auth) auth.dispose()
   await runtime.dispose()
   process.exit(0)
 }

@@ -36,5 +36,16 @@
     "on_command": ["display-on"],
     "off_command": ["display-off"],
     "status_command": ["display-status"]
+  },
+  "auth": {
+    "enabled": false,
+    "base_url": "https://pwe-dev.example.com",
+    "trusted_origins": ["https://pwe-dev.example.com"],
+    "rp_id": "pwe-dev.example.com",
+    "admin_email": "admin@example.com",
+    "secret_env": "PWE_AUTH_SECRET",
+    "setup_token_env": "PWE_AUTH_SETUP_TOKEN",
+    "session_days": 30,
+    "max_passkeys": 3
   }
 }
