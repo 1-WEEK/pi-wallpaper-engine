@@ -149,10 +149,13 @@ ok "Frontend built to packages/frontend/dist/"
 
 # ── 9. config.json interactive setup ─────────────────────────────────────────
 step "Configuring"
+CONFIG_DIR="$HOME/.config/pi-wallpaper-engine"
+CONFIG_PATH="$CONFIG_DIR/config.json"
+mkdir -p "$CONFIG_DIR"
 DEFAULT_DATA_ROOT="$HOME/pi-wallpaper-engine-data"
-if [ ! -f config.json ]; then
-  cp config.example.json config.json
-  ok "Copied config.example.json → config.json"
+if [ ! -f "$CONFIG_PATH" ]; then
+  cp config.example.json "$CONFIG_PATH"
+  ok "Copied config.example.json → $CONFIG_PATH"
 
   echo ""
   read -rp "Steam username: " STEAM_USER
@@ -165,30 +168,32 @@ if [ ! -f config.json ]; then
 
   bun -e "
     const fs = require('fs');
-    const c = JSON.parse(fs.readFileSync('config.json', 'utf-8'));
+    const path = process.env.CONFIG_PATH;
+    const c = JSON.parse(fs.readFileSync(path, 'utf-8'));
     c.steam.username = process.argv[1];
     c.steam.web_api_key = process.argv[2];
     c.steam.steamcmd_path = process.argv[3];
     c.paths.data_root = process.argv[4];
-    fs.writeFileSync('config.json', JSON.stringify(c, null, 2));
+    fs.writeFileSync(path, JSON.stringify(c, null, 2));
   " "$STEAM_USER" "$STEAM_KEY" "$STEAMCMD_WRAPPER" "$DATA_ROOT"
   ok "config.json populated"
 else
   ok "config.json already exists — leaving unchanged"
   # Patch steamcmd_path in case the user upgraded from an older config
-  CURRENT_STEAMCMD="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).steam.steamcmd_path)")"
+  CURRENT_STEAMCMD="$(CONFIG_PATH="$CONFIG_PATH" bun -e "console.log(JSON.parse(require('fs').readFileSync(process.env.CONFIG_PATH,'utf-8')).steam.steamcmd_path)")"
   if [ "$CURRENT_STEAMCMD" = "/usr/games/steamcmd" ]; then
-    bun -e "
+    CONFIG_PATH="$CONFIG_PATH" bun -e "
       const fs = require('fs');
-      const c = JSON.parse(fs.readFileSync('config.json', 'utf-8'));
+      const path = process.env.CONFIG_PATH;
+      const c = JSON.parse(fs.readFileSync(path, 'utf-8'));
       c.steam.steamcmd_path = process.argv[1];
-      fs.writeFileSync('config.json', JSON.stringify(c, null, 2));
+      fs.writeFileSync(path, JSON.stringify(c, null, 2));
     " "$STEAMCMD_WRAPPER"
     ok "Updated stale steamcmd_path → $STEAMCMD_WRAPPER"
   fi
 fi
 
-DATA_ROOT="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).paths.data_root)")"
+DATA_ROOT="$(CONFIG_PATH="$CONFIG_PATH" bun -e "console.log(JSON.parse(require('fs').readFileSync(process.env.CONFIG_PATH,'utf-8')).paths.data_root)")"
 DATA_ROOT="${DATA_ROOT/#\~/$HOME}"
 mkdir -p "$DATA_ROOT/source" "$DATA_ROOT/optimized"
 ok "Created $DATA_ROOT/{source,optimized}"
@@ -205,7 +210,7 @@ fi
 
 # ── 11. SteamCMD login (manual, requires user interaction for 2FA) ────────────
 step "Checking SteamCMD login state"
-STEAM_USER="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).steam.username)")"
+STEAM_USER="$(CONFIG_PATH="$CONFIG_PATH" bun -e "console.log(JSON.parse(require('fs').readFileSync(process.env.CONFIG_PATH,'utf-8')).steam.username)")"
 # SteamCMD records auth in ~/Steam/config/config.vdf under "Accounts" + "ConnectCache".
 # Successful login leaves an entry like:
 #   "Accounts" { "<user>" { "SteamID" "..." } }
@@ -231,7 +236,7 @@ fi
 
 # ── 13. systemd user unit (deploy mode only) ─────────────────────────────────
 PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-PORT="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf-8')).server.port)")"
+PORT="$(CONFIG_PATH="$CONFIG_PATH" bun -e "console.log(JSON.parse(require('fs').readFileSync(process.env.CONFIG_PATH,'utf-8')).server.port)")"
 
 if [ "$INSTALL_SERVICE" -eq 1 ]; then
   step "Installing systemd user service"

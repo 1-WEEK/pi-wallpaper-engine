@@ -16,7 +16,9 @@ import { resolveStateRoot } from "./statePath.js"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const PROJECT_ROOT = resolve(__dirname, "../../..")
-const CONFIG_PATH = process.env["PWE_CONFIG"] ?? resolve(PROJECT_ROOT, "config.json")
+const CONFIG_DIR = resolve(homedir(), ".config/pi-wallpaper-engine")
+const DEFAULT_CONFIG_PATH = resolve(CONFIG_DIR, "config.json")
+const CONFIG_PATH = process.env["PWE_CONFIG"] ?? DEFAULT_CONFIG_PATH
 
 type Result =
   | { kind: "pass"; label: string; detail?: string }
