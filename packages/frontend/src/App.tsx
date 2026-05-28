@@ -289,10 +289,12 @@ const AppShell = () => {
 
 const AuthGate = () => {
   const { mutate } = useSWRConfig()
-  const { data: setupState, isLoading: setupLoading, mutate: refetchSetup } = useSWR(
-    "auth-setup-state",
-    fetchSetupState
-  )
+  const {
+    data: setupState,
+    isLoading: setupLoading,
+    error: setupError,
+    mutate: refetchSetup,
+  } = useSWR("auth-setup-state", fetchSetupState)
   const { data: session, isLoading: sessionLoading, mutate: refetchSession } = useSWR(
     setupState?.enabled ? "auth-session" : null,
     fetchSession
@@ -302,7 +304,15 @@ const AuthGate = () => {
     const off = onAuthChange(() => {
       void refetchSession()
       void refetchSetup()
-      void mutate(() => true, undefined, { revalidate: false })
+      // Trigger an immediate revalidation on every non-auth cache key. We pass
+      // no data argument so SWR keeps the old (often errored) value visible
+      // until the new fetch returns — the alternative,
+      // `mutate(..., undefined, { revalidate: false })`, wipes the cache to
+      // `undefined` and then nothing refetches because the previous fetch
+      // sits inside the 60s dedup window and blocks the 5s refreshInterval
+      // tick, leaving PlayerBar stuck on "Connecting to Pi…" until the user
+      // reloads.
+      void mutate((key) => typeof key === "string" && !key.startsWith("auth-"))
     })
     return off
   }, [mutate, refetchSession, refetchSetup])
@@ -311,7 +321,29 @@ const AuthGate = () => {
     return <div className="auth-shell" />
   }
 
-  if (!setupState?.enabled) {
+  // Fail closed: distinguish a true backend failure (setupError set) from a
+  // transient undefined cache during refetch. Only the former should escalate
+  // to the error UI.
+  if (setupError) {
+    return (
+      <div className="auth-shell auth-shell-error">
+        <h1>Backend unreachable</h1>
+        <p>
+          Could not load authentication state from <code>/api/auth/setup-state</code>.
+          Check that the backend is running and the dev proxy points to the right port.
+        </p>
+        <button type="button" onClick={() => void refetchSetup()}>
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  if (!setupState) {
+    return <div className="auth-shell" />
+  }
+
+  if (!setupState.enabled) {
     return <AppShell />
   }
 
