@@ -8,6 +8,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=@@PROJECT_ROOT@@
 Environment=PATH=@@HOME@@/.local/share/mise/shims:@@HOME@@/.bun/bin:@@HOME@@/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PWE_CONFIG=@@HOME@@/.config/pi-wallpaper-engine/config.json
 ExecStart=@@BUN_BIN@@ run packages/backend/src/index.ts
 Restart=on-failure
 RestartSec=3
