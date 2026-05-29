@@ -41,24 +41,38 @@ export const openAuthDb = (): AuthDbHandle => {
   // unused; this keeps existing dev databases tidy.
   db.exec("DROP TABLE IF EXISTS auth_setup_state")
 
-  const selectAnyPasskey = db.prepare<{ x: number }, []>(
-    "SELECT 1 AS x FROM passkey LIMIT 1"
-  )
-  const countPasskeysForUser = db.prepare<{ n: number }, [string]>(
-    "SELECT COUNT(*) AS n FROM passkey WHERE userId = ?"
-  )
-  const selectOrphanUsers = db.prepare<{ id: string }, []>(
-    "SELECT id FROM user WHERE id NOT IN (SELECT DISTINCT userId FROM passkey)"
-  )
-  const deleteUserById = db.prepare<unknown, [string]>("DELETE FROM user WHERE id = ?")
+  // Statements are prepared lazily because this function runs before Better
+  // Auth's migrations; on a fresh database the tables do not exist yet.
+  let selectAnyPasskey: ReturnType<typeof db.prepare> | null = null
+  let countPasskeysForUser: ReturnType<typeof db.prepare> | null = null
+  let selectOrphanUsers: ReturnType<typeof db.prepare> | null = null
+  let deleteUserById: ReturnType<typeof db.prepare> | null = null
 
   return {
     db,
-    hasAnyPasskey: () => selectAnyPasskey.get() !== null,
-    countUserPasskeys: (userId) => countPasskeysForUser.get(userId)?.n ?? 0,
-    listOrphanUserIds: () => selectOrphanUsers.all().map((r) => r.id),
+    hasAnyPasskey: () => {
+      if (!selectAnyPasskey) {
+        selectAnyPasskey = db.prepare<{ x: number }, []>("SELECT 1 AS x FROM passkey LIMIT 1")
+      }
+      return selectAnyPasskey.get() !== null
+    },
+    countUserPasskeys: (userId) => {
+      if (!countPasskeysForUser) {
+        countPasskeysForUser = db.prepare<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM passkey WHERE userId = ?")
+      }
+      return countPasskeysForUser.get(userId)?.n ?? 0
+    },
+    listOrphanUserIds: () => {
+      if (!selectOrphanUsers) {
+        selectOrphanUsers = db.prepare<{ id: string }, []>("SELECT id FROM user WHERE id NOT IN (SELECT DISTINCT userId FROM passkey)")
+      }
+      return selectOrphanUsers.all().map((r) => r.id)
+    },
     // session/account cascade on user delete (see schema comment above).
     deleteUser: (id) => {
+      if (!deleteUserById) {
+        deleteUserById = db.prepare<unknown, [string]>("DELETE FROM user WHERE id = ?")
+      }
       deleteUserById.run(id)
     },
     dispose: () => {
