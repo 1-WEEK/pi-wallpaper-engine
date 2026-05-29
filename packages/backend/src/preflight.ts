@@ -20,6 +20,20 @@ const CONFIG_DIR = resolve(homedir(), ".config/pi-wallpaper-engine")
 const DEFAULT_CONFIG_PATH = resolve(CONFIG_DIR, "config.json")
 const CONFIG_PATH = process.env["PWE_CONFIG"] ?? DEFAULT_CONFIG_PATH
 
+// Auto-load auth.env so preflight/check works outside systemd too.
+const AUTH_ENV_PATH = resolve(CONFIG_DIR, "auth.env")
+if (existsSync(AUTH_ENV_PATH)) {
+  for (const line of readFileSync(AUTH_ENV_PATH, "utf-8").split("\n")) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith("#")) continue
+    const eq = trimmed.indexOf("=")
+    if (eq === -1) continue
+    const key = trimmed.slice(0, eq)
+    const value = trimmed.slice(eq + 1)
+    if (process.env[key] === undefined) process.env[key] = value
+  }
+}
+
 type Result =
   | { kind: "pass"; label: string; detail?: string }
   | { kind: "fail"; label: string; detail: string; fix: string }

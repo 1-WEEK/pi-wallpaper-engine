@@ -1,6 +1,6 @@
 import { Elysia } from "elysia"
 import staticPlugin from "@elysiajs/static"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
@@ -25,6 +25,20 @@ const CONFIG_DIR = resolve(homedir(), ".config/pi-wallpaper-engine")
 const DEFAULT_CONFIG_PATH = resolve(CONFIG_DIR, "config.json")
 const CONFIG_PATH = process.env["PWE_CONFIG"] ?? DEFAULT_CONFIG_PATH
 const FRONTEND_DIST = resolve(PROJECT_ROOT, "packages/frontend/dist")
+
+// Auto-load auth.env so dev mode and direct launches work outside systemd too.
+const AUTH_ENV_PATH = resolve(CONFIG_DIR, "auth.env")
+if (existsSync(AUTH_ENV_PATH)) {
+  for (const line of readFileSync(AUTH_ENV_PATH, "utf-8").split("\n")) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith("#")) continue
+    const eq = trimmed.indexOf("=")
+    if (eq === -1) continue
+    const key = trimmed.slice(0, eq)
+    const value = trimmed.slice(eq + 1)
+    if (process.env[key] === undefined) process.env[key] = value
+  }
+}
 
 if (!existsSync(CONFIG_PATH)) {
   console.error(`✗ Config not found: ${CONFIG_PATH}`)
