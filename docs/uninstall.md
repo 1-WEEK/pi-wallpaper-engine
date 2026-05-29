@@ -17,7 +17,7 @@ systemctl --user daemon-reload
 # Current media root. Edit to match config.paths.data_root or storage.root.
 rm -rf ~/pi-wallpaper-engine-data
 
-# Local SQLite state DB.
+# Local SQLite state: business db, auth db, and restart snapshots.
 rm -rf ~/.local/state/pi-wallpaper-engine
 ```
 
