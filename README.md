@@ -16,9 +16,9 @@ partial files are cleaned up.
 - Phase 2 transcoding is reserved but not wired. `TranscodeQueueNoop` is active,
   `transcode_jobs` and Worker protocol schemas are kept for the future, and the
   `@pwe/worker` package is still a placeholder.
-- Full application auth is not implemented yet. Keep the origin behind a trusted
-  LAN, Cloudflare Access, or another external access-control layer if exposing
-  it.
+- Optional Passkey authentication via Better Auth is implemented for public
+  exposure (Cloudflare Tunnel, reverse proxy, etc.). Off by default for LAN-only
+  setups. See [docs/auth.md](docs/auth.md) for the enable flow.
 
 ## Requirements
 
@@ -169,7 +169,7 @@ Workspace packages:
 ## Media Directory
 
 By default, wallpapers are stored under `paths.data_root` on the Pi. In
-**Settings** -> **存储位置**, you can:
+**Settings** → **Storage**, you can:
 
 - browse a limited set of safe root directories
 - enter subdirectories and create a new directory
@@ -183,15 +183,13 @@ are blocked while migration is running.
 
 ## Roadmap
 
-Near-term work is ordered as:
+Open near-term work:
 
-1. Documentation cleanup and current-status roadmap. Done.
-2. Player/display power linkage. Implemented; needs Pi manual validation.
-3. Validate media-directory migration on the real Pi with removable storage.
-4. Add Passkey authentication for the Cloudflare Tunnel deployment.
-5. Implement the Phase 2 transcoding Worker.
+1. Validate media-directory migration on the real Pi with removable storage.
+2. Implement the Phase 2 transcoding Worker.
 
-See [plans/roadmap.md](plans/roadmap.md) for the working roadmap.
+See [plans/roadmap.md](plans/roadmap.md) for the working roadmap and history of
+completed items.
 
 ## Validation And Troubleshooting
 

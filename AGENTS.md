@@ -2,99 +2,99 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 项目定位
+## What this is
 
-跑在 Raspberry Pi 4B（Debian 13 Trixie aarch64）上的 Wallpaper Engine **Video** 类型壁纸播放器。Web UI 浏览 Steam Workshop、下载、用 mpv 全屏循环播放。Phase 1 不做转码，源文件直播；Phase 2（未实现）才有 NAS Docker 转码 Worker。
+A Wallpaper Engine **Video** wallpaper player for the Raspberry Pi 4B (Debian 13 Trixie aarch64). The web UI browses Steam Workshop, downloads items, and plays them with mpv in fullscreen loop. Phase 1 streams the source file directly with no transcode; Phase 2 (not implemented) adds a NAS Docker transcode worker.
 
-## 常用命令
+## Common commands
 
 ```
-bash install-pi.sh              # 装依赖 + 配置 + preflight，止于此（dev 模式）
-bash install-pi.sh --service    # 加装并启用 systemd user 服务（部署模式）
+bash install-pi.sh              # Install deps + configure + preflight, stop here (dev mode)
+bash install-pi.sh --service    # Also install and enable the systemd user service (deploy mode)
 
-bun run dev                     # 前后端一起跑（前端 5173 HMR + 后端 8080）
-bun run dev:backend             # 只跑后端
-bun run dev:frontend            # 只跑前端
+bun run dev                     # Frontend + backend together (frontend 5173 HMR + backend 8080)
+bun run dev:backend             # Backend only
+bun run dev:frontend            # Frontend only
 
-bun test                        # 跑测试（transcode/decide、Storage 校验等单测）
-bun run check                   # preflight 13 项诊断
-bun x tsc --noEmit              # 类型检查（在 packages/backend/ 下跑最干净）
-bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
+bun test                        # Run tests (transcode/decide, Storage validation, etc.)
+bun run check                   # Preflight: 13 diagnostic checks
+bun x tsc --noEmit              # Typecheck (cleanest from inside packages/backend/)
+bun run --filter @pwe/frontend build   # Build frontend into packages/frontend/dist
 
-bun run service:restart         # 带防护的发版命令：dirty 拦截 + DB 三件套快照 + health 自检
-bun run service:restart -- --force   # 跳过 dirty 拦截（仅在你清楚后果时使用）
-bun run service:{start,stop,status}  # 裸 systemctl 包装，不带防护
+bun run service:restart         # Guarded release command: dirty-tree gate + DB snapshot + health probe
+bun run service:restart -- --force   # Skip the dirty-tree gate (only when you know what you're doing)
+bun run service:{start,stop,status}  # Plain systemctl wrappers, no guards
 ```
 
-`bun test` 单测过滤：`bun test packages/backend/src/transcode/decide.test.ts`
+Filter a single test: `bun test packages/backend/src/transcode/decide.test.ts`
 
-## 架构
+## Architecture
 
-**Bun workspaces monorepo**：
-- `@pwe/shared` — Effect Schema、Data.TaggedError、跨包共享类型
-- `@pwe/backend` — Bun + Elysia + Effect-TS，端口 8080
-- `@pwe/frontend` — Vite + React，端口 5173 dev（HMR + 代理 `/api` 到后端）
-- `@pwe/migrate` — Phase 1 存储迁移用的 rsync 薄封装，无 Effect/Elysia 依赖
-- `@pwe/worker` — Phase 2 占位，只有 README
+**Bun workspaces monorepo**:
+- `@pwe/shared` — Effect Schema, Data.TaggedError, cross-package types
+- `@pwe/backend` — Bun + Elysia + Effect-TS, port 8080
+- `@pwe/frontend` — Vite + React, port 5173 in dev (HMR + proxies `/api` to backend)
+- `@pwe/migrate` — Phase 1 storage migration: a thin rsync wrapper, no Effect/Elysia
+- `@pwe/worker` — Phase 2 placeholder, README only
 
-**Effect Layer 装配（`packages/backend/src/runtime.ts`）**：用 `.pipe(Layer.provideMerge(...))` 链式注入，**顺序敏感** — 叶子依赖（Config、Logger）放链末。`Layer.mergeAll` 不做交叉解析，别用。Runtime 是 `ManagedRuntime.make(buildLayer(configPath))`，Elysia 路由通过 `runtime.runPromise(Effect.gen(...))` 桥接业务逻辑。
+**Effect Layer wiring (`packages/backend/src/runtime.ts`)**: chained via `.pipe(Layer.provideMerge(...))`, **order matters** — leaf dependencies (Config, Logger) go at the end of the chain. `Layer.mergeAll` does no cross-resolution; don't use it. The runtime is `ManagedRuntime.make(buildLayer(configPath))`; Elysia routes bridge to business logic via `runtime.runPromise(Effect.gen(...))`.
 
-**Service Tag 约定**：每个 service 文件 export `class XxxLive` 的 Layer + `class Xxx extends Context.Tag(...)` 标签。`Db.ts` 用 `acquireRelease` 管 SQLite 连接；`Mpv.ts` 用 acquireRelease 管 mpv 子进程 + Unix socket；`SteamCmd.ts` 同样 acquireUseRelease 管 box86 子进程。
+**Service Tag convention**: each service file exports a `class XxxLive` Layer plus a `class Xxx extends Context.Tag(...)` tag. `Db.ts` manages the SQLite connection with `acquireRelease`; `Mpv.ts` manages the mpv subprocess + Unix socket with `acquireRelease`; `SteamCmd.ts` likewise wraps the box86 subprocess with `acquireUseRelease`.
 
-**Effect-TS 仅做业务逻辑层**（资源/错误/取消语义），HTTP 路由保持普通 Elysia handler。
+**Effect-TS is used only for the business-logic layer** (resource / error / cancellation semantics); HTTP routes stay as plain Elysia handlers.
 
-## 关键设计约束
+## Key design constraints
 
-- **下载必须异步**：`POST /api/download/:id` 立即返回 202，后台 fork workflow。SteamCMD 一次跑 30-60+ 秒，同步 handler 会被浏览器/proxy 当超时报 500。进度走 WS `/api/download/progress/:id`。
-- **路径在 DB 里存相对值**（如 `source/<id>/.../foo.mp4`），运行时拼当前媒体根。媒体根一律走 `Storage.mediaRoot()`，**别再直接读 `config.paths.data_root`**。Phase 2 Worker 用同样的相对路径，各自前缀自己的 root。
-- **`library.source_path` 不变量**：必须落在 `source/<id>/steamapps/workshop/content/<weAppId>/<id>/` 下。SteamCMD 的 "Success. Downloaded item" 行有时会报 `.../downloads/<weAppId>/<id>` 的临时 staging 路径，SteamCMD 校验完会把文件搬到 `content/`，stdout 报的路径随即失效。落库前必须 normalize 到 content/（`SteamCmd.ts` 末尾的 prefer-content fallback 是单一来源）。`Library` 启动 `reconcilePaths` 兜底把残留的 downloads/ 行改回 content/。
-- **非 Video 类型 fail-fast**：`WallpaperFile.resolveWallpaperFiles` 读 `project.json.type`，非 `video` 立刻抛 `NotVideoWallpaperError`，路由 catch 自动清理 `source/<id>/` 半成品。Workshop 搜索 `requiredtags=Video` 不可靠，靠这层兜底。
-- **Phase 1 = `TranscodeQueueNoop`**：所有下载行 `transcode_status="skipped"`。`TranscodeQueueLive` 写好待用，Phase 2 改 `runtime.ts` 一行换 Layer 即可。`transcode_jobs` 表存在但 Phase 1 永远空。
-- **错误用 `Data.TaggedError`**（在 `@pwe/shared/errors.ts`）：`SteamCmdError`（带 `kind: AuthRequired | NotSubscribed | Timeout | BinaryNotFound | UnknownFailure`）、`WorkshopApiError`、`MpvIpcError`、`NotVideoWallpaperError`、`DisplayError` 等。路由 catch 用 `err._tag` 判定状态码。
-- **`display` 配置可选**：`on_command`/`off_command`/`status_command` 都是 argv 数组（`Bun.spawn` 直跑，无 shell 解析、无命令注入）。命令必须非交互（sudo 走 NOPASSWD）。缺 `display` 段时 `/api/display/*` 返 503，其他功能不受影响。5 秒超时杀子进程暴露阻塞型 sudo prompt。
-- **存储是目录模型**：`storage` config 只保留 `{ root?: string | null }`。`null` 表示使用 `paths.data_root`，非空表示当前媒体目录。Settings 通过目录浏览器选择 Pi 上可访问的目录，辅助接口是 `GET /api/storage/locations`、`GET /api/storage/directories?path=...`、`POST /api/storage/directories`、`POST /api/storage/validate-target`、`POST /api/storage/root`、`POST /api/storage/cancel`。目录浏览必须限制在允许根目录内，拒绝越界、symlink 逃逸、控制字符和相对路径。
-- **SQLite 状态库始终本地**：在 `~/.local/state/pi-wallpaper-engine/`（`statePath.ts`），与媒体根解耦，不随 `storage.root` 变。旧版库存在 `data_root` 下，`DbLive` 启动时做一次性 best-effort 迁移。
-- **切换媒体目录 = 后台迁移**：library 非空时，`POST /api/storage/root` 会触发 `Migrate.start(targetRoot)`，后台用 rsync 移动 `source/`、`optimized/`。顺序是先复制、再全量校验、持久化新的 `storage.root`，最后删除旧源。202 返回，前端轮询 `GET /api/storage` 的 `migration` 字段拿进度；迁移中下载被挡，播放中切换返回 409。
-- **鉴权可选、默认关闭**：Better Auth + Passkey 已实装（见 `docs/auth.md`），`config.auth.enabled=false` 时业务 API 不校验 session，LAN-only 部署可以这样跑。公网暴露（Cloudflare Tunnel 等）必须 `enabled=true`：originGuard 校验 `trusted_origins`，sessionGuard 给 `/api/*` 加 401 闸（公开例外是 `/api/health` 和 `/api/auth/*`），WebSocket 也走 session。Setup 完成状态从 "至少存在一个 passkey" 派生，不是单独 flag——sign-up 中断不会永久 lockout；忘 passkey 走 `bun run --filter @pwe/backend auth:reset -- --yes` 重置 auth.db。
-- **`Effect.gen` 内 JS `try/catch/finally` 抓不到 Effect 失败**：失败的 `yield*` 会短路，`catch`/`finally` 都不执行。错误恢复用 `Effect.catchAll`/`tapError`，清理用 `Effect.ensuring`。
+- **Downloads must be async**: `POST /api/download/:id` returns 202 immediately and forks the workflow in the background. SteamCMD runs for 30–60+ seconds; a synchronous handler is timed out by the browser/proxy as a 500. Progress streams over WS `/api/download/progress/:id`.
+- **Paths in the DB are stored relative** (e.g. `source/<id>/.../foo.mp4`) and resolved against the current media root at runtime. Always go through `Storage.mediaRoot()` — **don't read `config.paths.data_root` directly**. The Phase 2 worker uses the same relative paths, each prefixing its own root.
+- **`library.source_path` invariant**: must land under `source/<id>/steamapps/workshop/content/<weAppId>/<id>/`. SteamCMD's "Success. Downloaded item" line sometimes reports the transient `.../downloads/<weAppId>/<id>` staging path; once SteamCMD finishes validation it moves the files to `content/`, and the stdout-reported path goes stale. Normalize to content/ before persisting (the prefer-content fallback at the end of `SteamCmd.ts` is the single source of truth). `Library` boots a `reconcilePaths` step that retroactively rewrites any leftover downloads/ rows back to content/.
+- **Non-video wallpapers fail fast**: `WallpaperFile.resolveWallpaperFiles` reads `project.json.type` and throws `NotVideoWallpaperError` for anything other than `video`; the route catches it and cleans up the half-written `source/<id>/`. The Workshop `requiredtags=Video` search filter is unreliable, so this layer is the real gate.
+- **Phase 1 = `TranscodeQueueNoop`**: every download row gets `transcode_status="skipped"`. `TranscodeQueueLive` is written and ready; flipping to Phase 2 is a one-line Layer swap in `runtime.ts`. The `transcode_jobs` table exists but stays empty under Phase 1.
+- **Errors use `Data.TaggedError`** (in `@pwe/shared/errors.ts`): `SteamCmdError` (with `kind: AuthRequired | NotSubscribed | Timeout | BinaryNotFound | UnknownFailure`), `WorkshopApiError`, `MpvIpcError`, `NotVideoWallpaperError`, `DisplayError`, etc. Route catches dispatch on `err._tag` to choose the status code.
+- **`display` config is optional**: `on_command` / `off_command` / `status_command` are argv arrays (`Bun.spawn` runs them directly — no shell parsing, no command injection). The commands must be non-interactive (use sudo NOPASSWD). When the `display` section is missing, `/api/display/*` returns 503 while everything else keeps working. A 5-second timeout kills the child to surface a blocked sudo prompt.
+- **Storage is the directory model**: the `storage` config carries only `{ root?: string | null }`. `null` means use `paths.data_root`; non-null is the current media directory. Settings exposes a directory browser so the user picks a directory the Pi can reach; the supporting endpoints are `GET /api/storage/locations`, `GET /api/storage/directories?path=...`, `POST /api/storage/directories`, `POST /api/storage/validate-target`, `POST /api/storage/root`, and `POST /api/storage/cancel`. Directory browsing is fenced inside the allowed roots and rejects boundary crossing, symlink escape, control characters, and relative paths.
+- **SQLite state lives locally — always**: in `~/.local/state/pi-wallpaper-engine/` (`statePath.ts`), decoupled from the media root and never moved with `storage.root`. Older installs kept the db under `data_root`; `DbLive` performs a one-time best-effort migration at startup.
+- **Switching the media directory = background migration**: when the library is non-empty, `POST /api/storage/root` triggers `Migrate.start(targetRoot)`, which rsyncs `source/` and `optimized/` in the background. The sequence is: copy first, then full-content verify, then persist the new `storage.root`, then delete the old source. The API returns 202 and the frontend polls `GET /api/storage` for the `migration` field. Downloads are blocked during migration; switching mid-playback returns 409.
+- **Auth is optional and off by default**: Better Auth + Passkey is implemented (see `docs/auth.md`). When `config.auth.enabled=false`, business APIs skip session checks — LAN-only deploys can run this way. Public exposure (Cloudflare Tunnel, etc.) requires `enabled=true`: originGuard validates `trusted_origins`, sessionGuard puts a 401 wall in front of `/api/*` (public exceptions are `/api/health` and `/api/auth/*`), and the WebSocket goes through the session too. Setup completeness is derived from "at least one passkey exists" — there's no separate flag, so an interrupted sign-up never permanently locks you out. If you lose your passkey, run `bun run --filter @pwe/backend auth:reset -- --yes` to reset auth.db.
+- **JS `try/catch/finally` inside `Effect.gen` does not catch Effect failures**: a failing `yield*` short-circuits and neither `catch` nor `finally` runs. Recover with `Effect.catchAll` / `tapError`; clean up with `Effect.ensuring`.
 
-## Pi/SteamCMD 特殊性
+## Pi / SteamCMD specifics
 
-- **steamcmd 走 box86 + Valve 官方 tarball**，**不是** Debian apt 包。Trixie aarch64 上 `steamcmd:i386` 因 libc 版本冲突装不上。`install-pi.sh` 加 `dpkg --add-architecture armhf` + `libc6:armhf` + 从 `Itai-Nelken/weekly-box86-debs` 装 box86，下 tarball 到 `~/.local/share/steamcmd/`，在 `/usr/local/bin/steamcmd` 写 wrapper 调 box86。
-- **SteamCMD 配置在 `~/Steam/config/config.vdf`**（不是 `~/.steam/steam/config/loginusers.vdf`，那是 Steam 客户端的）。preflight 和 install-pi.sh 检查 `Accounts.<username>` 是否存在判断登录状态。
-- **SteamCMD 成功/失败不能只看退出码或目录存在**：在 Pi 上它可能 `exit 0` 但输出 `ERROR! ...`，也可能静默很久但仍在继续写 `downloads/`。判断“已完成”前必须确认下载目录内容已经稳定，而不是只看到文件出现。
-- **mpv 参数实测可用**：`--hwdec=auto --gpu-api=opengl`（Pi 4B V3D 驱动），不是 spec 里的 `auto-safe` + `vo=gpu`。Config 字段 `mpv.hwdec` 和 `mpv.gpu_api` 可调。
-- **mpv 由 backend 拉起**（不是兄弟 systemd unit），acquireRelease 管生命周期。backend 重启 = 短暂黑屏。
+- **steamcmd runs via box86 + Valve's official tarball**, **not** the Debian apt package. On Trixie aarch64, `steamcmd:i386` won't install due to libc version conflicts. `install-pi.sh` does `dpkg --add-architecture armhf` + `libc6:armhf`, installs box86 from `Itai-Nelken/weekly-box86-debs`, extracts the tarball to `~/.local/share/steamcmd/`, and writes a wrapper at `/usr/local/bin/steamcmd` that invokes box86.
+- **SteamCMD's config lives at `~/Steam/config/config.vdf`** (not `~/.steam/steam/config/loginusers.vdf` — that one belongs to the Steam client). preflight and `install-pi.sh` check for `Accounts.<username>` to determine login state.
+- **SteamCMD success/failure cannot be judged by exit code or directory existence alone**: on the Pi it can `exit 0` while printing `ERROR! ...`, and it can also sit silent for a long time while still writing into `downloads/`. Before declaring "done", confirm the download directory contents have stabilized — file appearance alone is not enough.
+- **mpv flags that actually work**: `--hwdec=auto --gpu-api=opengl` (Pi 4B V3D driver), not the spec's `auto-safe` + `vo=gpu`. The `mpv.hwdec` and `mpv.gpu_api` config fields are tunable.
+- **mpv is spawned by the backend** (not a sibling systemd unit), with `acquireRelease` managing its lifecycle. Restarting the backend = a brief screen blackout.
 
-## 前端设计系统
+## Frontend design system
 
-**Logo**：`packages/frontend/public/favicon.svg`（256×256 SVG）和 `packages/frontend/public/favicon.ico`（16/32/48px 多尺寸）。
+**Logo**: `packages/frontend/public/favicon.svg` (256×256 SVG) and `packages/frontend/public/favicon.ico` (16/32/48px multi-size).
 
-**色彩 token**（定义在 `packages/frontend/src/styles.css` `:root`）：
-- `--ink: #0E1116` — 正文背景（与 logo 的 ink 色一致）
-- `--ink-1: #131820` — 卡片/面板表面
-- `--ink-2: #1a2030` — 输入框/按钮
-- `--paper: #F4EFE6` — 主文字（暖奶油色）
-- `--accent: #7C5CFF` — 主强调色（紫色）
-- `--accent-2: #B7A7FF` — 次强调色（浅紫）
-- `--accent-border: rgba(124,92,255,0.22)` — 强调色边框
+**Color tokens** (defined in `packages/frontend/src/styles.css` `:root`):
+- `--ink: #0E1116` — body background (matches the logo's ink color)
+- `--ink-1: #131820` — card / panel surface
+- `--ink-2: #1a2030` — input / button
+- `--paper: #F4EFE6` — primary text (warm cream)
+- `--accent: #7C5CFF` — primary accent (purple)
+- `--accent-2: #B7A7FF` — secondary accent (light purple)
+- `--accent-border: rgba(124,92,255,0.22)` — accent border
 
-**CSS 策略**：纯 CSS（无 Tailwind / CSS Modules）。不要在前端引入第二套 CSS 方案。调色系统全部走 CSS 自定义属性，不要在组件里硬写十六进制颜色值。
+**CSS strategy**: plain CSS (no Tailwind, no CSS Modules). Don't introduce a second CSS system. Colors flow entirely through CSS custom properties — don't hardcode hex values in components.
 
-**Favicon 生成**：如需重新生成 `.ico`，在临时目录装 `@resvg/resvg-js`（arm64-linux-gnu 有预编译包），用 Bun 脚本渲染 SVG → PNG → ICO。`librsvg2-bin` 未安装，不走 `rsvg-convert`。
+**Favicon generation**: to regenerate the `.ico`, install `@resvg/resvg-js` in a temp directory (arm64-linux-gnu has a prebuilt binary) and run a Bun script that renders SVG → PNG → ICO. `librsvg2-bin` is not installed; do not use `rsvg-convert`.
 
-## Vite 与局域网
+## Vite and LAN access
 
-`packages/frontend/vite.config.ts` 设 `server.host: true` 绑 0.0.0.0，否则手机/电脑访问 `http://<pi-ip>:5173` 会 connection refused。生产模式（`--service`）走 backend 8080 静态托管 `packages/frontend/dist/`。
+`packages/frontend/vite.config.ts` sets `server.host: true` to bind 0.0.0.0; otherwise phones / laptops hitting `http://<pi-ip>:5173` get connection refused. Production (`--service`) serves the prebuilt `packages/frontend/dist/` from the backend on port 8080.
 
-## 配置文件
+## Configuration
 
-`~/.config/pi-wallpaper-engine/config.json` 是用户实际配置（含 API key）；`config.example.json` 是模板。schema 在 `packages/shared/src/schema/Config.ts`，启动时 Effect Schema 校验，缺字段 fail-fast。`paths.data_root` 是默认媒体目录；若设置 `storage.root`，运行时改用该目录作为当前媒体根。可通过 `PWE_CONFIG` 环境变量覆盖配置路径。
+`~/.config/pi-wallpaper-engine/config.json` is the user's actual config (including the API key); `config.example.json` is the template. The schema lives in `packages/shared/src/schema/Config.ts` and is validated by Effect Schema at startup — missing fields fail fast. `paths.data_root` is the default media directory; if `storage.root` is set, that directory becomes the active media root at runtime. The `PWE_CONFIG` environment variable overrides the config path.
 
-## 不要做的事
+## Don't
 
-- 不要把 SteamCmd 改成同步等待 HTTP 返回 — 必然超时
-- 不要在 `Layer.mergeAll` 里塞需要交叉解析依赖的 service — 必须 `provideMerge` 链
-- 不要把 `transcode_jobs` 表 / `WorkerProtocol` schema 删掉 — Phase 2 要用
-- 不要假设 SteamCMD 在 `/usr/games/steamcmd`（apt 包路径）— 实际在 `/usr/local/bin/steamcmd`（box86 wrapper）
-- 不要把媒体目录逻辑重新做回 SMB / mode 切换产品面 — 当前产品只做“选择目录 + 校验 + 迁移”
+- Don't make SteamCmd synchronously await an HTTP response — it will time out.
+- Don't put services that need cross-resolution into `Layer.mergeAll` — use the `provideMerge` chain.
+- Don't drop the `transcode_jobs` table or the `WorkerProtocol` schema — Phase 2 needs them.
+- Don't assume SteamCMD lives at `/usr/games/steamcmd` (the apt path) — it's actually at `/usr/local/bin/steamcmd` (the box86 wrapper).
+- Don't revert the media-directory logic to a SMB / mode-toggle product surface — the current product is "pick a directory + validate + migrate", nothing more.
