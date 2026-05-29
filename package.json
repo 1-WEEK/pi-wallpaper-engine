@@ -16,7 +16,7 @@
     "typecheck": "bun run --filter '*' typecheck",
     "service:start": "systemctl --user start pi-wallpaper-engine",
     "service:stop": "systemctl --user stop pi-wallpaper-engine",
-    "service:restart": "systemctl --user restart pi-wallpaper-engine",
+    "service:restart": "bun scripts/restart-prod.ts",
     "service:status": "systemctl --user status pi-wallpaper-engine"
   },
   "devDependencies": {
