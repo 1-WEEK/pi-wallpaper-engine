@@ -3,21 +3,18 @@
 //   1. Refuse to restart on a dirty working tree (unless --force).
 //   2. Snapshot the SQLite state db (db + db-shm + db-wal) before restart.
 //   3. Health-check after restart; print a rollback hint if it fails.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
+import { Database } from "bun:sqlite"
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 
-const PROJECT_ROOT = "/home/one-week/Documents/pi-wallpaper-engine"
+const PROJECT_ROOT = resolve(import.meta.dir, "..")
 const STATE_DIR = join(homedir(), ".local/state/pi-wallpaper-engine")
 const SNAPSHOT_DIR = join(STATE_DIR, "snapshots")
 const HEALTH_URL = "http://localhost:8080/api/health"
 const SERVICE = "pi-wallpaper-engine.service"
 const SNAPSHOT_KEEP = 10
-const DB_FILES = [
-  "pi-wallpaper-engine.db",
-  "pi-wallpaper-engine.db-shm",
-  "pi-wallpaper-engine.db-wal",
-] as const
+const DB_NAME = "pi-wallpaper-engine.db"
 
 const FORCE = process.argv.includes("--force")
 
@@ -46,6 +43,10 @@ if (dirty.trim() && !FORCE) {
 }
 
 // --- 2. db snapshot ---------------------------------------------------------
+// Use SQLite's VACUUM INTO for a crash-consistent backup while the backend
+// service is still writing through WAL. Produces a single self-contained .db
+// file (no -shm/-wal needed for recovery) and does not require the writer to
+// pause.
 const ts = new Date()
   .toISOString()
   .replace(/[-:]/g, "")
@@ -53,11 +54,19 @@ const ts = new Date()
   .slice(0, 15) // YYYYMMDD-HHMMSS
 const snap = join(SNAPSHOT_DIR, ts)
 mkdirSync(snap, { recursive: true })
-for (const f of DB_FILES) {
-  const src = join(STATE_DIR, f)
-  if (existsSync(src)) copyFileSync(src, join(snap, f))
+const liveDb = join(STATE_DIR, DB_NAME)
+const snapDb = join(snap, DB_NAME)
+if (existsSync(liveDb)) {
+  const db = new Database(liveDb, { readonly: true })
+  try {
+    db.exec(`VACUUM INTO '${snapDb.replaceAll("'", "''")}'`)
+  } finally {
+    db.close()
+  }
+  console.log(`✓ db snapshot → ${snapDb}`)
+} else {
+  console.log(`(no db at ${liveDb}; skipping snapshot)`)
 }
-console.log(`✓ db snapshot → ${snap}`)
 
 // Trim old snapshots, keep the most recent SNAPSHOT_KEEP.
 const all = existsSync(SNAPSHOT_DIR)
@@ -107,5 +116,5 @@ console.error("")
 console.error("✗ health check failed after 8s — service may be crashed or restarting.")
 console.error(`  diagnose:    journalctl --user -u ${SERVICE} -n 80 --no-pager`)
 console.error(`  rollback:    git reset --hard HEAD^ && bun run service:restart -- --force`)
-console.error(`  db restore:  cp -a ${snap}/* ${STATE_DIR}/   (then restart)`)
+console.error(`  db restore:  cp ${snapDb} ${liveDb}   (then restart)`)
 process.exit(1)
