@@ -403,36 +403,40 @@ export const SteamCmdLive = Layer.effect(
                 return yield* Effect.fail(classifyError(collected, exitCode))
               }
 
-              if (!downloadedPath) {
-                const contentPath = resolve(
-                  dataRoot,
-                  config.paths.source_dir,
-                  workshopId,
-                  "steamapps",
-                  "workshop",
-                  "content",
-                  WE_APPID,
-                  workshopId
-                )
-                const downloadsPath = resolve(
-                  dataRoot,
-                  config.paths.source_dir,
-                  workshopId,
-                  "steamapps",
-                  "workshop",
-                  "downloads",
-                  WE_APPID,
-                  workshopId
-                )
+              // Normalize the resolved item dir. SteamCMD's "Success.
+              // Downloaded item" line sometimes reports the transient
+              // downloads/<weAppId>/<id> staging dir; the validated files are
+              // then moved to content/<weAppId>/<id>. Trusting the staging
+              // path puts library.source_path on a file that vanishes the
+              // moment SteamCMD finishes housekeeping. Always prefer content/
+              // when it exists, regardless of what stdout reported.
+              const contentPath = resolve(
+                dataRoot,
+                config.paths.source_dir,
+                workshopId,
+                "steamapps",
+                "workshop",
+                "content",
+                WE_APPID,
+                workshopId
+              )
+              const downloadsPath = resolve(
+                dataRoot,
+                config.paths.source_dir,
+                workshopId,
+                "steamapps",
+                "workshop",
+                "downloads",
+                WE_APPID,
+                workshopId
+              )
 
-                // Fallback: prefer content/, then downloads/
-                if (existsSync(contentPath)) {
-                  downloadedPath = contentPath
-                } else if (existsSync(downloadsPath)) {
-                  downloadedPath = downloadsPath
-                } else {
-                  downloadedPath = contentPath // Last resort fallback
-                }
+              if (existsSync(contentPath)) {
+                downloadedPath = contentPath
+              } else if (existsSync(downloadsPath)) {
+                downloadedPath = downloadsPath
+              } else if (!downloadedPath) {
+                downloadedPath = contentPath // last-resort; downstream will fail-fast
               }
 
               const result: DownloadResult = {
