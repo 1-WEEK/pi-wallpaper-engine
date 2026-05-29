@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { hasSuspectSourceMetadata } from "./Library.js"
+import { decideSourcePathRepair, hasSuspectSourceMetadata } from "./Library.js"
 import {
   mergeDownloadTaskRow,
   reconcileFinishedTaskState,
@@ -96,5 +96,30 @@ describe("reconcile helpers", () => {
     expect(hasSuspectSourceMetadata("h264", "0x0")).toBe(true)
     expect(hasSuspectSourceMetadata("unknown", "1920x1080")).toBe(true)
     expect(hasSuspectSourceMetadata("h264", "1920x1080")).toBe(false)
+  })
+})
+
+describe("decideSourcePathRepair", () => {
+  const DOWNLOADS = "source/42/steamapps/workshop/downloads/431960/42/video.mp4"
+  const CONTENT = "source/42/steamapps/workshop/content/431960/42/video.mp4"
+
+  test("leaves row untouched when current path exists", () => {
+    expect(decideSourcePathRepair(CONTENT, (rel) => rel === CONTENT)).toBeNull()
+  })
+
+  test("repairs downloads/ → content/ when content/ exists", () => {
+    expect(decideSourcePathRepair(DOWNLOADS, (rel) => rel === CONTENT)).toBe(CONTENT)
+  })
+
+  test("repairs content/ → downloads/ when downloads/ exists", () => {
+    expect(decideSourcePathRepair(CONTENT, (rel) => rel === DOWNLOADS)).toBe(DOWNLOADS)
+  })
+
+  test("leaves row untouched when neither side exists", () => {
+    expect(decideSourcePathRepair(DOWNLOADS, () => false)).toBeNull()
+  })
+
+  test("leaves row untouched when path has no swap pair", () => {
+    expect(decideSourcePathRepair("source/42/other/video.mp4", () => true)).toBeNull()
   })
 })

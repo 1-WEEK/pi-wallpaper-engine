@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { existsSync } from "node:fs"
 import { readFile, rm, unlink } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { DbError, LibraryItem, LibraryNotFoundError, StorageError } from "@pwe/shared"
@@ -55,6 +56,23 @@ export const hasSuspectSourceMetadata = (
   sourceResolution: string
 ): boolean => sourceCodec === "unknown" || sourceResolution === "0x0"
 
+// Decide whether a row's source_path needs repair. Pure so it can be unit-
+// tested without mounting fs / db / Effect runtime.
+export const decideSourcePathRepair = (
+  currentSourcePath: string,
+  fileExists: (relPath: string) => boolean
+): string | null => {
+  if (fileExists(currentSourcePath)) return null
+  const swapped = currentSourcePath.includes("/downloads/")
+    ? currentSourcePath.replace("/downloads/", "/content/")
+    : currentSourcePath.includes("/content/")
+      ? currentSourcePath.replace("/content/", "/downloads/")
+      : null
+  if (!swapped) return null
+  if (!fileExists(swapped)) return null
+  return swapped
+}
+
 const hasMissingAdultMetadata = (row: LibraryRow): boolean =>
   row.content_rating === null && row.rating_sex === null
 
@@ -74,6 +92,34 @@ export const LibraryLive = Layer.effect(
         },
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
       }).pipe(Effect.catchAll(() => Effect.succeed(normalizeAdultMetadata(null))))
+
+    // SteamCMD's "Success" line sometimes reports the transient
+    // downloads/<weAppId>/<id> path, then moves the files to content/.
+    // Rows persisted before the SteamCmd path-normalize fix can end up
+    // pointing at a file that no longer exists. Fix them in place when the
+    // downloads<->content swap names a file that does exist on disk.
+    const reconcilePaths = Effect.gen(function* () {
+      const dataRoot = yield* storage.mediaRootOrNull()
+      if (!dataRoot) return
+
+      const rows = yield* db.query<{ workshop_id: string; source_path: string }>(
+        `SELECT workshop_id, source_path FROM library`
+      )
+
+      const fileExists = (rel: string) => existsSync(resolve(dataRoot, rel))
+      for (const { workshop_id, source_path } of rows) {
+        const repaired = decideSourcePathRepair(source_path, fileExists)
+        if (!repaired) continue
+
+        yield* db.exec(`UPDATE library SET source_path = ? WHERE workshop_id = ?`, [
+          repaired,
+          workshop_id,
+        ])
+        yield* logger.warn(
+          `Reconciled library source_path for ${workshop_id}: ${source_path} -> ${repaired}`
+        )
+      }
+    }).pipe(Effect.catchAll((e) => logger.error(`Library path reconcile failed: ${e.message}`)))
 
     const reconcileSuspectRows = Effect.gen(function* () {
       const dataRoot = yield* storage.mediaRootOrNull()
@@ -137,6 +183,7 @@ export const LibraryLive = Layer.effect(
       }
     }).pipe(Effect.catchAll((e) => logger.error(`Library reconcile failed: ${e.message}`)))
 
+    yield* reconcilePaths
     yield* reconcileSuspectRows
 
     return {

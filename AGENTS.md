@@ -43,6 +43,7 @@ bun run --filter @pwe/frontend build   # 构建前端到 packages/frontend/dist
 
 - **下载必须异步**：`POST /api/download/:id` 立即返回 202，后台 fork workflow。SteamCMD 一次跑 30-60+ 秒，同步 handler 会被浏览器/proxy 当超时报 500。进度走 WS `/api/download/progress/:id`。
 - **路径在 DB 里存相对值**（如 `source/<id>/.../foo.mp4`），运行时拼当前媒体根。媒体根一律走 `Storage.mediaRoot()`，**别再直接读 `config.paths.data_root`**。Phase 2 Worker 用同样的相对路径，各自前缀自己的 root。
+- **`library.source_path` 不变量**：必须落在 `source/<id>/steamapps/workshop/content/<weAppId>/<id>/` 下。SteamCMD 的 "Success. Downloaded item" 行有时会报 `.../downloads/<weAppId>/<id>` 的临时 staging 路径，SteamCMD 校验完会把文件搬到 `content/`，stdout 报的路径随即失效。落库前必须 normalize 到 content/（`SteamCmd.ts` 末尾的 prefer-content fallback 是单一来源）。`Library` 启动 `reconcilePaths` 兜底把残留的 downloads/ 行改回 content/。
 - **非 Video 类型 fail-fast**：`WallpaperFile.resolveWallpaperFiles` 读 `project.json.type`，非 `video` 立刻抛 `NotVideoWallpaperError`，路由 catch 自动清理 `source/<id>/` 半成品。Workshop 搜索 `requiredtags=Video` 不可靠，靠这层兜底。
 - **Phase 1 = `TranscodeQueueNoop`**：所有下载行 `transcode_status="skipped"`。`TranscodeQueueLive` 写好待用，Phase 2 改 `runtime.ts` 一行换 Layer 即可。`transcode_jobs` 表存在但 Phase 1 永远空。
 - **错误用 `Data.TaggedError`**（在 `@pwe/shared/errors.ts`）：`SteamCmdError`（带 `kind: AuthRequired | NotSubscribed | Timeout | BinaryNotFound | UnknownFailure`）、`WorkshopApiError`、`MpvIpcError`、`NotVideoWallpaperError`、`DisplayError` 等。路由 catch 用 `err._tag` 判定状态码。
