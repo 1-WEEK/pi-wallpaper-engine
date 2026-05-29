@@ -60,9 +60,11 @@ Browser
 
 4. Open the public HTTPS URL in a browser. The frontend will show a setup
    wizard. Paste the setup token, fill in the admin email, and follow the
-   passkey prompt. After the first passkey is registered the setup token
-   is permanently consumed (server-side); future sign-ups are rejected
-   with `403`.
+   passkey prompt. Setup completion is derived from "at least one passkey
+   exists" — once that holds, `/sign-up/email` returns `403`. The setup
+   token itself is not consumed on success, so an abandoned sign-up
+   (account created but no passkey registered) is cleaned up automatically
+   on the next attempt and never permanently locks the admin out.
 
 ## Dev vs prod separation
 
@@ -131,7 +133,7 @@ later will pick up the existing admin and passkeys.
 | File                                                     | Purpose                                          |
 |----------------------------------------------------------|--------------------------------------------------|
 | `packages/backend/src/services/Auth.ts`                  | Better Auth init, hooks for setup + caps         |
-| `packages/backend/src/db/AuthDb.ts`                      | `bun:sqlite` handle + `auth_setup_state` table   |
+| `packages/backend/src/db/AuthDb.ts`                      | `bun:sqlite` handle; tables are owned by Better Auth migrations |
 | `packages/backend/src/routes/auth.ts`                    | Mount `/api/auth/*` + `setup-state` endpoint     |
 | `packages/backend/src/middleware/originGuard.ts`         | Origin whitelist on `/api/*`                     |
 | `packages/backend/src/middleware/sessionGuard.ts`        | Session check on business `/api/*`               |
