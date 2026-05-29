@@ -43,10 +43,10 @@ export const openAuthDb = (): AuthDbHandle => {
 
   // Statements are prepared lazily because this function runs before Better
   // Auth's migrations; on a fresh database the tables do not exist yet.
-  let selectAnyPasskey: ReturnType<typeof db.prepare> | null = null
-  let countPasskeysForUser: ReturnType<typeof db.prepare> | null = null
-  let selectOrphanUsers: ReturnType<typeof db.prepare> | null = null
-  let deleteUserById: ReturnType<typeof db.prepare> | null = null
+  let selectAnyPasskey: ReturnType<typeof db.prepare<{ x: number }, []>> | null = null
+  let countPasskeysForUser: ReturnType<typeof db.prepare<{ n: number }, [string]>> | null = null
+  let selectOrphanUsers: ReturnType<typeof db.prepare<{ id: string }, []>> | null = null
+  let deleteUserById: ReturnType<typeof db.prepare<unknown, [string]>> | null = null
 
   return {
     db,
