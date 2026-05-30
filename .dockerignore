@@ -1,0 +1,30 @@
+# Keep the build context tiny — only what the Worker image actually needs.
+
+# Everything off by default; whitelist what we want in.
+**
+
+!package.json
+!bun.lock
+!tsconfig.base.json
+
+!packages/shared/**
+!packages/worker/**
+
+# Re-exclude things we never want even inside whitelisted dirs.
+**/node_modules
+**/.bun
+**/dist
+**/build
+**/.DS_Store
+**/.git
+**/.codegraph
+**/.claude
+**/*.log
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+
+# Test artifacts that don't belong in the image.
+**/test-assets/*.mp4
+**/__tests__
+**/*.test.ts
