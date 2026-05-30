@@ -1,0 +1,43 @@
+# pwe-worker — NAS deployment.
+#
+# This compose file references a pre-built image. The image is built on your
+# dev machine and pushed to ghcr.io (or any registry); the NAS only needs:
+#
+#   1) Docker / Docker Compose
+#   2) This file (or any copy of it)
+#   3) An `.env` file alongside it with the required variables (see below)
+#   4) Network access to the registry, OR a `docker load` of the tarball
+#
+# Bring up:
+#   docker compose pull && docker compose up -d
+#
+# Required env (put in `.env` next to this file or pass on the command line):
+#   PWE_WORKER_IMAGE     full image ref, e.g. ghcr.io/yourname/pwe-worker:0.1.0
+#   PWE_WORKER_API_KEY   shared secret with the Pi backend (≥8 chars)
+#   PWE_BACKEND_URL      LAN URL of the Pi, e.g. http://pi.local:8080
+#   PWE_WORKER_NAME      identifier reported during claim, e.g. nas-01
+#   PWE_MEDIA_HOST       host path of the shared media, e.g. /mnt/nas/media
+
+services:
+  pwe-worker:
+    image: ${PWE_WORKER_IMAGE:?set PWE_WORKER_IMAGE to the full image ref}
+    container_name: pwe-worker
+    environment:
+      PWE_BACKEND_URL: ${PWE_BACKEND_URL:?set PWE_BACKEND_URL to the Pi LAN URL}
+      PWE_WORKER_API_KEY: ${PWE_WORKER_API_KEY:?set PWE_WORKER_API_KEY}
+      PWE_WORKER_NAME: ${PWE_WORKER_NAME:-nas-01}
+      PWE_MEDIA_ROOT: /data
+    volumes:
+      - ${PWE_MEDIA_HOST:?set PWE_MEDIA_HOST to the host media path}:/data
+    devices:
+      # Required for hevc_qsv. The Worker's runtime probe falls back to
+      # libx265 if this device isn't present, so removing the line keeps
+      # the worker functional on hosts without an Intel iGPU.
+      - /dev/dri:/dev/dri
+    restart: unless-stopped
+    # Surface ffmpeg + Bun logs to `docker logs pwe-worker`.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
