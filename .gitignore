@@ -16,6 +16,7 @@ pi-wallpaper-engine-data/
 
 # Agent local settings
 .claude/
+.codegraph/
 
 # TypeScript
 *.tsbuildinfo
