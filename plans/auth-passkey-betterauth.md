@@ -1,8 +1,8 @@
 # Pi Wallpaper Engine Passkey Auth Plan
 
-> 状态（2026-05-24）：方案已收敛，但尚未实现。当前 `config.example.json`、
-> `packages/shared/src/schema/Config.ts`、`packages/backend/src/index.ts` 都还没有
-> `auth` 段、Better Auth 依赖或 route guard。现有业务 API 仍依赖外部网络边界保护。
+> 状态（2026-05-30）：**已实现并在 Pi 实机上验证通过**。`config.example.json`、
+> `packages/shared/src/schema/Config.ts`、`packages/backend/src/index.ts` 均已包含
+> `auth` 段、Better Auth 依赖和 route guard。`docs/auth.md` 记录了完整的启用/禁用/重置流程。
 
 ## 背景
 
