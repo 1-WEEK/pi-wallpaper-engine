@@ -2,6 +2,7 @@ import { Elysia } from "elysia"
 import { Effect } from "effect"
 import { statfs } from "node:fs/promises"
 import { Config } from "../services/Config.js"
+import { Db } from "../services/Db.js"
 import { Display } from "../services/Display.js"
 import { DownloadTasks } from "../services/DownloadTasks.js"
 import { Library } from "../services/Library.js"
@@ -53,34 +54,52 @@ export const systemRoutes = (runtime: AppRuntime) =>
       .runPromise(
         Effect.gen(function* () {
           const config = yield* Config
+          const db = yield* Db
           const display = yield* Display
           const tasks = yield* DownloadTasks
           const library = yield* Library
           const mpv = yield* Mpv
           const storageService = yield* Storage
 
-          const [player, libraryRows, taskRows, displayStatus, storageStatus] = yield* Effect.all([
-            mpv.status(),
-            library.list(),
-            tasks.list(),
-            display.status().pipe(
-              Effect.map((status) => ({
-                configured: config.display !== undefined,
-                state: status.state,
-                source: status.source,
-                error_kind: null,
-              })),
-              Effect.catchTag("DisplayError", (error) =>
-                Effect.succeed({
+          const [player, libraryRows, taskRows, displayStatus, storageStatus, transcodeCounts] =
+            yield* Effect.all([
+              mpv.status(),
+              library.list(),
+              tasks.list(),
+              display.status().pipe(
+                Effect.map((status) => ({
                   configured: config.display !== undefined,
-                  state: "unknown" as const,
-                  source: "default" as const,
-                  error_kind: error.kind,
-                })
-              )
-            ),
-            storageService.status(),
-          ] as const)
+                  state: status.state,
+                  source: status.source,
+                  error_kind: null,
+                })),
+                Effect.catchTag("DisplayError", (error) =>
+                  Effect.succeed({
+                    configured: config.display !== undefined,
+                    state: "unknown" as const,
+                    source: "default" as const,
+                    error_kind: error.kind,
+                  })
+                )
+              ),
+              storageService.status(),
+              db
+                .query<{ status: string; n: number }>(
+                  `SELECT status, COUNT(*) AS n FROM transcode_jobs GROUP BY status`
+                )
+                .pipe(
+                  Effect.catchAll(() =>
+                    Effect.succeed([] as Array<{ status: string; n: number }>)
+                  )
+                ),
+            ] as const)
+
+          const transcode = { pending: 0, claimed: 0, running: 0, completed: 0, failed: 0 }
+          for (const row of transcodeCounts) {
+            if (row.status in transcode) {
+              transcode[row.status as keyof typeof transcode] = Number(row.n)
+            }
+          }
 
           const storage = yield* storageSummary(storageStatus.data_root).pipe(
             Effect.map((usage) => ({
@@ -138,6 +157,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
                 active: activeDownloads,
                 finished: taskRows.length - activeDownloads,
               },
+              transcode,
             },
           }
         })
