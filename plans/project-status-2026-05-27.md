@@ -9,7 +9,7 @@
 - 自定义目录存储（Directory Picker model）已经落地：支持配置单个绝对路径作为媒体根目录、支持前端直接浏览服务端可用目录树，并提供双向迁移能力，轮询迁移进度。原 SMB/NAS 直连挂载代码均已被移除。
 - SQLite state 固定在 `~/.local/state/pi-wallpaper-engine/`，不随媒体存储迁移。
 - Phase 2 转码 Worker 未实现：没有 `/api/transcode/*` 路由，没有 Worker 代码、Dockerfile、compose、心跳/进度/完成上报闭环。
-- Passkey auth 未实现：`plans/auth-passkey-betterauth.md` 是方案文档，不是代码事实。
+- Passkey auth **已实现并在 Pi 实机上验证通过**：Better Auth + Passkey 后端（sessionGuard、originGuard、WS 鉴权、限流）和前端（Setup 向导、Login、Settings 管理）均已完成。`docs/auth.md` 为操作文档。
 - 播放与显示器联动已实现：stop 后 30 秒自动关屏，Display Off 先 stop mpv，Display On 可从 `player_state` 恢复壁纸；已在 Pi 上通过手动验收。
 
 ## 已完成
