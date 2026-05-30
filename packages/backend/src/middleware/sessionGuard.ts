@@ -1,7 +1,11 @@
 import { Elysia } from "elysia"
 import type { AuthService } from "../services/Auth.js"
 
-const PUBLIC_PREFIXES = ["/api/health", "/api/auth/"]
+// `/api/transcode/` is intentionally public to sessionGuard because Worker
+// requests authenticate via `workerGuard` (shared API key in X-Worker-Key),
+// not Better Auth sessions. The Worker is a headless container that cannot
+// hold passkey cookies.
+const PUBLIC_PREFIXES = ["/api/health", "/api/auth/", "/api/transcode/"]
 
 const isPublicPath = (pathname: string): boolean =>
   PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p))

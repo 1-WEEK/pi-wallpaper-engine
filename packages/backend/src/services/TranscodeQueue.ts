@@ -8,6 +8,12 @@ import { Db } from "./Db.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
 
+export interface CompleteReport {
+  readonly output_relative_path: string
+  readonly output_size: number
+  readonly duration_ms: number
+}
+
 export interface TranscodeQueueImpl {
   /**
    * Decide whether to enqueue a transcode job for the given workshop item.
@@ -25,12 +31,45 @@ export interface TranscodeQueueImpl {
    * In Noop mode this always returns null — there is no Phase 1 worker.
    */
   readonly claim: (worker: string) => Effect.Effect<TranscodeJob | null, DbError>
+
+  /**
+   * Worker liveness ping. Bumps `last_heartbeat`; promotes claimed→running on
+   * first call. Returns true if the job is still owned by a worker (false when
+   * the row vanished or the monitor already reset it).
+   */
+  readonly heartbeat: (jobId: string) => Effect.Effect<boolean, DbError>
+
+  /**
+   * Mirrors a numeric percent (0..100) into both transcode_jobs and library.
+   */
+  readonly progress: (jobId: string, percent: number) => Effect.Effect<void, DbError>
+
+  /**
+   * Final success. Updates transcode_jobs to completed and writes the optimized
+   * file metadata into the library row.
+   */
+  readonly complete: (
+    jobId: string,
+    report: CompleteReport,
+    targetResolution: string,
+    targetCodec: "hevc" | "h264"
+  ) => Effect.Effect<void, DbError>
+
+  /**
+   * Terminal failure. transcode_jobs.status = failed; library.transcode_error = message.
+   */
+  readonly fail: (jobId: string, error: string) => Effect.Effect<void, DbError>
 }
 
 export class TranscodeQueue extends Context.Tag("TranscodeQueue")<
   TranscodeQueue,
   TranscodeQueueImpl
 >() {}
+
+const noopReport = (workshopId: string) => ({
+  workshopId,
+  reason: "TranscodeQueueNoop: no worker exists in Phase 1, ignoring call",
+})
 
 /**
  * Phase 1 active layer. No worker exists, so anything that would need
@@ -57,13 +96,29 @@ export const TranscodeQueueNoop = Layer.effect(
         }),
 
       claim: () => Effect.succeed(null),
+      heartbeat: (jobId) =>
+        Effect.sync(() => {
+          console.warn(`TranscodeQueueNoop.heartbeat(${jobId}) — ignored`)
+          return false
+        }),
+      progress: (jobId) =>
+        Effect.sync(() => {
+          console.warn(`TranscodeQueueNoop.progress(${jobId}) — ignored`)
+        }),
+      complete: (jobId) =>
+        Effect.sync(() => {
+          console.warn(`TranscodeQueueNoop.complete(${jobId}) — ignored`, noopReport(jobId))
+        }),
+      fail: (jobId, error) =>
+        Effect.sync(() => {
+          console.warn(`TranscodeQueueNoop.fail(${jobId}, ${error}) — ignored`)
+        }),
     }
   })
 )
 
 /**
  * Phase 2 layer. Writes a transcode_jobs row, lets the Worker pull it.
- * Defined now so the contract is complete and stable; not wired in Phase 1.
  */
 export const TranscodeQueueLive = Layer.effect(
   TranscodeQueue,
@@ -137,6 +192,12 @@ export const TranscodeQueueLive = Layer.effect(
             .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
           if (!lib) return null
 
+          yield* library.update(row.workshop_id, {
+            transcode_status: "claimed",
+            transcode_progress: 0,
+            transcode_error: null,
+          })
+
           return {
             id: row.id,
             workshop_id: row.workshop_id,
@@ -147,6 +208,92 @@ export const TranscodeQueueLive = Layer.effect(
             target_codec: config.transcode.target_codec,
             target_quality: config.transcode.target_quality,
           }
+        }),
+
+      heartbeat: (jobId) =>
+        Effect.gen(function* () {
+          // Promote claimed → running on first heartbeat, otherwise just bump
+          // last_heartbeat. RETURNING workshop_id lets us also mirror status
+          // into library on the first beat.
+          const row = yield* db.queryOne<{ workshop_id: string; status: string }>(
+            `UPDATE transcode_jobs
+             SET last_heartbeat = ?,
+                 status = CASE WHEN status = 'claimed' THEN 'running' ELSE status END
+             WHERE id = ? AND status IN ('claimed','running')
+             RETURNING workshop_id, status`,
+            [Date.now(), jobId]
+          )
+          if (!row) return false
+
+          if (row.status === "running") {
+            yield* library.update(row.workshop_id, {
+              transcode_status: "running",
+            })
+          }
+          return true
+        }),
+
+      progress: (jobId, percent) =>
+        Effect.gen(function* () {
+          const clamped = Math.max(0, Math.min(100, Math.round(percent)))
+          const row = yield* db.queryOne<{ workshop_id: string }>(
+            `UPDATE transcode_jobs SET progress = ?, last_heartbeat = ?
+             WHERE id = ? AND status IN ('claimed','running')
+             RETURNING workshop_id`,
+            [clamped, Date.now(), jobId]
+          )
+          if (!row) return
+          yield* library.update(row.workshop_id, {
+            transcode_progress: clamped,
+          })
+        }),
+
+      complete: (jobId, report, targetResolution, targetCodec) =>
+        Effect.gen(function* () {
+          const row = yield* db.queryOne<{ workshop_id: string }>(
+            `UPDATE transcode_jobs
+             SET status = 'completed', progress = 100, completed_at = ?, error = NULL
+             WHERE id = ? AND status IN ('claimed','running')
+             RETURNING workshop_id`,
+            [Date.now(), jobId]
+          )
+          if (!row) {
+            yield* logger.warn(`complete(${jobId}) but job missing/stale — ignored`)
+            return
+          }
+
+          yield* library.update(row.workshop_id, {
+            transcode_status: "completed",
+            transcode_progress: 100,
+            transcode_error: null,
+            transcoded_path: report.output_relative_path,
+            transcoded_resolution: targetResolution,
+            transcoded_codec: targetCodec,
+            transcoded_size: report.output_size,
+          })
+
+          yield* logger.info(
+            `Transcode complete ${jobId} (${row.workshop_id}) — ${report.output_size} bytes in ${report.duration_ms}ms`
+          )
+        }),
+
+      fail: (jobId, error) =>
+        Effect.gen(function* () {
+          const row = yield* db.queryOne<{ workshop_id: string }>(
+            `UPDATE transcode_jobs
+             SET status = 'failed', error = ?, completed_at = ?
+             WHERE id = ?
+             RETURNING workshop_id`,
+            [error, Date.now(), jobId]
+          )
+          if (!row) return
+
+          yield* library.update(row.workshop_id, {
+            transcode_status: "failed",
+            transcode_error: error,
+          })
+
+          yield* logger.warn(`Transcode failed ${jobId} (${row.workshop_id}): ${error}`)
         }),
     }
   })

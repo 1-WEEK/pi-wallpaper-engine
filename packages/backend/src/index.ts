@@ -12,6 +12,7 @@ import { downloadRoutes } from "./routes/download.js"
 import { displayRoutes } from "./routes/display.js"
 import { storageRoutes } from "./routes/storage.js"
 import { systemRoutes } from "./routes/system.js"
+import { transcodeRoutes } from "./routes/transcode.js"
 import { buildAuthHandler } from "./routes/auth.js"
 import { createAuth, type AuthService } from "./services/Auth.js"
 import { originGuard } from "./middleware/originGuard.js"
@@ -119,6 +120,19 @@ app
   .use(displayRoutes(runtime))
   .use(storageRoutes(runtime))
   .use(systemRoutes(runtime))
+
+// Mount Worker pull endpoints only when PWE_WORKER_API_KEY is configured.
+// Without the key the backend boots fine for browsing/playback, but new
+// downloads that decideTranscode flags will sit in `pending` until both the
+// key is set AND a Worker is running.
+const workerKey = process.env["PWE_WORKER_API_KEY"]
+if (workerKey && workerKey.length >= 8) {
+  app.use(transcodeRoutes(runtime))
+} else {
+  console.warn(
+    "⚠ PWE_WORKER_API_KEY not set (or <8 chars). /api/transcode/* routes are not mounted; new transcode jobs will queue but no Worker can claim them. Set the key in ~/.config/pi-wallpaper-engine/auth.env to enable."
+  )
+}
 
 if (existsSync(FRONTEND_DIST)) {
   app.use(staticPlugin({ assets: FRONTEND_DIST, prefix: "/" }))

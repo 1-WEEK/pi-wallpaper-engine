@@ -12,16 +12,23 @@ import { PlayerStateLive } from "./services/PlayerState.js"
 import { SteamCmdLive } from "./services/SteamCmd.js"
 import { SteamWorkshopLive } from "./services/SteamWorkshop.js"
 import { StorageLive } from "./services/Storage.js"
-import { TranscodeQueueNoop } from "./services/TranscodeQueue.js"
+import { TranscodeMonitorLive } from "./services/TranscodeMonitor.js"
+import { TranscodeQueueLive } from "./services/TranscodeQueue.js"
 
 /**
  * Build the application layer. Order matters here — we provide leaves
  * (Config, Logger) last in the chain because `.pipe(Layer.provideMerge(X))`
  * means "X provides for the layer above it." Each step adds a service whose
  * dependencies have already been declared earlier.
+ *
+ * Phase 2 transcoding is live: TranscodeQueueLive enqueues real jobs, and
+ * TranscodeMonitorLive forks a 30s reaper to reset stale claimed/running rows.
+ * Operators must run a Worker container against /api/transcode/* — otherwise
+ * pending jobs sit forever.
  */
 export const buildLayer = (configPath: string) =>
-  TranscodeQueueNoop.pipe(
+  TranscodeMonitorLive.pipe(
+    Layer.provideMerge(TranscodeQueueLive),
     Layer.provideMerge(PlayerPowerLive),
     Layer.provideMerge(PlayerStateLive),
     Layer.provideMerge(DownloadTasksLive),
