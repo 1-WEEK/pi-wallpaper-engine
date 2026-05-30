@@ -32,6 +32,16 @@ const isAdultRow = (row: LibraryItem): boolean =>
 const showsTranscodeBadge = (status: LibraryItem["transcode_status"]): boolean =>
   status === "failed" || status === "running" || status === "claimed" || status === "pending"
 
+// Returns the percent saved versus source, or null when the row has no
+// optimized result yet (or transcode somehow grew the file).
+const spaceSavedPercent = (row: LibraryItem): number | null => {
+  if (row.transcode_status !== "completed") return null
+  const source = row.source_size
+  const optimized = row.transcoded_size
+  if (!source || !optimized || optimized >= source) return null
+  return Math.round(((source - optimized) / source) * 100)
+}
+
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const { mobile } = useLayout()
   const [view, setView] = useState<"grid" | "list">("grid")
@@ -171,6 +181,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
           {visibleRows.map((row) => {
             const active = row.workshop_id === nowPlayingId
             const showBadge = showsTranscodeBadge(row.transcode_status)
+            const savedPct = spaceSavedPercent(row)
             return (
               <article
                 key={row.workshop_id}
@@ -191,6 +202,11 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                   {showBadge && (
                     <span className={`library-card-badge status-pill-${row.transcode_status} mono`}>
                       {row.transcode_status}
+                    </span>
+                  )}
+                  {!showBadge && savedPct !== null && (
+                    <span className="library-card-badge status-pill-completed mono">
+                      ↓ saved {savedPct}%
                     </span>
                   )}
                   <div className="library-card-overlay">
@@ -266,6 +282,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
           {visibleRows.map((row) => {
             const active = row.workshop_id === nowPlayingId
             const showBadge = showsTranscodeBadge(row.transcode_status)
+            const savedPct = spaceSavedPercent(row)
             return (
               <li key={row.workshop_id} className={`library-row ${active ? "active" : ""}`}>
                 {row.preview_url ? (
@@ -282,6 +299,11 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     {showBadge && (
                       <span className={`status-pill status-pill-${row.transcode_status} mono`}>
                         {row.transcode_status}
+                      </span>
+                    )}
+                    {!showBadge && savedPct !== null && (
+                      <span className="status-pill status-pill-completed mono">
+                        ↓ saved {savedPct}%
                       </span>
                     )}
                   </div>
