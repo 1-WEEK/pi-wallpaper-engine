@@ -17,10 +17,18 @@
     "service:start": "systemctl --user start pi-wallpaper-engine",
     "service:stop": "systemctl --user stop pi-wallpaper-engine",
     "service:restart": "bun scripts/restart-prod.ts",
-    "service:status": "systemctl --user status pi-wallpaper-engine"
+    "service:status": "systemctl --user status pi-wallpaper-engine",
+    "prepare": "simple-git-hooks"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "bun test; codegraph index",
+    "post-merge": "codegraph index",
+    "post-checkout": "codegraph index"
   },
   "devDependencies": {
+    "@colbymchenry/codegraph": "^0.9.8",
     "@types/bun": "latest",
+    "simple-git-hooks": "^2.13.1",
     "typescript": "^5.6.0"
   },
   "engines": {
