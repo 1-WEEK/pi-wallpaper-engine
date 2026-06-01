@@ -13,22 +13,32 @@ import { SteamCmdLive } from "./services/SteamCmd.js"
 import { SteamWorkshopLive } from "./services/SteamWorkshop.js"
 import { StorageLive } from "./services/Storage.js"
 import { TranscodeMonitorLive } from "./services/TranscodeMonitor.js"
-import { TranscodeQueueLive } from "./services/TranscodeQueue.js"
+import { TranscodeQueueLive, TranscodeQueueNoop } from "./services/TranscodeQueue.js"
+
+/**
+ * Pick the transcode queue mode from the operator's environment.
+ *
+ * `PWE_WORKER_API_KEY` is the same signal that gates `/api/transcode/*` mount
+ * in index.ts — using one switch for both keeps backend-only deploys clean.
+ * With the key set: Live queue + routes mounted, ready for a Worker.
+ * Without it: Noop queue (downloads mark `transcode_status='skipped'`) and
+ * routes unmounted, so the Pi works fine even with no Worker in sight.
+ */
+export const transcodeMode = (): "live" | "noop" => {
+  const key = process.env["PWE_WORKER_API_KEY"]
+  return key && key.length >= 8 ? "live" : "noop"
+}
 
 /**
  * Build the application layer. Order matters here — we provide leaves
  * (Config, Logger) last in the chain because `.pipe(Layer.provideMerge(X))`
  * means "X provides for the layer above it." Each step adds a service whose
  * dependencies have already been declared earlier.
- *
- * Phase 2 transcoding is live: TranscodeQueueLive enqueues real jobs, and
- * TranscodeMonitorLive forks a 30s reaper to reset stale claimed/running rows.
- * Operators must run a Worker container against /api/transcode/* — otherwise
- * pending jobs sit forever.
  */
-export const buildLayer = (configPath: string) =>
-  TranscodeMonitorLive.pipe(
-    Layer.provideMerge(TranscodeQueueLive),
+export const buildLayer = (configPath: string) => {
+  const queueLayer = transcodeMode() === "live" ? TranscodeQueueLive : TranscodeQueueNoop
+  return TranscodeMonitorLive.pipe(
+    Layer.provideMerge(queueLayer),
     Layer.provideMerge(PlayerPowerLive),
     Layer.provideMerge(PlayerStateLive),
     Layer.provideMerge(DownloadTasksLive),
@@ -43,6 +53,7 @@ export const buildLayer = (configPath: string) =>
     Layer.provideMerge(LoggerLive),
     Layer.provideMerge(ConfigLive(configPath))
   )
+}
 
 export const makeRuntime = (configPath: string) => ManagedRuntime.make(buildLayer(configPath))
 
