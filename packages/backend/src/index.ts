@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
-import { makeRuntime, getConfig } from "./runtime.js"
+import { makeRuntime, getConfig, transcodeMode } from "./runtime.js"
 import { workshopRoutes } from "./routes/workshop.js"
 import { libraryRoutes } from "./routes/library.js"
 import { playerRoutes } from "./routes/player.js"
@@ -122,16 +122,12 @@ app
   .use(systemRoutes(runtime))
 
 // Mount Worker pull endpoints only when PWE_WORKER_API_KEY is configured.
-// Without the key the backend boots fine for browsing/playback, but new
-// downloads that decideTranscode flags will sit in `pending` until both the
-// key is set AND a Worker is running.
-const workerKey = process.env["PWE_WORKER_API_KEY"]
-if (workerKey && workerKey.length >= 8) {
+// Runtime's TranscodeQueue layer follows the same signal (Live when set,
+// Noop when not) so a backend-only deploy stays clean — downloads mark
+// transcode_status='skipped' instead of accumulating pending jobs no
+// Worker can claim.
+if (transcodeMode() === "live") {
   app.use(transcodeRoutes(runtime))
-} else {
-  console.warn(
-    "⚠ PWE_WORKER_API_KEY not set (or <8 chars). /api/transcode/* routes are not mounted; new transcode jobs will queue but no Worker can claim them. Set the key in ~/.config/pi-wallpaper-engine/auth.env to enable."
-  )
 }
 
 if (existsSync(FRONTEND_DIST)) {
@@ -151,6 +147,9 @@ const server = app.listen({ hostname: config.server.host, port: config.server.po
 console.log(`▶ pi-wallpaper-engine listening on http://${config.server.host}:${config.server.port}`)
 console.log(`  Config: ${CONFIG_PATH}`)
 console.log(`  Data root: ${config.paths.data_root}`)
+console.log(
+  `  Transcode: ${transcodeMode() === "live" ? "live (worker protocol mounted)" : "noop (PWE_WORKER_API_KEY unset — downloads skip transcode)"}`
+)
 console.log(`  Media root: ${config.storage.root ?? config.paths.data_root}`)
 if (auth) {
   console.log(`  Auth: enabled (db ${auth.path}, setup ${auth.handle.hasAnyPasskey() ? "complete" : "pending"})`)
