@@ -72,6 +72,15 @@ export const Downloads = () => {
     mutate()
   }
 
+  const cancel = async (id: string) => {
+    await api.cancelDownload(id).catch(() => {
+      // 404 is fine — the workflow may have already finished between render
+      // and the click. The next SWR refresh will reflect the real terminal
+      // state without surfacing a spurious error.
+    })
+    mutate()
+  }
+
   const dismissAllFinished = async () => {
     await Promise.all(finished.map((t) => api.dismissDownloadTask(t.workshop_id)))
     mutate()
@@ -160,7 +169,7 @@ export const Downloads = () => {
           <h2 className="section-title mono">Active</h2>
           <ul className="download-list">
             {active.map((t) => (
-              <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} />
+              <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} onCancel={cancel} />
             ))}
           </ul>
         </section>
@@ -171,7 +180,7 @@ export const Downloads = () => {
           <h2 className="section-title mono">Finished</h2>
           <ul className="download-list download-list-finished">
             {finished.map((t) => (
-              <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} />
+              <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} onCancel={cancel} />
             ))}
           </ul>
         </section>
@@ -183,9 +192,10 @@ export const Downloads = () => {
 interface RowProps {
   task: DownloadTask
   onDismiss: (id: string) => void
+  onCancel: (id: string) => void
 }
 
-const DownloadRow = ({ task, onDismiss }: RowProps) => {
+const DownloadRow = ({ task, onDismiss, onCancel }: RowProps) => {
   const { mobile } = useLayout()
   const stageClass =
     task.stage === "error" ? "dl-stage-error" : task.stage === "complete" ? "dl-stage-ok" : ""
@@ -283,9 +293,13 @@ const DownloadRow = ({ task, onDismiss }: RowProps) => {
         )}
       </div>
       <div className="download-actions">
-        {isFinished(task) && (
+        {isFinished(task) ? (
           <button type="button" className="btn btn-secondary" onClick={() => onDismiss(task.workshop_id)}>
             Dismiss
+          </button>
+        ) : (
+          <button type="button" className="btn btn-secondary" onClick={() => onCancel(task.workshop_id)}>
+            Cancel
           </button>
         )}
       </div>
