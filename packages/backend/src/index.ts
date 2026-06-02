@@ -115,7 +115,7 @@ if (auth && config.auth) {
 app
   .use(workshopRoutes(runtime))
   .use(libraryRoutes(runtime))
-  .use(playerRoutes(runtime))
+  .use(playerRoutes(runtime, auth))
   .use(downloadRoutes(runtime, auth))
   .use(displayRoutes(runtime))
   .use(storageRoutes(runtime))
