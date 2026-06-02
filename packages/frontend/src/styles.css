@@ -2111,6 +2111,14 @@ a {
     align-items: stretch;
   }
 
+  .page-actions {
+    flex-wrap: wrap;
+  }
+
+  .page-actions > .btn {
+    flex-basis: 100%;
+  }
+
   .command-bar-sort {
     justify-content: space-between;
     padding: 8px 10px;
@@ -2630,6 +2638,9 @@ a {
 }
 .mobile-shell .wallpaper-title {
   font-size: 13px;
+}
+.mobile-shell .wallpaper-title-row .status-pill-default {
+  display: none;
 }
 .mobile-shell .wallpaper-actions {
   flex-wrap: nowrap;
