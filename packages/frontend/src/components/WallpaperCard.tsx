@@ -128,7 +128,7 @@ export const WallpaperCard = ({
           ) : taskError ? (
             <span className="status-pill status-pill-error">Failed</span>
           ) : (
-            <span className="status-pill">Workshop</span>
+            <span className="status-pill status-pill-default">Workshop</span>
           )}
         </div>
         <div className="wallpaper-id mono">{item.publishedfileid}</div>
