@@ -1,5 +1,5 @@
 import { Elysia } from "elysia"
-import { Effect, PubSub, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Option, PubSub, Stream } from "effect"
 import { hasAdultTitleHint, StorageError } from "@pwe/shared"
 import { resolve } from "node:path"
 import { rm } from "node:fs/promises"
@@ -28,6 +28,12 @@ type ProgressEvent =
 
 export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = null) => {
   const wsPubsubPromise = runtime.runPromise(PubSub.unbounded<ProgressEvent>())
+
+  // Tracks the workflow fiber for each in-flight download so cancel can
+  // interrupt it. The fiber's acquireUseRelease release block kills the
+  // SteamCMD child; the workflow's failure path runs markError + cleanupOrphan
+  // the same way it does for ordinary failures.
+  const inflight = new Map<string, Fiber.RuntimeFiber<unknown, unknown>>()
 
   return new Elysia({ prefix: "/api/download" })
     .post("/:workshopId", async ({ params, set }) => {
@@ -248,21 +254,48 @@ export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = n
           const path = (err as { path?: string }).path ?? "downloaded file"
           message = `Downloaded files are incomplete or unreadable: ${path}. SteamCMD likely stalled before finalizing the wallpaper. Retry the item.`
         }
+        if (tag === "Cancelled") {
+          message = "Cancelled"
+        }
         console.error(`Download ${workshopId} failed (${tag ?? "unknown"}): ${message}`)
         runtime.runFork(pubsub.publish({ workshopId, stage: "error", message }))
         runtime.runFork(markError(message))
         runtime.runFork(cleanupOrphan)
       }
 
-      runtime
-        .runPromise(workflow)
-        .then(() => {
-          // success path already publishes "complete" inside the workflow
-        })
-        .catch(handleFailure)
+      const fiber = runtime.runFork(workflow)
+      inflight.set(workshopId, fiber)
+      fiber.addObserver((exit) => {
+        inflight.delete(workshopId)
+        if (Exit.isSuccess(exit)) return
+        // Interrupt-only exit means the fiber was cancelled — route through
+        // handleFailure so markError + cleanupOrphan still run, then surface
+        // a "Cancelled" message instead of the generic SteamCmd error.
+        if (Cause.isInterruptedOnly(exit.cause)) {
+          handleFailure({ _tag: "Cancelled" })
+          return
+        }
+        const failure = Cause.failureOption(exit.cause)
+        const err = Option.getOrElse(failure, () => new Error(Cause.pretty(exit.cause)))
+        handleFailure(err)
+      })
 
       set.status = 202
       return { ok: true, workshopId, status: "started" }
+    })
+
+    .post("/:workshopId/cancel", ({ params, set }) => {
+      const fiber = inflight.get(params.workshopId)
+      if (!fiber) {
+        set.status = 404
+        return { ok: false, error: "No active download for this workshop id" }
+      }
+      // Interrupt fires release of SteamCmd's acquireUseRelease (child.kill())
+      // and routes through the addObserver path which writes the task error
+      // row + cleans the orphan source dir.
+      runtime.runFork(Fiber.interrupt(fiber))
+      set.status = 202
+      return { ok: true, workshopId: params.workshopId, status: "cancelling" }
     })
 
     .get("/tasks", () =>

@@ -202,6 +202,10 @@ export const api = {
   downloadTasks: () => fetch(`/api/download/tasks`).then(json<DownloadTask[]>),
   dismissDownloadTask: (id: string) =>
     fetch(`/api/download/tasks/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  cancelDownload: (id: string) =>
+    fetch(`/api/download/${id}/cancel`, { method: "POST" }).then(
+      json<{ ok: boolean; workshopId?: string; status?: string; error?: string }>
+    ),
 
   systemSummary: () => fetch(`/api/system/summary`).then(json<SystemSummary>),
   getStorage: () => fetch(`/api/storage`).then(json<StorageStatus>),
@@ -281,4 +285,20 @@ export const api = {
     const proto = window.location.protocol === "https:" ? "wss" : "ws"
     return new WebSocket(`${proto}://${window.location.host}/api/download/progress/${workshopId}`)
   },
+
+  playerWatchWS: (): WebSocket => {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws"
+    return new WebSocket(`${proto}://${window.location.host}/api/player/watch`)
+  },
+}
+
+export interface PlayerWatchSnapshot {
+  playing: boolean
+  current_workshop_id: string | null
+  path: string | null
+  display_mode: DisplayMode
+  current_title: string | null
+  current_preview_url: string | null
+  current_resolution: string | null
+  current_codec: string | null
 }
