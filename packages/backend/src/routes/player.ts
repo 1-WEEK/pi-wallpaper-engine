@@ -1,10 +1,12 @@
 import { Elysia, t } from "elysia"
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
 import { Mpv } from "../services/Mpv.js"
 import { PlayerPower } from "../services/PlayerPower.js"
+import { PlayerWatch } from "../services/PlayerWatch.js"
 import type { AppRuntime } from "../runtime.js"
+import type { AuthService } from "../services/Auth.js"
 
-export const playerRoutes = (runtime: AppRuntime) =>
+export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = null) =>
   new Elysia({ prefix: "/api/player" })
     .post("/play/:workshopId", ({ params, set }) =>
       runtime
@@ -124,3 +126,68 @@ export const playerRoutes = (runtime: AppRuntime) =>
         })
       )
     )
+    .ws("/watch", {
+      open: async (ws) => {
+        // WebSocket frames bypass the global sessionGuard onBeforeHandle, so
+        // when auth is enabled we re-check the cookie session here, matching
+        // the download/progress WS pattern.
+        if (auth) {
+          const headers = new Headers()
+          const cookieHeader = (ws.data as { headers?: Record<string, string | undefined> }).headers
+            ?.cookie
+          if (cookieHeader) headers.set("cookie", cookieHeader)
+          const session = await auth.instance.api.getSession({ headers }).catch(() => null)
+          if (!session) {
+            try {
+              ws.send(JSON.stringify({ error: "Authentication required" }))
+            } catch {
+              // ignore
+            }
+            ws.close()
+            return
+          }
+        }
+
+        const initial = await runtime
+          .runPromise(
+            Effect.gen(function* () {
+              const watch = yield* PlayerWatch
+              return yield* watch.current()
+            })
+          )
+          .catch(() => null)
+        if (initial) {
+          try {
+            ws.send(JSON.stringify(initial))
+          } catch {
+            // ignore send-after-close
+          }
+        }
+
+        const fiber = runtime.runFork(
+          Effect.gen(function* () {
+            const watch = yield* PlayerWatch
+            yield* watch.stream().pipe(
+              Stream.runForEach((snap) =>
+                Effect.sync(() => {
+                  try {
+                    ws.send(JSON.stringify(snap))
+                  } catch {
+                    // ignore send-after-close
+                  }
+                })
+              )
+            )
+          })
+        )
+        ;(ws.data as Record<string, unknown>)["fiber"] = fiber
+      },
+      close: (ws) => {
+        const fiber = (ws.data as Record<string, unknown>)["fiber"] as
+          | ReturnType<AppRuntime["runFork"]>
+          | undefined
+        if (fiber) {
+          runtime.runFork(fiber.interruptAsFork(fiber.id()))
+        }
+      },
+    })

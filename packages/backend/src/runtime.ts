@@ -9,6 +9,7 @@ import { MigrateLive } from "./services/Migrate.js"
 import { MpvLive } from "./services/Mpv.js"
 import { PlayerPowerLive } from "./services/PlayerPower.js"
 import { PlayerStateLive } from "./services/PlayerState.js"
+import { PlayerWatchLive } from "./services/PlayerWatch.js"
 import { SteamCmdLive } from "./services/SteamCmd.js"
 import { SteamWorkshopLive } from "./services/SteamWorkshop.js"
 import { StorageLive } from "./services/Storage.js"
@@ -39,6 +40,7 @@ export const buildLayer = (configPath: string) => {
   const queueLayer = transcodeMode() === "live" ? TranscodeQueueLive : TranscodeQueueNoop
   return TranscodeMonitorLive.pipe(
     Layer.provideMerge(queueLayer),
+    Layer.provideMerge(PlayerWatchLive),
     Layer.provideMerge(PlayerPowerLive),
     Layer.provideMerge(PlayerStateLive),
     Layer.provideMerge(DownloadTasksLive),

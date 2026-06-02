@@ -4,7 +4,7 @@ import { Link, Redirect, Route, Switch, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
 import { SWRConfig, useSWRConfig } from "swr"
 import { api, onAuthChange } from "./api.js"
-import type { SystemSummary } from "./api.js"
+import type { PlayerWatchSnapshot, SystemSummary } from "./api.js"
 import { fetchSession, fetchSetupState } from "./auth.js"
 import { appIcons } from "./icons.js"
 import { Browse } from "./pages/Browse.js"
@@ -104,6 +104,59 @@ const ShellBody = () => {
     refreshInterval: 5000,
     revalidateIfStale: true,
   })
+
+  // WS live-update path. Polling at 5s is fine as the floor; this WS reduces
+  // perceived latency for play / pause / display-mode transitions to ~1s.
+  // If the socket disconnects (auth proxy strips upgrades, network blip), the
+  // polling above keeps the UI accurate, so we don't surface socket errors.
+  useEffect(() => {
+    let ws: WebSocket | null = null
+    let stopped = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+    const connect = () => {
+      if (stopped) return
+      ws = api.playerWatchWS()
+      ws.onmessage = (event) => {
+        try {
+          const snap = JSON.parse(event.data) as PlayerWatchSnapshot
+          if (snap && typeof snap === "object" && "playing" in snap) {
+            mutateSummary(
+              (prev) =>
+                prev ? { ...prev, status: { ...prev.status, player: snap } } : prev,
+              { revalidate: false }
+            )
+          }
+        } catch {
+          // ignore malformed frames
+        }
+      }
+      ws.onclose = () => {
+        if (stopped) return
+        // Retry after 5s — same cadence as the polling floor so a permanently
+        // broken WS environment costs at most one extra connection per tick.
+        retryTimer = setTimeout(connect, 5000)
+      }
+      ws.onerror = () => {
+        try {
+          ws?.close()
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    connect()
+    return () => {
+      stopped = true
+      if (retryTimer) clearTimeout(retryTimer)
+      try {
+        ws?.close()
+      } catch {
+        // ignore
+      }
+    }
+  }, [mutateSummary])
 
   const browseActive = loc === "/browse" || loc === "/"
   if (browseActive) savedBrowseSearch.current = search
