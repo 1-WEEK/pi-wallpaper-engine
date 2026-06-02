@@ -19,10 +19,16 @@ interface Props {
   onRefresh: () => void
 }
 
+const passkeyDateFmt = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+})
+
 const formatPasskeyDate = (value: string): string => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  return passkeyDateFmt.format(date)
 }
 
 const PasskeySection = () => {
@@ -90,7 +96,7 @@ const PasskeySection = () => {
               <span className="setting-value-subtle">{formatPasskeyDate(pk.createdAt)}</span>
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn btn-row btn-row-quiet"
                 onClick={() => void onDelete(pk.id)}
                 disabled={busy !== null || count <= 1}
                 title={count <= 1 ? "Cannot remove your last passkey" : undefined}
@@ -281,7 +287,6 @@ export const Settings = ({ summary, onRefresh }: Props) => {
         <div>
           <h1 className="page-title">Settings</h1>
         </div>
-        <span className="status-pill mono">{storage.using_default ? "Default" : "Custom"}</span>
       </header>
 
       {banner && <div className="error-banner">{banner}</div>}
@@ -345,8 +350,15 @@ export const Settings = ({ summary, onRefresh }: Props) => {
           />
         </section>
 
-        <section className="settings-group">
-          <h2 className="settings-group-title mono">Storage</h2>
+        <PasskeySection />
+
+        <section className="settings-group settings-group-wide">
+          <header className="settings-group-header">
+            <h2 className="settings-group-title mono">Storage</h2>
+            {!storage.using_default && (
+              <span className="settings-tag mono">custom root</span>
+            )}
+          </header>
           <SettingRow
             label="status"
             value={
@@ -359,10 +371,10 @@ export const Settings = ({ summary, onRefresh }: Props) => {
             label="media root"
             value={
               <div className="storage-root-value">
-                <span className="mono">{storage.data_root}</span>
+                <span className="mono storage-root-path">{storage.data_root}</span>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn btn-row"
                   onClick={() => setPickerOpen(true)}
                   disabled={locked}
                 >
@@ -448,21 +460,16 @@ export const Settings = ({ summary, onRefresh }: Props) => {
               )}
             </div>
           )}
+
+          <p className="settings-note">
+            <span className="settings-note-icon" aria-hidden="true">{appIcons.pi}</span>
+            <span>
+              Wallpaper source and optimized files live under the current media root.
+              Switching roots validates space and migrates the library; downloads pause
+              until migration completes.
+            </span>
+          </p>
         </section>
-
-        <PasskeySection />
-      </div>
-
-      <div className="callout">
-        <div className="callout-title">
-          <span className="callout-title-icon">{appIcons.pi}</span>
-          <span>About media root</span>
-        </div>
-        <p>Wallpaper source and optimized files are stored under the current media root.</p>
-        <p>
-          When changing roots, the app validates that the target is readable, writable, and has enough space before starting migration.
-        </p>
-        <p>Downloads are blocked during migration and the root cannot be changed again. If the library is empty, only the root is updated without migration.</p>
       </div>
 
       <DirectoryPickerDialog

@@ -1640,31 +1640,60 @@ a {
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .settings-group {
-  padding: 16px;
+  padding: 18px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--ink-1);
+  min-width: 0;
+}
+
+.settings-group-wide {
+  grid-column: 1 / -1;
+}
+
+.settings-group-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-group-header .settings-group-title {
+  margin: 0;
 }
 
 .settings-group-title {
-  margin: 0 0 14px;
-  font-size: 11px;
+  margin: 0 0 12px;
+  font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--paper-faint);
 }
 
+.settings-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+}
 
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 9px 0;
+  padding: 10px 0;
   border-bottom: 1px dashed var(--border);
 }
 
@@ -1674,6 +1703,7 @@ a {
 }
 
 .setting-label {
+  flex-shrink: 0;
   color: var(--paper-faint);
 }
 
@@ -1681,6 +1711,7 @@ a {
   min-width: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .setting-value-subtle {
@@ -1752,17 +1783,30 @@ a {
   min-width: 0;
 }
 
-.storage-root-value .mono {
+.storage-root-path {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.storage-root-value .btn {
-  min-height: 20px;
-  padding: 0 8px;
-  font-size: 11px;
+.btn-row {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.btn-row-quiet {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--paper-dim);
+}
+
+.btn-row-quiet:hover:not(:disabled) {
+  background: var(--ink-2);
+  color: var(--paper);
 }
 
 .target-root-panel {
@@ -1824,52 +1868,28 @@ a {
   font-size: 13px;
 }
 
-.callout {
-  padding: 16px 18px;
-  border: 1px solid var(--accent-border);
-  border-left-width: 2px;
-  border-radius: 14px;
-  background: var(--ink-1);
-}
-
-.callout-title {
+.settings-note {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.callout-title-icon {
-  display: inline-flex;
-  color: var(--accent-2);
-}
-
-.callout-title-icon svg {
-  width: 16px;
-  height: 16px;
-}
-
-.callout p {
-  margin: 10px 0;
-  color: var(--paper-dim);
-  line-height: 1.6;
-}
-
-.callout code {
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--ink-2);
-  color: var(--accent-2);
-}
-
-.callout-code {
-  margin: 0;
+  gap: 10px;
+  margin: 14px 0 0;
   padding: 12px 14px;
   border-radius: 10px;
   background: var(--ink-2);
+  color: var(--paper-dim);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.settings-note-icon {
+  display: inline-flex;
+  flex-shrink: 0;
   color: var(--accent-2);
-  overflow-x: auto;
+  margin-top: 2px;
+}
+
+.settings-note-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .directory-dialog-overlay {
@@ -2137,6 +2157,10 @@ a {
   .storage-root-value,
   .directory-dialog-footer {
     flex-direction: column;
+  }
+
+  .storage-root-value .btn-row {
+    align-self: flex-end;
   }
 
   .target-root-main {
@@ -2573,6 +2597,20 @@ a {
 .mobile-shell .library-card-play {
   flex: 1;
 }
+.mobile-shell .library-card-modes-row {
+  padding: 0 10px 10px;
+}
+.mobile-shell .library-card-modes-row .segmented {
+  width: 100%;
+}
+.mobile-shell .library-card-modes-row .segmented-button {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  padding: 4px 4px;
+  min-height: 26px;
+}
 .mobile-shell .library-card-badge,
 .mobile-shell .library-playing-pill {
   top: 8px;
@@ -2588,9 +2626,21 @@ a {
 }
 .mobile-shell .wallpaper-body {
   padding: 10px 12px;
+  gap: 8px;
 }
 .mobile-shell .wallpaper-title {
   font-size: 13px;
+}
+.mobile-shell .wallpaper-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.mobile-shell .wallpaper-actions > .btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: 12px;
+  min-height: 32px;
 }
 .mobile-shell .btn {
   min-height: 38px;
