@@ -1,10 +1,10 @@
 # Roadmap
 
-Updated: 2026-05-27.
+Updated: 2026-06-06.
 
 This roadmap reflects the current product direction: Phase 1 direct playback is
-the active product, custom directory storage migration is implemented, and Phase 2
-transcoding remains planned after the deployed system is safer and better validated.
+the active product, custom directory storage migration is implemented, and the
+Phase 2 transcoding worker is implemented but not yet deployed on a real NAS.
 
 ## 1. Documentation Cleanup
 
@@ -56,10 +56,13 @@ Goal: protect the Cloudflare Tunnel deployment with application-layer auth.
 
 ## 5. Phase 2 NAS Transcoding Worker
 
+Status: implemented; not yet deployed or validated on a real NAS.
+
 Goal: implement the deferred Worker architecture after auth is in place.
 
-- Wire Pi-side `/api/transcode/*` routes.
-- Switch runtime from `TranscodeQueueNoop` to the live queue when ready.
-- Implement the NAS Docker Worker against `WorkerProtocol`.
-- Add heartbeat, progress, completion, failure, and retry behavior.
-- Surface transcode state in the library and task UI.
+- [x] Pi-side `/api/transcode/*` routes (mounted when `PWE_WORKER_API_KEY` is set).
+- [x] Runtime switches `TranscodeQueueNoop` → `TranscodeQueueLive` via `transcodeMode()`.
+- [x] NAS Docker Worker against `WorkerProtocol` (`@pwe/worker`).
+- [x] Heartbeat, progress, completion, failure, and retry behavior.
+- [x] Transcode state surfaced on library cards.
+- [ ] Deploy the Worker on a real NAS and validate an end-to-end transcode.

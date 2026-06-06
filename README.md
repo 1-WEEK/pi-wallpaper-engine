@@ -10,12 +10,16 @@ partial files are cleaned up.
 
 ## Current Status
 
-- Phase 1 is the active product line: browse, download, library management, mpv
-  playback, display power controls, mobile UI, and media-directory migration are
-  implemented.
-- Phase 2 transcoding is reserved but not wired. `TranscodeQueueNoop` is active,
-  `transcode_jobs` and Worker protocol schemas are kept for the future, and the
-  `@pwe/worker` package is still a placeholder.
+- Phase 1 is the active product line: browse, download (cancelable, with live
+  progress over WebSocket), library management, mpv playback with a live player
+  WebSocket, display power controls, mobile UI, and media-directory migration
+  are implemented.
+- Phase 2 transcoding is implemented but inactive by default. The `@pwe/worker`
+  package is a working NAS-side ffmpeg worker (hardware HEVC/QSV with a libx265
+  fallback, shipped as a Docker image). The Pi runs `TranscodeQueueNoop` until
+  `PWE_WORKER_API_KEY` is set, which switches it to `TranscodeQueueLive` and
+  mounts `/api/transcode/*`. No Worker is deployed yet — see
+  [packages/worker/README.md](packages/worker/README.md).
 - Optional Passkey authentication via Better Auth is implemented for public
   exposure (Cloudflare Tunnel, reverse proxy, etc.). Off by default for LAN-only
   setups. See [docs/auth.md](docs/auth.md) for the enable flow.
@@ -164,7 +168,8 @@ Workspace packages:
 - `@pwe/backend` — Elysia API, Effect services, mpv, SteamCMD, storage
 - `@pwe/frontend` — Vite + React UI
 - `@pwe/migrate` — small rsync wrapper used by storage migration
-- `@pwe/worker` — Phase 2 placeholder, not implemented in Phase 1
+- `@pwe/worker` — NAS-side ffmpeg transcode worker (Phase 2), shipped as a
+  Docker image; inactive until `PWE_WORKER_API_KEY` is set on the Pi
 
 ## Media Directory
 
@@ -186,7 +191,7 @@ are blocked while migration is running.
 Open near-term work:
 
 1. Validate media-directory migration on the real Pi with removable storage.
-2. Implement the Phase 2 transcoding Worker.
+2. Deploy and validate the Phase 2 transcode Worker on a real NAS.
 
 See [plans/roadmap.md](plans/roadmap.md) for the working roadmap and history of
 completed items.
