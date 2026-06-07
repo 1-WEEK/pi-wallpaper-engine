@@ -28,6 +28,10 @@ bun run service:{start,stop,status}  # Plain systemctl wrappers, no guards
 
 Filter a single test: `bun test packages/backend/src/transcode/decide.test.ts`
 
+## Code reading
+
+When a task requires understanding code, architecture, data flow, call chains, or a bug path, use codegraph first. Start with `codegraph_context` for broad task context, then use `codegraph_trace`, `codegraph_callers`, `codegraph_callees`, or `codegraph_explore` for focused follow-up. Use `rg` and direct file reads after codegraph when you need exact text, non-indexed files, tests, config, docs, or generated output.
+
 ## Architecture
 
 **Bun workspaces monorepo**:
