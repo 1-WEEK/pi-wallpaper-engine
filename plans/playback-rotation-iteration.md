@@ -16,6 +16,8 @@ worker 真机验证没放进关键路径。它依赖一台 NAS,而这台 NAS 是
 
 `Mpv.ts` 只有 `play(workshopId, path)` 加 `--loop=inf`,单张无限循环。没有 playlist、队列、随机、下一张任何概念。`PlayerState` 只有一个省电恢复用的单例 slot。所以轮播是真缺口,不是重复造轮子。
 
+还有两个底层事实决定了轮播怎么做。一是 mpv 用 `--loop=inf` 启动(`Mpv.ts:98`),当前文件永远循环、永远不发 end-file 事件。二是 IPC 层(`Mpv.ts` 的 `handleData`)只解析带 `request_id` 的命令响应,不处理 mpv 主动推送的 event。所以轮播不靠"播完自动切",靠后端间隔定时器到点 `loadfile` 下一张,复用现有 `play` 的 `loadfile replace`。这样零改动 mpv 启动参数和播放核心。
+
 ## 范围
 
 **做**:顺序、随机、单张三种播放模式,上一张下一张,睡眠定时器,轮播的测试,文档同步。
@@ -24,25 +26,25 @@ worker 真机验证没放进关键路径。它依赖一台 NAS,而这台 NAS 是
 
 ## 数据流
 
-轮播本质是一个循环,这是设计意图,不是环路 bug。
+轮播本质是一个由后端定时器驱动的循环。
 
 ```
 Library (DB 壁纸行)
       │
       ▼
-Playlist Engine   后端:模式 single/seq/shuffle + 序列索引,内存态
-      │  loadfile(下一张)
+Playlist Engine   后端:模式 single/seq/shuffle + 序列索引 + 间隔定时器,内存态
+      │  间隔到点 loadfile(下一张),复用 Mpv.play
       ▼
-    Mpv  ◄──IPC: end-file 事件(播完一张)──┐
-      │  status                            │
-      ▼                                    │
-PlayerWatch  ──────── 选下一张(回 Playlist Engine)
+    Mpv  (--loop=inf 循环当前张,直到下次 loadfile replace)
+      │  status
+      ▼
+PlayerWatch  (1Hz tick + 快照 equality gate,snapshot 加 play_mode 字段)
       │  snapshot
       ▼
 WS /api/player/watch  ──►  前端 PlayerBar / MobileMiniPlayer
 ```
 
-环 `end-file 选下一张 loadfile end-file` 就是轮播本身。终止条件:stop、single 模式、空库、当前项被删。
+循环是"定时器到点,选下一张,loadfile,当前张 loop 到下个间隔"。终止条件:stop、single 模式、空库、睡眠定时器触发。
 
 ## 10 天日程
 
@@ -51,8 +53,8 @@ WS /api/player/watch  ──►  前端 PlayerBar / MobileMiniPlayer
 | Day | 交付 |
 |---|---|
 | 1 | 收口开胃。删掉过时 10 天的 `project-status-2026-05-27.md`,它还写着 worker、auth、WS、cancel 未实现,全错了,换成 2026-06-07 真实快照,顺手对齐 roadmap。 |
-| 2 | 轮播数据模型加 Mpv 扩展。新建 `playback_prefs` 单例表(`play_mode`,默认 `single`),走 `Db.ts` 既有的 `CREATE TABLE IF NOT EXISTS` 模式;`Mpv.ts` 加 end-file 事件订阅。 |
-| 3 | 轮播引擎。后端维护播放序列,顺序按 library 排,随机洗牌不重复,end-file 触发选下一张并 `loadfile`;新路由 `POST /api/player/mode`、`/api/player/next`、`/api/player/prev`;`PlayerWatch` 上报当前模式和索引。 |
+| 2 | 轮播数据模型。新建 `playback_prefs` 单例表(`play_mode` 默认 `single`,`rotation_interval_sec` 默认 600),走 `Db.ts` 既有的 `CREATE TABLE IF NOT EXISTS` 模式。不动 `Mpv.ts` 启动参数,轮播复用现有 `play`。 |
+| 3 | 轮播引擎。后端维护播放序列(顺序按 library 排,随机用 Fisher-Yates 洗一轮、放完整库再重洗),间隔定时器到点选下一张并 `loadfile`,切换时跳过磁盘上已不存在的项;新路由 `POST /api/player/mode`、`/api/player/next`、`/api/player/prev`;`PlayerWatch` 的 snapshot 加 `play_mode`。 |
 | 4 | 轮播后端测试。把"选下一张"和随机不重复算法做成纯函数单测;边界覆盖空库、当前项被删、单张库、切换中。Day 2 到 4 合并就是轮播后端完整可用,curl 能驱动。 |
 | 5 | 轮播前端。`PlayerBar` 加模式切换图标和上下一张按钮,接 WS 上报的当前壁纸;纯 CSS token,不引新 CSS 系统。 |
 | 6 | 移动端加入口。`MobileMiniPlayer` 适配;`Library` 页加"播放全部""随机播放"入口。Day 5 到 6 合并就是 UI 可用。 |
@@ -63,9 +65,11 @@ WS /api/player/watch  ──►  前端 PlayerBar / MobileMiniPlayer
 
 ## 关键决策
 
-轮播切换走后端控序加 end-file 逐个 `loadfile`,不用 mpv 原生 playlist。因为 shuffle 不重复、库动态变化、模式切换都得后端可控,而项目已经有 mpv IPC 命令队列和 observe 基础设施,顺着接最稳。
+轮播走后端间隔定时器加逐个 `loadfile`,不用 end-file,也不用 mpv 原生 playlist。原因有两层。一是 mpv `--loop=inf` 让当前文件永不结束,end-file 根本不会触发,走 end-file 得改播放核心并新建 event 解析,代价高。二是壁纸轮播的自然语义是"每张显示一段时间再换",按间隔切比按视频播完切更贴合。shuffle 不重复、库动态变化、模式切换都在后端定时器逻辑里控,复用现有 `Mpv.play` 的 `loadfile replace`,零改 mpv 启动参数。
 
 `play_mode` 默认 `single`,新代码不改现有行为,轮播是 opt-in,回滚也安全。
+
+重启后只恢复 `play_mode` 偏好,不自动开播。轮播定时器在用户 `play` 或"播放全部"时启动,睡眠定时器(Day 7)到点会取消它。
 
 播放偏好放新建的 `playback_prefs` 表,不塞进 `player_state`。后者语义是省电恢复,混进来不干净。
 
@@ -81,13 +85,7 @@ git-agent commit --intent "<这一增量做了什么>"
 
 它会把暂存区按逻辑边界拆成多个原子提交,最多 5 组。
 
-有个坑要记住:multi-split 模式下 git-agent 会吞掉 `--co-author` 参数。提交完检查 trailer,缺了就补:
-
-```
-git rebase <base> --exec 'git commit --amend --no-edit --no-verify --trailer "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"'
-```
-
-纯 message 改动可以加 `--no-verify` 跳过 pre-commit hook,代码没动,测试不必重跑。
+本仓库不加任何 co-author trailer。这是用户的全局偏好,已写进 `~/.claude/CLAUDE.md`。git-agent 默认就不加 co-author,正好符合,提交后不需要补 trailer,也不要手动加。
 
 ## 验证
 
@@ -95,7 +93,7 @@ git rebase <base> --exec 'git commit --amend --no-edit --no-verify --trailer "Co
 
 轮播手动验收:三模式切换、上下一张、播完自动切、空库不崩、删当前项继续轮播。
 
-Day 8 真机:连切 50 张以上不泄漏、不黑屏。
+Day 8 真机:轮播跑数小时不泄漏(盯 mpv 句柄、内存),间隔切换平滑(`loadfile replace` 不重启进程,短暂解码黑屏可接受)。
 
 ## 回滚
 
