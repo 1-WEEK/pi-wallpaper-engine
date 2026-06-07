@@ -13,7 +13,7 @@ Status: completed.
 Goal: finish the current documentation reset and commit it cleanly.
 
 - Keep `plans/pi-wallpaper-engine-spec.md` as the current v4 spec.
-- Keep `plans/project-status-2026-05-27.md` as the latest status snapshot.
+- Keep `plans/project-status-2026-06-07.md` as the latest status snapshot.
 - Keep older implementation plans only when they explain real decisions or
   explicitly say they are not implemented yet.
 - Split documentation commits into current status/spec/roadmap and
