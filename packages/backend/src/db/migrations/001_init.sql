@@ -66,3 +66,10 @@ CREATE TABLE IF NOT EXISTS player_state (
   restore_reason      TEXT NOT NULL,
   updated_at          INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS playback_prefs (
+  id                    TEXT PRIMARY KEY CHECK (id = 'singleton'),
+  play_mode             TEXT NOT NULL DEFAULT 'single',
+  rotation_interval_sec INTEGER NOT NULL DEFAULT 600,
+  updated_at            INTEGER NOT NULL
+);

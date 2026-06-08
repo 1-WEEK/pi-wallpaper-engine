@@ -3,6 +3,7 @@ import { Effect, Stream } from "effect"
 import { Mpv } from "../services/Mpv.js"
 import { PlayerPower } from "../services/PlayerPower.js"
 import { PlayerWatch } from "../services/PlayerWatch.js"
+import { Rotation } from "../services/Rotation.js"
 import type { AppRuntime } from "../runtime.js"
 import type { AuthService } from "../services/Auth.js"
 
@@ -13,7 +14,11 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
         .runPromise(
           Effect.gen(function* () {
             const playerPower = yield* PlayerPower
-            return yield* playerPower.play(params.workshopId)
+            const rotation = yield* Rotation
+            const result = yield* playerPower.play(params.workshopId)
+            // Best-effort: a play succeeds even if arming rotation hiccups.
+            yield* rotation.arm(params.workshopId).pipe(Effect.catchAll(() => Effect.void))
+            return result
           }).pipe(
             Effect.catchTag("LibraryNotFoundError", () =>
               Effect.sync(() => {
@@ -75,6 +80,8 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
         .runPromise(
           Effect.gen(function* () {
             const playerPower = yield* PlayerPower
+            const rotation = yield* Rotation
+            yield* rotation.disarm()
             return yield* playerPower.stopForIdle()
           }).pipe(
             Effect.catchTag("MpvIpcError", (e) =>
@@ -125,6 +132,76 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
           return yield* mpv.status()
         })
       )
+    )
+    .post(
+      "/mode",
+      ({ body, set }) =>
+        runtime
+          .runPromise(
+            Effect.gen(function* () {
+              const rotation = yield* Rotation
+              yield* rotation.setMode(body.mode)
+              return { ok: true, mode: body.mode }
+            }).pipe(
+              Effect.catchAll((e) =>
+                Effect.sync(() => {
+                  set.status = 500
+                  return { error: String(e) }
+                })
+              )
+            )
+          )
+          .catch((e) => {
+            set.status = 500
+            return { error: e instanceof Error ? e.message : String(e) }
+          }),
+      {
+        body: t.Object({
+          mode: t.Union([t.Literal("single"), t.Literal("sequential"), t.Literal("shuffle")]),
+        }),
+      }
+    )
+    .post("/next", ({ set }) =>
+      runtime
+        .runPromise(
+          Effect.gen(function* () {
+            const rotation = yield* Rotation
+            yield* rotation.next()
+            return { ok: true }
+          }).pipe(
+            Effect.catchAll((e) =>
+              Effect.sync(() => {
+                set.status = 500
+                return { error: String(e) }
+              })
+            )
+          )
+        )
+        .catch((e) => {
+          set.status = 500
+          return { error: e instanceof Error ? e.message : String(e) }
+        })
+    )
+    .post("/prev", ({ set }) =>
+      runtime
+        .runPromise(
+          Effect.gen(function* () {
+            const rotation = yield* Rotation
+            yield* rotation.prev()
+            return { ok: true }
+          }).pipe(
+            Effect.catchAll((e) =>
+              Effect.sync(() => {
+                set.status = 500
+                return { error: String(e) }
+              })
+            )
+          )
+        )
+        .catch((e) => {
+          set.status = 500
+          return { error: e instanceof Error ? e.message : String(e) }
+        })
     )
     .ws("/watch", {
       open: async (ws) => {
