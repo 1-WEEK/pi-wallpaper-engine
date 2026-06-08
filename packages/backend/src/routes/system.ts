@@ -8,6 +8,7 @@ import { DownloadTasks } from "../services/DownloadTasks.js"
 import { Library } from "../services/Library.js"
 import { Mpv } from "../services/Mpv.js"
 import { PlaybackPrefs } from "../services/PlaybackPrefs.js"
+import { SleepTimer } from "../services/SleepTimer.js"
 import { Storage } from "../services/Storage.js"
 import type { AppRuntime } from "../runtime.js"
 
@@ -62,6 +63,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
           const mpv = yield* Mpv
           const storageService = yield* Storage
           const prefs = yield* PlaybackPrefs
+          const sleep = yield* SleepTimer
 
           const [player, libraryRows, taskRows, displayStatus, storageStatus, transcodeCounts] =
             yield* Effect.all([
@@ -133,6 +135,8 @@ export const systemRoutes = (runtime: AppRuntime) =>
               )
             )
 
+          const sleepStatus = yield* sleep.status()
+
           const activeDownloads = taskRows.filter(
             (task) => !isFinishedTask(task.stage, task.finished_at)
           ).length
@@ -168,6 +172,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
                 active: activeDownloads,
                 finished: taskRows.length - activeDownloads,
               },
+              sleep: sleepStatus,
               transcode,
             },
           }

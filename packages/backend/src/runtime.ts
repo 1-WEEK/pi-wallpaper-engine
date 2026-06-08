@@ -10,6 +10,7 @@ import { MpvLive } from "./services/Mpv.js"
 import { PlaybackPrefsLive } from "./services/PlaybackPrefs.js"
 import { PlayerPowerLive } from "./services/PlayerPower.js"
 import { RotationLive } from "./services/Rotation.js"
+import { SleepTimerLive } from "./services/SleepTimer.js"
 import { PlayerStateLive } from "./services/PlayerState.js"
 import { PlayerWatchLive } from "./services/PlayerWatch.js"
 import { SteamCmdLive } from "./services/SteamCmd.js"
@@ -42,6 +43,7 @@ export const buildLayer = (configPath: string) => {
   const queueLayer = transcodeMode() === "live" ? TranscodeQueueLive : TranscodeQueueNoop
   return TranscodeMonitorLive.pipe(
     Layer.provideMerge(queueLayer),
+    Layer.provideMerge(SleepTimerLive),
     Layer.provideMerge(PlayerWatchLive),
     Layer.provideMerge(RotationLive),
     Layer.provideMerge(PlayerPowerLive),
