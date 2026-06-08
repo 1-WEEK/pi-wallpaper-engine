@@ -12,8 +12,9 @@ partial files are cleaned up.
 
 - Phase 1 is the active product line: browse, download (cancelable, with live
   progress over WebSocket), library management, mpv playback with a live player
-  WebSocket, display power controls, mobile UI, and media-directory migration
-  are implemented.
+  WebSocket, playlist rotation (sequential/shuffle/single with prev/next and a
+  configurable interval), a sleep timer, display power controls, mobile UI, and
+  media-directory migration are implemented.
 - Phase 2 transcoding is implemented but inactive by default. The `@pwe/worker`
   package is a working NAS-side ffmpeg worker (hardware HEVC/QSV with a libx265
   fallback, shipped as a Docker image). The Pi runs `TranscodeQueueNoop` until
