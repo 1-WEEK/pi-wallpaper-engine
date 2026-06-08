@@ -74,17 +74,14 @@
 - `/api/workshop/search`、`/api/workshop/item/:workshopId`
 - `/api/download/:workshopId`、`/tasks`、`/tasks/:workshopId`、`/:workshopId/cancel`、`WS /progress/:workshopId`
 - `/api/library`、`/api/library/:workshopId`
-- `/api/player/play/:workshopId`、`/pause`、`/resume`、`/stop`、`/display-mode`、`/status`、`WS /watch`
+- `/api/player/play/:workshopId`、`/pause`、`/resume`、`/stop`、`/display-mode`、`/mode`、`/next`、`/prev`、`/sleep`、`/status`、`WS /watch`
 - `/api/display/on`、`/off`、`/status`
 - `/api/storage`、`/cancel`、`/locations`、`/directories`、`/validate-target`、`/root`
 - `/api/transcode/*`(`PWE_WORKER_API_KEY` 设置时挂载)
 - `/api/auth/*`(passkey setup/login,session guard)
 - `/api/system/summary`
 
-尚未实现:
-
-- 播放轮播(队列、随机、顺序、上下一张),见 `playback-rotation-iteration.md`
-- 睡眠定时器
+播放轮播(顺序/随机/单张、上下一张、可配间隔)与睡眠定时器已实现,见 `playback-rotation-iteration.md`。
 
 ## 阶段判断
 
@@ -95,7 +92,7 @@
 | Phase 2 Worker | 代码完成,未真 NAS 部署验证 |
 | Auth | 已实现并实机验证 |
 | Player-display linkage | 已完成验证 |
-| 播放轮播 | 进行中 |
+| 播放轮播 | 已实现(顺序/随机/单张 + 睡眠定时器) |
 
 ## 下一步
 
