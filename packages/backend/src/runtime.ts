@@ -7,7 +7,9 @@ import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
 import { MigrateLive } from "./services/Migrate.js"
 import { MpvLive } from "./services/Mpv.js"
+import { PlaybackPrefsLive } from "./services/PlaybackPrefs.js"
 import { PlayerPowerLive } from "./services/PlayerPower.js"
+import { RotationLive } from "./services/Rotation.js"
 import { PlayerStateLive } from "./services/PlayerState.js"
 import { PlayerWatchLive } from "./services/PlayerWatch.js"
 import { SteamCmdLive } from "./services/SteamCmd.js"
@@ -41,8 +43,10 @@ export const buildLayer = (configPath: string) => {
   return TranscodeMonitorLive.pipe(
     Layer.provideMerge(queueLayer),
     Layer.provideMerge(PlayerWatchLive),
+    Layer.provideMerge(RotationLive),
     Layer.provideMerge(PlayerPowerLive),
     Layer.provideMerge(PlayerStateLive),
+    Layer.provideMerge(PlaybackPrefsLive),
     Layer.provideMerge(DownloadTasksLive),
     Layer.provideMerge(MigrateLive),
     Layer.provideMerge(LibraryLive),
