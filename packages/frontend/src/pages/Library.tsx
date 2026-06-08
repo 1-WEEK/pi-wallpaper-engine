@@ -79,10 +79,12 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   // Start a rotation over the currently visible (privacy-filtered) library:
   // set the mode, then play the anchor so the backend arms the timer from it.
   const handlePlayRotation = (mode: "sequential" | "shuffle") => {
+    // Rotation excludes adult wallpapers on the backend; pick a safe anchor too.
+    const safeRows = rows.filter((r) => !isAdultRow(r))
     const start =
       mode === "shuffle"
-        ? visibleRows[Math.floor(Math.random() * visibleRows.length)]
-        : visibleRows[0]
+        ? safeRows[Math.floor(Math.random() * safeRows.length)]
+        : safeRows[0]
     if (!start) return
     api
       .playerMode(mode)

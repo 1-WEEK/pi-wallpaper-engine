@@ -18,10 +18,7 @@ Updated: 2026-06-08。
 
 ## P0 正确性(bug,优先于一切优化)
 
-### BL-1 轮播尊重 safe shelf 过滤 📋
-Library 的「播放全部 / 随机」从 privacy 过滤后的可见列表取锚点,但后端 `Rotation` 用 `library.list()` 全库建序列。开 safe shelf 隐藏 adult 后,轮播仍会切到隐藏项。`adultCount === 0` 时无影响。
-- 文件:`packages/backend/src/services/Rotation.ts`、`packages/frontend/src/pages/Library.tsx`、`@pwe/shared` 的 `isAdultContent`
-- 独立:✓
+当前无 P0 项。
 
 ## P1 工程债 / 功能补全
 
@@ -80,6 +77,7 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-1 轮播尊重 safe shelf(`Rotation` 序列排除 adult + Library safe 锚点 + 回归测试),2026-06-08
 - ✅ 播放轮播(顺序 / 随机 / 单张,上下一张,间隔定时器),2026-06-08,`fddd01a` → `1e5b501`,见 `playback-rotation-iteration.md`
 - ✅ 睡眠定时器(N 分钟 stop 加关屏),2026-06-08,`4a2a0c5`
 - ✅ 测试欠债清理(display / library / wallpaper service 测试,Rotation 集成测试),`36ffa10`、`c987bdd`
