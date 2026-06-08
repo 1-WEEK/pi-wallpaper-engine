@@ -143,6 +143,10 @@ export interface SystemSummary {
       active: number
       finished: number
     }
+    sleep: {
+      active: boolean
+      deadline: number | null
+    }
   }
 }
 
@@ -264,6 +268,12 @@ export const api = {
     }).then(json<unknown>),
   playerNext: () => fetch(`/api/player/next`, { method: "POST" }).then(json<unknown>),
   playerPrev: () => fetch(`/api/player/prev`, { method: "POST" }).then(json<unknown>),
+  setSleep: (minutes: number) =>
+    fetch(`/api/player/sleep`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutes }),
+    }).then(json<{ active: boolean; deadline: number | null }>),
   playerStatus: () =>
     fetch(`/api/player/status`).then(
       json<{

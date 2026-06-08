@@ -4,6 +4,7 @@ import { Mpv } from "../services/Mpv.js"
 import { PlayerPower } from "../services/PlayerPower.js"
 import { PlayerWatch } from "../services/PlayerWatch.js"
 import { Rotation } from "../services/Rotation.js"
+import { SleepTimer } from "../services/SleepTimer.js"
 import type { AppRuntime } from "../runtime.js"
 import type { AuthService } from "../services/Auth.js"
 
@@ -202,6 +203,31 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
           set.status = 500
           return { error: e instanceof Error ? e.message : String(e) }
         })
+    )
+    .post(
+      "/sleep",
+      ({ body, set }) =>
+        runtime
+          .runPromise(
+            Effect.gen(function* () {
+              const sleep = yield* SleepTimer
+              return yield* sleep.set(body.minutes)
+            }).pipe(
+              Effect.catchAll((e) =>
+                Effect.sync(() => {
+                  set.status = 500
+                  return { error: String(e) }
+                })
+              )
+            )
+          )
+          .catch((e) => {
+            set.status = 500
+            return { error: e instanceof Error ? e.message : String(e) }
+          }),
+      {
+        body: t.Object({ minutes: t.Number() }),
+      }
     )
     .ws("/watch", {
       open: async (ws) => {

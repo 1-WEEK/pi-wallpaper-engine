@@ -19,6 +19,8 @@ interface Props {
   onRefresh: () => void
 }
 
+const SLEEP_PRESETS = [0, 15, 30, 60, 120] as const
+
 const passkeyDateFmt = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "short",
@@ -189,6 +191,7 @@ export const Settings = ({ summary, onRefresh }: Props) => {
   const [pendingTargetRoot, setPendingTargetRoot] = useState<string | null>(null)
   const [targetValidation, setTargetValidation] = useState<StorageTargetValidation | null>(null)
   const [validatingTarget, setValidatingTarget] = useState(false)
+  const [sleepBusy, setSleepBusy] = useState(false)
 
   const runAction = async (label: string, action: () => Promise<StorageStatus>) => {
     setBusy(label)
@@ -201,6 +204,19 @@ export const Settings = ({ summary, onRefresh }: Props) => {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(null)
+    }
+  }
+
+  const handleSleep = async (minutes: number) => {
+    setSleepBusy(true)
+    setError(null)
+    try {
+      await api.setSleep(minutes)
+      onRefresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSleepBusy(false)
     }
   }
 
@@ -329,6 +345,41 @@ export const Settings = ({ summary, onRefresh }: Props) => {
                 </StatusDot>
               ) : (
                 <span className="setting-value-subtle">not configured</span>
+              )
+            }
+          />
+        </section>
+
+        <section className="settings-group">
+          <h2 className="settings-group-title mono">Sleep timer</h2>
+          <SettingRow
+            label="auto-off"
+            value={
+              <div className="segmented segmented-compact">
+                {SLEEP_PRESETS.map((min) => (
+                  <button
+                    key={min}
+                    type="button"
+                    className="segmented-button"
+                    disabled={sleepBusy}
+                    onClick={() => void handleSleep(min)}
+                  >
+                    {min === 0 ? "Off" : `${min}m`}
+                  </button>
+                ))}
+              </div>
+            }
+          />
+          <SettingRow
+            label="state"
+            value={
+              status.sleep.active && status.sleep.deadline ? (
+                <StatusDot tone="ok">
+                  off in ~
+                  {Math.max(0, Math.round((status.sleep.deadline - Date.now()) / 60000))}m
+                </StatusDot>
+              ) : (
+                <span className="setting-value-subtle">inactive</span>
               )
             }
           />
