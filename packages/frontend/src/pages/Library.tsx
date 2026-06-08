@@ -76,6 +76,24 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
       })
       .catch((e: Error) => setError(e.message))
 
+  // Start a rotation over the currently visible (privacy-filtered) library:
+  // set the mode, then play the anchor so the backend arms the timer from it.
+  const handlePlayRotation = (mode: "sequential" | "shuffle") => {
+    const start =
+      mode === "shuffle"
+        ? visibleRows[Math.floor(Math.random() * visibleRows.length)]
+        : visibleRows[0]
+    if (!start) return
+    api
+      .playerMode(mode)
+      .then(() => api.play(start.workshop_id))
+      .then(() => {
+        setError(null)
+        onSystemRefresh()
+      })
+      .catch((e: Error) => setError(e.message))
+  }
+
   const handleDelete = (id: string) => {
     if (!confirm("Delete this wallpaper from library? Source file will be removed.")) return
     api
@@ -108,6 +126,26 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
           <span className="page-count mono">{countLabel}</span>
         </div>
         <div className="page-actions">
+          {visibleRows.length > 0 && (
+            <div className="library-rotation-actions">
+              <button
+                type="button"
+                className="btn library-rotation-btn"
+                onClick={() => handlePlayRotation("sequential")}
+              >
+                <span className="btn-icon">{appIcons.modeSequential}</span>
+                Play all
+              </button>
+              <button
+                type="button"
+                className="btn library-rotation-btn"
+                onClick={() => handlePlayRotation("shuffle")}
+              >
+                <span className="btn-icon">{appIcons.modeShuffle}</span>
+                Shuffle
+              </button>
+            </div>
+          )}
           <button
             type="button"
             className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}

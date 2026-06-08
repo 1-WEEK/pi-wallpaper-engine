@@ -1,4 +1,4 @@
-import type { DisplayMode, LibraryItem, WorkshopItem } from "@pwe/shared"
+import type { DisplayMode, LibraryItem, PlayMode, WorkshopItem } from "@pwe/shared"
 import type { WorkshopSort } from "./workshopTags.js"
 
 export type DownloadStage =
@@ -111,6 +111,7 @@ export interface SystemSummary {
       current_workshop_id: string | null
       path: string | null
       display_mode: DisplayMode
+      play_mode: PlayMode
       current_title: string | null
       current_preview_url: string | null
       current_resolution: string | null
@@ -255,6 +256,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     }).then(json<unknown>),
+  playerMode: (mode: PlayMode) =>
+    fetch(`/api/player/mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    }).then(json<unknown>),
+  playerNext: () => fetch(`/api/player/next`, { method: "POST" }).then(json<unknown>),
+  playerPrev: () => fetch(`/api/player/prev`, { method: "POST" }).then(json<unknown>),
   playerStatus: () =>
     fetch(`/api/player/status`).then(
       json<{
@@ -297,6 +306,7 @@ export interface PlayerWatchSnapshot {
   current_workshop_id: string | null
   path: string | null
   display_mode: DisplayMode
+  play_mode: PlayMode
   current_title: string | null
   current_preview_url: string | null
   current_resolution: string | null

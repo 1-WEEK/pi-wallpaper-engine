@@ -7,6 +7,7 @@ import { Display } from "../services/Display.js"
 import { DownloadTasks } from "../services/DownloadTasks.js"
 import { Library } from "../services/Library.js"
 import { Mpv } from "../services/Mpv.js"
+import { PlaybackPrefs } from "../services/PlaybackPrefs.js"
 import { Storage } from "../services/Storage.js"
 import type { AppRuntime } from "../runtime.js"
 
@@ -60,6 +61,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
           const library = yield* Library
           const mpv = yield* Mpv
           const storageService = yield* Storage
+          const prefs = yield* PlaybackPrefs
 
           const [player, libraryRows, taskRows, displayStatus, storageStatus, transcodeCounts] =
             yield* Effect.all([
@@ -123,6 +125,14 @@ export const systemRoutes = (runtime: AppRuntime) =>
                 .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
             : null
 
+          const playback = yield* prefs
+            .get()
+            .pipe(
+              Effect.catchAll(() =>
+                Effect.succeed({ play_mode: "single" as const, rotation_interval_sec: 600 })
+              )
+            )
+
           const activeDownloads = taskRows.filter(
             (task) => !isFinishedTask(task.stage, task.finished_at)
           ).length
@@ -142,6 +152,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
             status: {
               player: {
                 ...player,
+                play_mode: playback.play_mode,
                 current_title: currentItem?.title ?? null,
                 current_preview_url: currentItem?.preview_url || null,
                 current_resolution:
