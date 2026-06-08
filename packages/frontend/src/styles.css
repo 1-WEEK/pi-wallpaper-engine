@@ -891,6 +891,41 @@ a {
   color: var(--paper-faint);
 }
 
+.player-mode-segmented .segmented-button {
+  min-width: 0;
+  padding: 6px 9px;
+  line-height: 0;
+}
+
+.player-mode-segmented .segmented-button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.library-rotation-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.library-rotation-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.library-rotation-btn .btn-icon {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+}
+
+.library-rotation-btn .btn-icon svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
 .player-error {
   padding: 0 18px 12px;
   color: var(--danger);

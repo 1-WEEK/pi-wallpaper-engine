@@ -89,6 +89,15 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
       </button>
       <button
         type="button"
+        className="mobile-mini-player-btn"
+        aria-label="Previous wallpaper"
+        disabled={pending}
+        onClick={() => void runAction(() => api.playerPrev())}
+      >
+        {appIcons.skipPrev}
+      </button>
+      <button
+        type="button"
         className="mobile-mini-player-btn mobile-mini-player-btn-primary"
         aria-label={player?.playing ? "Pause" : "Play"}
         disabled={!hasCurrent || pending}
@@ -97,6 +106,15 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
         }
       >
         {player?.playing ? appIcons.pause : appIcons.play}
+      </button>
+      <button
+        type="button"
+        className="mobile-mini-player-btn"
+        aria-label="Next wallpaper"
+        disabled={pending}
+        onClick={() => void runAction(() => api.playerNext())}
+      >
+        {appIcons.skipNext}
       </button>
     </div>
   )
