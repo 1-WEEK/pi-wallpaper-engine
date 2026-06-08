@@ -15,11 +15,14 @@ const makeRow = (id: string): LibraryItem =>
     source_path: `source/${id}.mp4`,
   }) as unknown as LibraryItem
 
+const makeAdultRow = (id: string): LibraryItem =>
+  ({ ...makeRow(id), content_rating: "mature" }) as unknown as LibraryItem
+
 let runtimes: ManagedRuntime.ManagedRuntime<never, never>[] = []
 
 // Build a Rotation harness over an in-memory fake library. `missing` ids fail
 // library.get so we can assert the skip-missing behavior.
-const buildHarness = (ids: string[], missing: Set<string>) => {
+const buildHarness = (ids: string[], missing: Set<string>, adultIds: Set<string> = new Set()) => {
   const played: string[] = []
   let current: string | null = null
 
@@ -43,7 +46,7 @@ const buildHarness = (ids: string[], missing: Set<string>) => {
   })
 
   const library = Layer.succeed(Library, {
-    list: () => Effect.succeed(ids.map(makeRow)),
+    list: () => Effect.succeed(ids.map((id) => (adultIds.has(id) ? makeAdultRow(id) : makeRow(id)))),
     get: (id: string) =>
       missing.has(id)
         ? Effect.fail(new DbError({ operation: "get", cause: "missing" }))
@@ -103,6 +106,21 @@ describe("RotationLive", () => {
         const rot = yield* Rotation
         yield* rot.arm("a") // anchor index 0
         yield* rot.prev() // wraps to last -> c
+      })
+    )
+
+    expect(played).toEqual(["c"])
+  })
+
+  test("rotation sequence excludes adult wallpapers", async () => {
+    // library [a, b(adult), c] -> sequence is [a, c]
+    const { played, runtime } = buildHarness(["a", "b", "c"], new Set(), new Set(["b"]))
+
+    await runtime.runPromise(
+      Effect.gen(function* () {
+        const rot = yield* Rotation
+        yield* rot.arm("a") // anchor at a in the safe sequence
+        yield* rot.next() // a -> c, skipping the adult b entirely
       })
     )
 

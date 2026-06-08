@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Ref } from "effect"
-import { DbError } from "@pwe/shared"
+import { DbError, isAdultContent } from "@pwe/shared"
 import type { PlayMode } from "@pwe/shared"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
@@ -121,7 +121,18 @@ export const RotationLive = Layer.scoped(
     const rebuild = (mode: PlayMode, anchorId: string | null) =>
       Effect.gen(function* () {
         const rows = yield* library.list()
-        const ids = rows.map((r) => r.workshop_id)
+        // Rotation never auto-plays adult wallpapers: exclude them from the
+        // sequence so an unattended rotation can't surface hidden content.
+        const ids = rows
+          .filter(
+            (r) =>
+              !isAdultContent({
+                title: r.title,
+                contentRating: r.content_rating,
+                ratingSex: r.rating_sex,
+              })
+          )
+          .map((r) => r.workshop_id)
         const seq = buildSequence(ids, mode)
         const at = anchorId ? seq.indexOf(anchorId) : -1
         yield* Ref.set(seqRef, seq)
