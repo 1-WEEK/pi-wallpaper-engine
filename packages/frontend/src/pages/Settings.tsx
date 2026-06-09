@@ -21,6 +21,13 @@ interface Props {
 
 const SLEEP_PRESETS = [0, 15, 30, 60, 120] as const
 
+const ROTATION_PRESETS = [
+  { label: "1m", sec: 60 },
+  { label: "5m", sec: 300 },
+  { label: "10m", sec: 600 },
+  { label: "30m", sec: 1800 },
+] as const
+
 const passkeyDateFmt = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "short",
@@ -192,6 +199,7 @@ export const Settings = ({ summary, onRefresh }: Props) => {
   const [targetValidation, setTargetValidation] = useState<StorageTargetValidation | null>(null)
   const [validatingTarget, setValidatingTarget] = useState(false)
   const [sleepBusy, setSleepBusy] = useState(false)
+  const [intervalBusy, setIntervalBusy] = useState(false)
 
   const runAction = async (label: string, action: () => Promise<StorageStatus>) => {
     setBusy(label)
@@ -217,6 +225,19 @@ export const Settings = ({ summary, onRefresh }: Props) => {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setSleepBusy(false)
+    }
+  }
+
+  const handleInterval = async (seconds: number) => {
+    setIntervalBusy(true)
+    setError(null)
+    try {
+      await api.setRotationInterval(seconds)
+      onRefresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setIntervalBusy(false)
     }
   }
 
@@ -381,6 +402,28 @@ export const Settings = ({ summary, onRefresh }: Props) => {
               ) : (
                 <span className="setting-value-subtle">inactive</span>
               )
+            }
+          />
+        </section>
+
+        <section className="settings-group">
+          <h2 className="settings-group-title mono">Rotation interval</h2>
+          <SettingRow
+            label="every"
+            value={
+              <div className="segmented segmented-compact">
+                {ROTATION_PRESETS.map(({ label, sec }) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    className={`segmented-button ${status.player.rotation_interval_sec === sec ? "active" : ""}`}
+                    disabled={intervalBusy}
+                    onClick={() => void handleInterval(sec)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             }
           />
         </section>

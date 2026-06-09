@@ -229,6 +229,32 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
         body: t.Object({ minutes: t.Number() }),
       }
     )
+    .post(
+      "/interval",
+      ({ body, set }) =>
+        runtime
+          .runPromise(
+            Effect.gen(function* () {
+              const rotation = yield* Rotation
+              yield* rotation.setInterval(body.seconds)
+              return { ok: true, seconds: body.seconds }
+            }).pipe(
+              Effect.catchAll((e) =>
+                Effect.sync(() => {
+                  set.status = 500
+                  return { error: String(e) }
+                })
+              )
+            )
+          )
+          .catch((e) => {
+            set.status = 500
+            return { error: e instanceof Error ? e.message : String(e) }
+          }),
+      {
+        body: t.Object({ seconds: t.Number() }),
+      }
+    )
     .ws("/watch", {
       open: async (ws) => {
         // WebSocket frames bypass the global sessionGuard onBeforeHandle, so

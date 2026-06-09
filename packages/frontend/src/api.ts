@@ -112,6 +112,7 @@ export interface SystemSummary {
       path: string | null
       display_mode: DisplayMode
       play_mode: PlayMode
+      rotation_interval_sec: number
       current_title: string | null
       current_preview_url: string | null
       current_resolution: string | null
@@ -268,6 +269,12 @@ export const api = {
     }).then(json<unknown>),
   playerNext: () => fetch(`/api/player/next`, { method: "POST" }).then(json<unknown>),
   playerPrev: () => fetch(`/api/player/prev`, { method: "POST" }).then(json<unknown>),
+  setRotationInterval: (seconds: number) =>
+    fetch(`/api/player/interval`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seconds }),
+    }).then(json<unknown>),
   setSleep: (minutes: number) =>
     fetch(`/api/player/sleep`, {
       method: "POST",
@@ -317,6 +324,7 @@ export interface PlayerWatchSnapshot {
   path: string | null
   display_mode: DisplayMode
   play_mode: PlayMode
+  rotation_interval_sec: number
   current_title: string | null
   current_preview_url: string | null
   current_resolution: string | null
