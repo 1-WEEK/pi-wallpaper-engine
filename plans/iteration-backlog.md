@@ -28,11 +28,6 @@ Updated: 2026-06-08。
 - 独立:✓(纯重构,行为不变)
 - 审计(2026-06-08):error → status 是 kind-driven,各 route 自洽但不能简单按 `_tag` 统一(`StorageError` 在 player=503,storage route 按 kind 细分)。`httpFromError` 须按 `_tag + kind` 精确复刻,Phase 2 逐 route 对照 status 不变。fiddly 大重构,放 P1 最后在干净 context 做。
 
-### BL-3 轮播间隔 UI 📋
-`rotation_interval_sec` 后端有(`PlaybackPrefs.setInterval`,默认 600),但没有路由暴露、前端也没调节入口,用户卡在 10 分钟。加 `POST /api/player/interval` 加 Settings 或 PlayerBar 的 preset 调节(1m / 5m / 10m / 30m)。
-- 文件:`packages/backend/src/routes/player.ts`、`packages/frontend/src/api.ts`、`packages/frontend/src/pages/Settings.tsx`
-- 独立:✓
-
 ## P2 体验 / 质量优化
 
 ### BL-5 睡眠倒计时实时化 📋
@@ -73,6 +68,7 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-3 轮播间隔 UI(`Rotation.setInterval` + `POST /api/player/interval` + Settings preset,summary/WS 暴露 `rotation_interval_sec`),2026-06-08
 - ✅ BL-4 清理未引用的 shared `PlaybackPrefs` schema struct,留 `PlayMode`,2026-06-08
 - ✅ BL-1 轮播尊重 safe shelf(`Rotation` 序列排除 adult + Library safe 锚点 + 回归测试),2026-06-08
 - ✅ 播放轮播(顺序 / 随机 / 单张,上下一张,间隔定时器),2026-06-08,`fddd01a` → `1e5b501`,见 `playback-rotation-iteration.md`

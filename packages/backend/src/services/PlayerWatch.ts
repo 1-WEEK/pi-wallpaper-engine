@@ -11,6 +11,7 @@ export interface PlayerSnapshot extends PlayerStatus {
   readonly current_resolution: string | null
   readonly current_codec: string | null
   readonly play_mode: PlayMode
+  readonly rotation_interval_sec: number
 }
 
 export interface PlayerWatchImpl {
@@ -29,7 +30,8 @@ const snapshotsEqual = (a: PlayerSnapshot, b: PlayerSnapshot): boolean =>
   a.current_preview_url === b.current_preview_url &&
   a.current_resolution === b.current_resolution &&
   a.current_codec === b.current_codec &&
-  a.play_mode === b.play_mode
+  a.play_mode === b.play_mode &&
+  a.rotation_interval_sec === b.rotation_interval_sec
 
 const buildSnapshot = (
   mpv: Context.Tag.Service<Mpv>,
@@ -56,6 +58,7 @@ const buildSnapshot = (
         item?.transcoded_resolution ?? item?.source_resolution ?? null,
       current_codec: item?.transcoded_codec ?? item?.source_codec ?? null,
       play_mode: prefsState.play_mode,
+      rotation_interval_sec: prefsState.rotation_interval_sec,
     }
   })
 

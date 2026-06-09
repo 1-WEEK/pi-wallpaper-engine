@@ -42,6 +42,7 @@ export interface RotationImpl {
   readonly next: () => Effect.Effect<void, DbError>
   readonly prev: () => Effect.Effect<void, DbError>
   readonly setMode: (mode: PlayMode) => Effect.Effect<void, DbError>
+  readonly setInterval: (sec: number) => Effect.Effect<void, DbError>
   readonly disarm: () => Effect.Effect<void>
 }
 
@@ -195,6 +196,14 @@ export const RotationLive = Layer.scoped(
           yield* rebuild(mode, status.current_workshop_id)
           const { rotation_interval_sec } = yield* prefs.get()
           yield* startTimer(rotation_interval_sec)
+        }),
+
+      setInterval: (sec) =>
+        Effect.gen(function* () {
+          yield* prefs.setInterval(sec)
+          // Re-arm the running timer at the new cadence; no-op when idle.
+          const t = yield* Ref.get(timerRef)
+          if (t) yield* startTimer(sec)
         }),
 
       disarm: () => clearTimer,

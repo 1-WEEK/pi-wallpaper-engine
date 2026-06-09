@@ -157,6 +157,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
               player: {
                 ...player,
                 play_mode: playback.play_mode,
+                rotation_interval_sec: playback.rotation_interval_sec,
                 current_title: currentItem?.title ?? null,
                 current_preview_url: currentItem?.preview_url || null,
                 current_resolution:
