@@ -30,11 +30,6 @@ Updated: 2026-06-08。
 
 ## P2 体验 / 质量优化
 
-### BL-5 睡眠倒计时实时化 📋
-Settings 的「off in ~Xm」基于 5s summary 刷新,不是实时。加前端本地 setInterval 每秒算 `deadline - now`。
-- 文件:`packages/frontend/src/pages/Settings.tsx`
-- 独立:✓
-
 ### BL-6 移动端 MobileMiniPlayer 控件密度 📋
 375px 下 DisplayToggle 加 stop / prev / play / next 共 5 控件偏挤。考虑移动端省掉 stop(轮播场景不常用)或缩按钮间距。视觉验证过没溢出,纯打磨。
 - 文件:`packages/frontend/src/components/mobile/MobileMiniPlayer.tsx`、`styles.css`
@@ -68,6 +63,7 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-5 睡眠倒计时实时化(Settings 本地 1s 刷新,mm:ss 格式),2026-06-08
 - ✅ BL-3 轮播间隔 UI(`Rotation.setInterval` + `POST /api/player/interval` + Settings preset,summary/WS 暴露 `rotation_interval_sec`),2026-06-08
 - ✅ BL-4 清理未引用的 shared `PlaybackPrefs` schema struct,留 `PlayMode`,2026-06-08
 - ✅ BL-1 轮播尊重 safe shelf(`Rotation` 序列排除 adult + Library safe 锚点 + 回归测试),2026-06-08

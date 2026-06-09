@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import useSWR from "swr"
 import { api, type StorageStatus, type StorageTargetValidation, type SystemSummary } from "../api.js"
@@ -27,6 +27,13 @@ const ROTATION_PRESETS = [
   { label: "10m", sec: 600 },
   { label: "30m", sec: 1800 },
 ] as const
+
+const formatSleepCountdown = (ms: number): string => {
+  const sec = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return `${m}:${String(s).padStart(2, "0")}`
+}
 
 const passkeyDateFmt = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -200,6 +207,14 @@ export const Settings = ({ summary, onRefresh }: Props) => {
   const [validatingTarget, setValidatingTarget] = useState(false)
   const [sleepBusy, setSleepBusy] = useState(false)
   const [intervalBusy, setIntervalBusy] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+
+  const sleepActive = summary?.status.sleep.active ?? false
+  useEffect(() => {
+    if (!sleepActive) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [sleepActive])
 
   const runAction = async (label: string, action: () => Promise<StorageStatus>) => {
     setBusy(label)
@@ -396,8 +411,7 @@ export const Settings = ({ summary, onRefresh }: Props) => {
             value={
               status.sleep.active && status.sleep.deadline ? (
                 <StatusDot tone="ok">
-                  off in ~
-                  {Math.max(0, Math.round((status.sleep.deadline - Date.now()) / 60000))}m
+                  off in {formatSleepCountdown(status.sleep.deadline - now)}
                 </StatusDot>
               ) : (
                 <span className="setting-value-subtle">inactive</span>
