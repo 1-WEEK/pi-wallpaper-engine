@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Ref } from "effect"
 import { DbError } from "@pwe/shared"
 import type { PlayMode } from "@pwe/shared"
 import { Db } from "./Db.js"
@@ -31,12 +31,12 @@ interface PrefsRow {
   readonly rotation_interval_sec: number
 }
 
-export const PlaybackPrefsLive = Layer.effect(
+export const PlaybackPrefsLive = Layer.scoped(
   PlaybackPrefs,
   Effect.gen(function* () {
     const db = yield* Db
 
-    const get = (): Effect.Effect<PlaybackPrefsState, DbError> =>
+    const readDb = (): Effect.Effect<PlaybackPrefsState, DbError> =>
       Effect.gen(function* () {
         const row = yield* db.queryOne<PrefsRow>(
           `SELECT play_mode, rotation_interval_sec
@@ -50,6 +50,11 @@ export const PlaybackPrefsLive = Layer.effect(
         }
       })
 
+    // Cache prefs in memory so PlayerWatch's 1Hz tick reads a Ref, not the DB.
+    // All writes go through here, so the cache stays the source of truth.
+    const initial = yield* readDb().pipe(Effect.catchAll(() => Effect.succeed(DEFAULT_PREFS)))
+    const cache = yield* Ref.make(initial)
+
     const upsert = (mode: PlayMode, sec: number) =>
       db.exec(
         `INSERT INTO playback_prefs (id, play_mode, rotation_interval_sec, updated_at)
@@ -62,16 +67,18 @@ export const PlaybackPrefsLive = Layer.effect(
       )
 
     return {
-      get,
+      get: () => Ref.get(cache),
       setMode: (mode) =>
         Effect.gen(function* () {
-          const cur = yield* get()
+          const cur = yield* Ref.get(cache)
           yield* upsert(mode, cur.rotation_interval_sec)
+          yield* Ref.set(cache, { ...cur, play_mode: mode })
         }),
       setInterval: (sec) =>
         Effect.gen(function* () {
-          const cur = yield* get()
+          const cur = yield* Ref.get(cache)
           yield* upsert(cur.play_mode, sec)
+          yield* Ref.set(cache, { ...cur, rotation_interval_sec: sec })
         }),
     }
   })
