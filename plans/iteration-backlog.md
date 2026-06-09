@@ -35,11 +35,6 @@ Updated: 2026-06-08。
 - 文件:`packages/frontend/src/components/mobile/MobileMiniPlayer.tsx`、`styles.css`
 - 独立:✓
 
-### BL-7 PlayerWatch 每秒读 prefs 微优化 📋
-`PlayerWatch` 的 1Hz tick 每秒多读一次 `playback_prefs`。play_mode 只在 setMode 时变,可让 `PlaybackPrefs` 持内存态、PlayerWatch 读内存。低 ROI,有空再说。
-- 文件:`packages/backend/src/services/PlayerWatch.ts`、`PlaybackPrefs.ts`
-- 独立:✓
-
 ### BL-8 前端 bundle code splitting 📋
 `index-*.js` 约 539KB 单 chunk(build warning)。按路由 dynamic import 拆。Pi LAN 加载,优先级低。
 - 文件:`packages/frontend/src/App.tsx`、`vite.config.ts`
@@ -63,6 +58,7 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-7 PlaybackPrefs 内存缓存(PlayerWatch 1Hz tick 读 Ref 不读 DB),2026-06-08
 - ✅ BL-5 睡眠倒计时实时化(Settings 本地 1s 刷新,mm:ss 格式),2026-06-08
 - ✅ BL-3 轮播间隔 UI(`Rotation.setInterval` + `POST /api/player/interval` + Settings preset,summary/WS 暴露 `rotation_interval_sec`),2026-06-08
 - ✅ BL-4 清理未引用的 shared `PlaybackPrefs` schema struct,留 `PlayMode`,2026-06-08
