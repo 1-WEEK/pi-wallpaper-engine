@@ -23,6 +23,14 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "dist",
       emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          // Split node_modules into a vendor chunk so the app chunk stays small
+          // and the vendor bundle caches across app-only changes. Build-time
+          // split, so no runtime Suspense/loading flash.
+          manualChunks: (id: string) => (id.includes("node_modules") ? "vendor" : undefined),
+        },
+      },
     },
   }
 })
