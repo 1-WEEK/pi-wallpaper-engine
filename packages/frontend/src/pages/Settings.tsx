@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { formatSleepCountdown } from "../format.js"
 import type { ReactNode } from "react"
 import useSWR from "swr"
 import { api, type StorageStatus, type StorageTargetValidation, type SystemSummary } from "../api.js"
@@ -27,13 +28,6 @@ const ROTATION_PRESETS = [
   { label: "10m", sec: 600 },
   { label: "30m", sec: 1800 },
 ] as const
-
-const formatSleepCountdown = (ms: number): string => {
-  const sec = Math.max(0, Math.floor(ms / 1000))
-  const m = Math.floor(sec / 60)
-  const s = sec % 60
-  return `${m}:${String(s).padStart(2, "0")}`
-}
 
 const passkeyDateFmt = new Intl.DateTimeFormat(undefined, {
   year: "numeric",

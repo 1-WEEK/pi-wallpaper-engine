@@ -40,10 +40,6 @@ Updated: 2026-06-08。
 - 文件:`packages/frontend/src/App.tsx`、`vite.config.ts`
 - 独立:✓
 
-### BL-9 前端纯逻辑测试 📋
-前端 0 自动化测试。不引 React testing infra,只测纯逻辑:`api.ts` 的 error 处理、`workshopTags`、`isAdultContent` 边界,用 bun test。
-- 文件:`packages/frontend/src/*.test.ts`(新)
-- 独立:✓
 
 ## 🔒 Blocked(需硬件或真机,不在家取不了)
 
@@ -58,6 +54,7 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-9 前端首批纯逻辑测试(提取 `format.ts` + 5 个 bun test,frontend tsconfig 加 bun types),2026-06-08
 - ✅ BL-7 PlaybackPrefs 内存缓存(PlayerWatch 1Hz tick 读 Ref 不读 DB),2026-06-08
 - ✅ BL-5 睡眠倒计时实时化(Settings 本地 1s 刷新,mm:ss 格式),2026-06-08
 - ✅ BL-3 轮播间隔 UI(`Rotation.setInterval` + `POST /api/player/interval` + Settings preset,summary/WS 暴露 `rotation_interval_sec`),2026-06-08

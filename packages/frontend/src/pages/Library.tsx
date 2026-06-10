@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { isAdultContent, type DisplayMode, type LibraryItem } from "@pwe/shared"
 import useSWR from "swr"
 import { api } from "../api.js"
+import { spaceSavedPercent } from "../format.js"
 import { appIcons } from "../icons.js"
 import { useLayout } from "../components/mobile/index.js"
 
@@ -31,16 +32,6 @@ const isAdultRow = (row: LibraryItem): boolean =>
 
 const showsTranscodeBadge = (status: LibraryItem["transcode_status"]): boolean =>
   status === "failed" || status === "running" || status === "claimed" || status === "pending"
-
-// Returns the percent saved versus source, or null when the row has no
-// optimized result yet (or transcode somehow grew the file).
-const spaceSavedPercent = (row: LibraryItem): number | null => {
-  if (row.transcode_status !== "completed") return null
-  const source = row.source_size
-  const optimized = row.transcoded_size
-  if (!source || !optimized || optimized >= source) return null
-  return Math.round(((source - optimized) / source) * 100)
-}
 
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const { mobile } = useLayout()
