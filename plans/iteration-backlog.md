@@ -36,11 +36,6 @@ Updated: 2026-06-08。
 - 独立:✓
 - 留待:「去 stop」删功能是产品决策,「缩间距」改善效果需真机视觉确认。等用户在场判断方案。
 
-### BL-8 前端 bundle code splitting 📋
-`index-*.js` 约 539KB 单 chunk(build warning)。按路由 dynamic import 拆。Pi LAN 加载,优先级低。
-- 文件:`packages/frontend/src/App.tsx`、`vite.config.ts`
-- 独立:✓
-- 留待:Pi 本地 LAN 加载毫秒级,splitting 实际收益近 0,改路由 lazy+Suspense 有 loading flash 风险。等真有性能需求再做。
 
 
 ## 🔒 Blocked(需硬件或真机,不在家取不了)
@@ -56,6 +51,7 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-8 bundle vendor 拆分(vite manualChunks,app chunk 539KB→75KB + vendor 465KB,无 Suspense flash),2026-06-08
 - ✅ BL-9 前端首批纯逻辑测试(提取 `format.ts` + 5 个 bun test,frontend tsconfig 加 bun types),2026-06-08
 - ✅ BL-7 PlaybackPrefs 内存缓存(PlayerWatch 1Hz tick 读 Ref 不读 DB),2026-06-08
 - ✅ BL-5 睡眠倒计时实时化(Settings 本地 1s 刷新,mm:ss 格式),2026-06-08
