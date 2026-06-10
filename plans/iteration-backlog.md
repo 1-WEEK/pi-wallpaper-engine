@@ -28,7 +28,7 @@ Updated: 2026-06-08。
 - 独立:✓(纯重构,行为不变)
 - 审计(2026-06-08):error → status 是 kind-driven,各 route 自洽但不能简单按 `_tag` 统一(`StorageError` 在 player=503,storage route 按 kind 细分)。
 - Phase 1 ✅:`httpError.ts` 的 `httpFromError` + 8 单测,按审计的 kind-aware 映射,零风险纯函数基础设施。
-- Phase 2 待:`runRoute` helper 逐 route 替换样板。涉及 resume(error 现返 200 的 latent bug)、message 统一、Effect R 通道类型,需干净 context 逐 route 验证 status 不变。
+- Phase 2 待:`runRoute` helper 逐 route 替换样板。完整实现细节(runRoute 设计、审计表、resume/WorkshopApi 决策点、逐 route 顺序、验证)见 `bl2-phase2-bl6-handoff.md`。BL-6 的两个方案也在该文档。
 
 ## P2 体验 / 质量优化
 
