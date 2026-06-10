@@ -26,7 +26,9 @@ Updated: 2026-06-08。
 全 backend 约 28 个 handler 重复 `runtime.runPromise(Effect.gen(...).pipe(catchTag 映射 status)).catch(500)`。player.ts 因轮播暴增到 18 个 set.status。提取 `httpFromError(err)` 纯函数集中 12 个 TaggedError 的 status 映射,加 `runRoute` helper。分两阶段:先纯函数加单测(零风险),再逐 route 替换,player.ts 先。第一步先 grep 审计现有各 route 的实际 status 作为映射基准,不一致处列出来给人拍板,不擅自统一。
 - 文件:新建 `packages/backend/src/routes/httpError.ts`,各 `routes/*.ts`
 - 独立:✓(纯重构,行为不变)
-- 审计(2026-06-08):error → status 是 kind-driven,各 route 自洽但不能简单按 `_tag` 统一(`StorageError` 在 player=503,storage route 按 kind 细分)。`httpFromError` 须按 `_tag + kind` 精确复刻,Phase 2 逐 route 对照 status 不变。fiddly 大重构,放 P1 最后在干净 context 做。
+- 审计(2026-06-08):error → status 是 kind-driven,各 route 自洽但不能简单按 `_tag` 统一(`StorageError` 在 player=503,storage route 按 kind 细分)。
+- Phase 1 ✅:`httpError.ts` 的 `httpFromError` + 8 单测,按审计的 kind-aware 映射,零风险纯函数基础设施。
+- Phase 2 待:`runRoute` helper 逐 route 替换样板。涉及 resume(error 现返 200 的 latent bug)、message 统一、Effect R 通道类型,需干净 context 逐 route 验证 status 不变。
 
 ## P2 体验 / 质量优化
 
