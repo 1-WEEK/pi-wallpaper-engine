@@ -22,13 +22,7 @@ Updated: 2026-06-08。
 
 ## P1 工程债 / 功能补全
 
-### BL-2 route 错误处理收敛 📋
-全 backend 约 28 个 handler 重复 `runtime.runPromise(Effect.gen(...).pipe(catchTag 映射 status)).catch(500)`。player.ts 因轮播暴增到 18 个 set.status。提取 `httpFromError(err)` 纯函数集中 12 个 TaggedError 的 status 映射,加 `runRoute` helper。分两阶段:先纯函数加单测(零风险),再逐 route 替换,player.ts 先。第一步先 grep 审计现有各 route 的实际 status 作为映射基准,不一致处列出来给人拍板,不擅自统一。
-- 文件:新建 `packages/backend/src/routes/httpError.ts`,各 `routes/*.ts`
-- 独立:✓(纯重构,行为不变)
-- 审计(2026-06-08):error → status 是 kind-driven,各 route 自洽但不能简单按 `_tag` 统一(`StorageError` 在 player=503,storage route 按 kind 细分)。
-- Phase 1 ✅:`httpError.ts` 的 `httpFromError` + 8 单测,按审计的 kind-aware 映射,零风险纯函数基础设施。
-- Phase 2 待:`runRoute` helper 逐 route 替换样板。完整实现细节(runRoute 设计、审计表、resume/WorkshopApi 决策点、逐 route 顺序、验证)见 `bl2-phase2-bl6-handoff.md`。BL-6 的两个方案也在该文档。
+当前无 P1 项。
 
 ## P2 体验 / 质量优化
 
@@ -53,6 +47,18 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-2 route 错误处理收敛(`httpFromError` + `runRoute` helper),2026-06-10
+  - Phase 1(`c20e72e`):`httpError.ts` 纯函数 + 8 单测,kind-aware 映射。
+  - Phase 2(`37a9341` player / `c08ed03` library / `6f5a7c3` display):`runRoute` closure 逐 route 把 catchTag/catchAll→set.status 样板替换成 httpFromError。各 route 独立 commit,逐一 typecheck + 全量 test 绿,status 逐条对照审计表不变。
+  - 决策落地:`/resume` 由 error 返 200(latent bug)修成 500;error body message 统一(mpv 加 `mpv:` 前缀、LibraryNotFound→`Wallpaper <id> not found`),status 不变,前端以 status 为主。
+  - 基础设施:`runtime.ts` 加 `AppContext`(从 ManagedRuntime 推断),供 runRoute pin effect 的 R 通道(handoff 原版 `<R>` 自由泛型过不了 typecheck)。
+  - **有意不转的 route(转了会改 status 契约或破坏 client,违背「status 不变」)**:
+    - `workshop.ts`:现有 `e.status>0 ? e.status : 502` 透传上游 HTTP 码,httpFromError 拍平成 502 会丢透传 → 上游 404/403 会变 502。
+    - `storage.ts`:bespoke `mapError`/`mapDirectoryError`(Mount→502、Validation→502/400、Space→400、default→400)与 httpFromError(Mount→503、Validation→400、Space→507、default→500)不一致,且 body 带 `ok`/`kind`,前端 StoragePanel 用到。
+    - `download.ts`:主 POST 是 202 + forked workflow + inline 503/409/404,无标准样板;WorkshopApi 在 workflow 内吞成 fallback,不走 HTTP。
+    - `transcode.ts`:error 通道含裸 `Error`(mapError),破 `E extends {_tag}` 约束;body `{ok:false}` 给 worker client。
+    - `system.ts`:`storage.status()` 残留 StorageError 经 httpFromError 会把现有 500 变 503。
+  - 若日后想收敛上述 route,需先和人确认接受对应 status/body 契约变化(`httpFromError` 改回、或 runRoute 放宽约束)。
 - ✅ BL-8 bundle vendor 拆分(vite manualChunks,app chunk 539KB→75KB + vendor 465KB,无 Suspense flash),2026-06-08
 - ✅ BL-9 前端首批纯逻辑测试(提取 `format.ts` + 5 个 bun test,frontend tsconfig 加 bun types),2026-06-08
 - ✅ BL-7 PlaybackPrefs 内存缓存(PlayerWatch 1Hz tick 读 Ref 不读 DB),2026-06-08
