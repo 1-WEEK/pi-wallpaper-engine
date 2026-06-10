@@ -26,13 +26,7 @@ Updated: 2026-06-08。
 
 ## P2 体验 / 质量优化
 
-### BL-6 移动端 MobileMiniPlayer 控件密度 📋
-375px 下 DisplayToggle 加 stop / prev / play / next 共 5 控件偏挤。考虑移动端省掉 stop(轮播场景不常用)或缩按钮间距。视觉验证过没溢出,纯打磨。
-- 文件:`packages/frontend/src/components/mobile/MobileMiniPlayer.tsx`、`styles.css`
-- 独立:✓
-- 留待:「去 stop」删功能是产品决策,「缩间距」改善效果需真机视觉确认。等用户在场判断方案。
-
-
+当前无 P2 项。
 
 ## 🔒 Blocked(需硬件或真机,不在家取不了)
 
@@ -47,6 +41,11 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-6 移动端 MobileMiniPlayer 控件密度(方案 B:缩间距),2026-06-10
+  - `styles.css`:`.mobile-mini-player` gap 10→6px、padding 12→10px(横向),`.mobile-mini-player-btn` 38→34px。保留全部 5 控件(含 stop)。
+  - 选方案 B 而非方案 A(删 stop):删功能是产品决策,handoff 明确「不要替用户删 stop」,未获用户授权前不删。方案 B 纯 CSS、无功能损失、可逆。
+  - 375px Playwright mock 验证(见 memory `pwe-visual-review-workflow`):overflowX=0,5 控件无溢出,末控件右缘 365px(= 375 − 10 padding),间距宽松。
+  - 用户若仍想要方案 A(移动端去 stop)是一行 follow-up。
 - ✅ BL-2 route 错误处理收敛(`httpFromError` + `runRoute` helper),2026-06-10
   - Phase 1(`c20e72e`):`httpError.ts` 纯函数 + 8 单测,kind-aware 映射。
   - Phase 2(`37a9341` player / `c08ed03` library / `6f5a7c3` display):`runRoute` closure 逐 route 把 catchTag/catchAll→set.status 样板替换成 httpFromError。各 route 独立 commit,逐一 typecheck + 全量 test 绿,status 逐条对照审计表不变。
