@@ -67,5 +67,12 @@ export const makeRuntime = (configPath: string) => ManagedRuntime.make(buildLaye
 
 export type AppRuntime = ReturnType<typeof makeRuntime>
 
+// The full service context the runtime provides, recovered by inference so the
+// large service union never has to be hand-written. Route helpers pin an
+// effect's R channel to this so `runtime.runPromise` accepts it (a free generic
+// R can't be proven to be a subset of the context).
+export type AppContext =
+  AppRuntime extends ManagedRuntime.ManagedRuntime<infer R, infer _E> ? R : never
+
 export const getConfig = (runtime: AppRuntime) =>
   runtime.runPromise(Effect.flatMap(ConfigTag, (c) => Effect.succeed(c)))
