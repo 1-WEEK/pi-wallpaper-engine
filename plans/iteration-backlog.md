@@ -34,11 +34,13 @@ Updated: 2026-06-08。
 375px 下 DisplayToggle 加 stop / prev / play / next 共 5 控件偏挤。考虑移动端省掉 stop(轮播场景不常用)或缩按钮间距。视觉验证过没溢出,纯打磨。
 - 文件:`packages/frontend/src/components/mobile/MobileMiniPlayer.tsx`、`styles.css`
 - 独立:✓
+- 留待:「去 stop」删功能是产品决策,「缩间距」改善效果需真机视觉确认。等用户在场判断方案。
 
 ### BL-8 前端 bundle code splitting 📋
 `index-*.js` 约 539KB 单 chunk(build warning)。按路由 dynamic import 拆。Pi LAN 加载,优先级低。
 - 文件:`packages/frontend/src/App.tsx`、`vite.config.ts`
 - 独立:✓
+- 留待:Pi 本地 LAN 加载毫秒级,splitting 实际收益近 0,改路由 lazy+Suspense 有 loading flash 风险。等真有性能需求再做。
 
 
 ## 🔒 Blocked(需硬件或真机,不在家取不了)
