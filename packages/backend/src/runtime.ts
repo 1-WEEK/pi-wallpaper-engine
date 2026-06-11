@@ -7,7 +7,10 @@ import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
 import { MigrateLive } from "./services/Migrate.js"
 import { MpvLive } from "./services/Mpv.js"
+import { PlaybackPrefsLive } from "./services/PlaybackPrefs.js"
 import { PlayerPowerLive } from "./services/PlayerPower.js"
+import { RotationLive } from "./services/Rotation.js"
+import { SleepTimerLive } from "./services/SleepTimer.js"
 import { PlayerStateLive } from "./services/PlayerState.js"
 import { PlayerWatchLive } from "./services/PlayerWatch.js"
 import { SteamCmdLive } from "./services/SteamCmd.js"
@@ -40,9 +43,12 @@ export const buildLayer = (configPath: string) => {
   const queueLayer = transcodeMode() === "live" ? TranscodeQueueLive : TranscodeQueueNoop
   return TranscodeMonitorLive.pipe(
     Layer.provideMerge(queueLayer),
+    Layer.provideMerge(SleepTimerLive),
     Layer.provideMerge(PlayerWatchLive),
+    Layer.provideMerge(RotationLive),
     Layer.provideMerge(PlayerPowerLive),
     Layer.provideMerge(PlayerStateLive),
+    Layer.provideMerge(PlaybackPrefsLive),
     Layer.provideMerge(DownloadTasksLive),
     Layer.provideMerge(MigrateLive),
     Layer.provideMerge(LibraryLive),
@@ -60,6 +66,13 @@ export const buildLayer = (configPath: string) => {
 export const makeRuntime = (configPath: string) => ManagedRuntime.make(buildLayer(configPath))
 
 export type AppRuntime = ReturnType<typeof makeRuntime>
+
+// The full service context the runtime provides, recovered by inference so the
+// large service union never has to be hand-written. Route helpers pin an
+// effect's R channel to this so `runtime.runPromise` accepts it (a free generic
+// R can't be proven to be a subset of the context).
+export type AppContext =
+  AppRuntime extends ManagedRuntime.ManagedRuntime<infer R, infer _E> ? R : never
 
 export const getConfig = (runtime: AppRuntime) =>
   runtime.runPromise(Effect.flatMap(ConfigTag, (c) => Effect.succeed(c)))

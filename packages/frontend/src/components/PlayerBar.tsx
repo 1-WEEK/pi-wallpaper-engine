@@ -11,6 +11,12 @@ interface Props {
 
 const DISPLAY_MODES = ["fill", "fit", "stretch"] as const
 
+const PLAY_MODES = [
+  { mode: "single", icon: appIcons.modeSingle, label: "Single (loop one)" },
+  { mode: "sequential", icon: appIcons.modeSequential, label: "Sequential" },
+  { mode: "shuffle", icon: appIcons.modeShuffle, label: "Shuffle" },
+] as const
+
 export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const [pending, setPending] = useState(false)
   const [displayPending, setDisplayPending] = useState(false)
@@ -98,6 +104,17 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
           </button>
           <button
             type="button"
+            className="player-control player-control-icon"
+            aria-label="Previous wallpaper"
+            disabled={pending}
+            onClick={() => {
+              void runAction(() => api.playerPrev())
+            }}
+          >
+            {appIcons.skipPrev}
+          </button>
+          <button
+            type="button"
             className="player-control player-control-primary player-control-icon"
             aria-label={player.playing ? "Pause playback" : "Resume playback"}
             disabled={!hasCurrent || pending}
@@ -107,6 +124,38 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
           >
             {player.playing ? appIcons.pause : appIcons.play}
           </button>
+          <button
+            type="button"
+            className="player-control player-control-icon"
+            aria-label="Next wallpaper"
+            disabled={pending}
+            onClick={() => {
+              void runAction(() => api.playerNext())
+            }}
+          >
+            {appIcons.skipNext}
+          </button>
+        </div>
+
+        <div className="player-segmented player-mode-segmented">
+          <span className="player-segmented-label mono">play</span>
+          <div className="segmented">
+            {PLAY_MODES.map(({ mode, icon, label }) => (
+              <button
+                key={mode}
+                type="button"
+                className={`segmented-button ${player.play_mode === mode ? "active" : ""}`}
+                aria-label={label}
+                title={label}
+                disabled={pending}
+                onClick={() => {
+                  void runAction(() => api.playerMode(mode))
+                }}
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="player-codec mono">

@@ -60,6 +60,43 @@ export const appIcons = {
       <rect x="6" y="6" width="12" height="12" rx="1" />
     </AppIcon>
   ),
+  skipPrev: (
+    <AppIcon>
+      <path d="M8 6 V18" />
+      <path d="M18 6 L9 12 L18 18 Z" />
+    </AppIcon>
+  ),
+  skipNext: (
+    <AppIcon>
+      <path d="M16 6 V18" />
+      <path d="M6 6 L15 12 L6 18 Z" />
+    </AppIcon>
+  ),
+  modeSequential: (
+    <AppIcon>
+      <path d="M17 3 L20 6 L17 9" />
+      <path d="M20 6 H9 A5 5 0 0 0 4 11" />
+      <path d="M7 21 L4 18 L7 15" />
+      <path d="M4 18 H15 A5 5 0 0 0 20 13" />
+    </AppIcon>
+  ),
+  modeSingle: (
+    <AppIcon>
+      <path d="M17 3 L20 6 L17 9" />
+      <path d="M20 6 H9 A5 5 0 0 0 4 11" />
+      <path d="M7 21 L4 18 L7 15" />
+      <path d="M4 18 H15 A5 5 0 0 0 20 13" />
+      <path d="M10.8 10.6 L12.4 9.6 V14.4" />
+    </AppIcon>
+  ),
+  modeShuffle: (
+    <AppIcon>
+      <path d="M4 7 H7 L17 17 H20" />
+      <path d="M17 14 L20 17 L17 20" />
+      <path d="M4 17 H7 L17 7 H20" />
+      <path d="M17 4 L20 7 L17 10" />
+    </AppIcon>
+  ),
   pi: (
     <AppIcon>
       <rect x="4" y="6" width="16" height="12" rx="2" />

@@ -891,6 +891,41 @@ a {
   color: var(--paper-faint);
 }
 
+.player-mode-segmented .segmented-button {
+  min-width: 0;
+  padding: 6px 9px;
+  line-height: 0;
+}
+
+.player-mode-segmented .segmented-button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.library-rotation-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.library-rotation-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.library-rotation-btn .btn-icon {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+}
+
+.library-rotation-btn .btn-icon svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
 .player-error {
   padding: 0 18px 12px;
   color: var(--danger);
@@ -2302,8 +2337,8 @@ a {
 .mobile-mini-player {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 10px;
   background: var(--ink-1);
   border-top: 1px solid var(--border);
   cursor: pointer;
@@ -2381,8 +2416,8 @@ a {
   margin-top: 1px;
 }
 .mobile-mini-player-btn {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: var(--ink-2);
   color: var(--paper);

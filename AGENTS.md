@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Wallpaper Engine **Video** wallpaper player for the Raspberry Pi 4B (Debian 13 Trixie aarch64). The web UI browses Steam Workshop, downloads items, and plays them with mpv in fullscreen loop. Phase 1 streams the source file directly with no transcode; Phase 2 (not implemented) adds a NAS Docker transcode worker.
+A Wallpaper Engine **Video** wallpaper player for the Raspberry Pi 4B (Debian 13 Trixie aarch64). The web UI browses Steam Workshop, downloads items, and plays them with mpv in fullscreen loop. Phase 1 streams the source file directly with no transcode; Phase 2 adds a NAS Docker transcode worker (implemented in `@pwe/worker`, inactive until `PWE_WORKER_API_KEY` is set).
 
 ## Common commands
 
@@ -28,6 +28,10 @@ bun run service:{start,stop,status}  # Plain systemctl wrappers, no guards
 
 Filter a single test: `bun test packages/backend/src/transcode/decide.test.ts`
 
+## Code reading
+
+When a task requires understanding code, architecture, data flow, call chains, or a bug path, use codegraph first. Start with `codegraph_context` for broad task context, then use `codegraph_trace`, `codegraph_callers`, `codegraph_callees`, or `codegraph_explore` for focused follow-up. Use `rg` and direct file reads after codegraph when you need exact text, non-indexed files, tests, config, docs, or generated output.
+
 ## Architecture
 
 **Bun workspaces monorepo**:
@@ -35,7 +39,7 @@ Filter a single test: `bun test packages/backend/src/transcode/decide.test.ts`
 - `@pwe/backend` — Bun + Elysia + Effect-TS, port 8080
 - `@pwe/frontend` — Vite + React, port 5173 in dev (HMR + proxies `/api` to backend)
 - `@pwe/migrate` — Phase 1 storage migration: a thin rsync wrapper, no Effect/Elysia
-- `@pwe/worker` — Phase 2 placeholder, README only
+- `@pwe/worker` — Phase 2 NAS-side ffmpeg transcode worker (hardware HEVC/QSV + libx265 fallback), shipped as a Docker image; inactive until `PWE_WORKER_API_KEY` is set
 
 **Effect Layer wiring (`packages/backend/src/runtime.ts`)**: chained via `.pipe(Layer.provideMerge(...))`, **order matters** — leaf dependencies (Config, Logger) go at the end of the chain. `Layer.mergeAll` does no cross-resolution; don't use it. The runtime is `ManagedRuntime.make(buildLayer(configPath))`; Elysia routes bridge to business logic via `runtime.runPromise(Effect.gen(...))`.
 
@@ -49,7 +53,9 @@ Filter a single test: `bun test packages/backend/src/transcode/decide.test.ts`
 - **Paths in the DB are stored relative** (e.g. `source/<id>/.../foo.mp4`) and resolved against the current media root at runtime. Always go through `Storage.mediaRoot()` — **don't read `config.paths.data_root` directly**. The Phase 2 worker uses the same relative paths, each prefixing its own root.
 - **`library.source_path` invariant**: must land under `source/<id>/steamapps/workshop/content/<weAppId>/<id>/`. SteamCMD's "Success. Downloaded item" line sometimes reports the transient `.../downloads/<weAppId>/<id>` staging path; once SteamCMD finishes validation it moves the files to `content/`, and the stdout-reported path goes stale. Normalize to content/ before persisting (the prefer-content fallback at the end of `SteamCmd.ts` is the single source of truth). `Library` boots a `reconcilePaths` step that retroactively rewrites any leftover downloads/ rows back to content/.
 - **Non-video wallpapers fail fast**: `WallpaperFile.resolveWallpaperFiles` reads `project.json.type` and throws `NotVideoWallpaperError` for anything other than `video`; the route catches it and cleans up the half-written `source/<id>/`. The Workshop `requiredtags=Video` search filter is unreliable, so this layer is the real gate.
-- **Phase 1 = `TranscodeQueueNoop`**: every download row gets `transcode_status="skipped"`. `TranscodeQueueLive` is written and ready; flipping to Phase 2 is a one-line Layer swap in `runtime.ts`. The `transcode_jobs` table exists but stays empty under Phase 1.
+- **Playback rotation is interval-timer driven, not end-file**: mpv runs with `--loop=inf` so the current file never ends and never fires an end-file event, and the IPC layer only parses command responses (no mpv event handling). So `Rotation` (a backend service) keeps an in-memory sequence plus a `setInterval` that calls `Mpv.play` (`loadfile replace`) every `rotation_interval_sec`. `play_mode` (single/sequential/shuffle) and the interval persist in the `playback_prefs` singleton table; `single` is the default and preserves the legacy single-loop behavior. Routes: `POST /api/player/{mode,next,prev}`. Manual next/prev anchor on the wallpaper actually on screen via `mpv.status()`, and rotation skips items missing on disk.
+- **Sleep timer**: `SleepTimer.set(minutes)` arms a `setTimeout` that disarms rotation, then calls `PlayerPower.displayOff()`, falling back to `stopForIdle()` when no display command is configured. `POST /api/player/sleep` with `minutes<=0` cancels; state surfaces in the system summary as `sleep:{active,deadline}`.
+- **Transcode queue is env-gated**: `transcodeMode()` in `runtime.ts` reads `PWE_WORKER_API_KEY` — absent (or under 8 chars) selects `TranscodeQueueNoop` (every download row gets `transcode_status="skipped"`, `/api/transcode/*` stays unmounted, `transcode_jobs` stays empty); present selects `TranscodeQueueLive` and mounts the worker routes. The same key is the shared secret the NAS Worker presents on claim.
 - **Errors use `Data.TaggedError`** (in `@pwe/shared/errors.ts`): `SteamCmdError` (with `kind: AuthRequired | NotSubscribed | Timeout | BinaryNotFound | UnknownFailure`), `WorkshopApiError`, `MpvIpcError`, `NotVideoWallpaperError`, `DisplayError`, etc. Route catches dispatch on `err._tag` to choose the status code.
 - **`display` config is optional**: `on_command` / `off_command` / `status_command` are argv arrays (`Bun.spawn` runs them directly — no shell parsing, no command injection). The commands must be non-interactive (use sudo NOPASSWD). When the `display` section is missing, `/api/display/*` returns 503 while everything else keeps working. A 5-second timeout kills the child to surface a blocked sudo prompt.
 - **Storage is the directory model**: the `storage` config carries only `{ root?: string | null }`. `null` means use `paths.data_root`; non-null is the current media directory. Settings exposes a directory browser so the user picks a directory the Pi can reach; the supporting endpoints are `GET /api/storage/locations`, `GET /api/storage/directories?path=...`, `POST /api/storage/directories`, `POST /api/storage/validate-target`, `POST /api/storage/root`, and `POST /api/storage/cancel`. Directory browsing is fenced inside the allowed roots and rejects boundary crossing, symlink escape, control characters, and relative paths.

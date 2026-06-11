@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { formatSleepCountdown } from "../format.js"
 import type { ReactNode } from "react"
 import useSWR from "swr"
 import { api, type StorageStatus, type StorageTargetValidation, type SystemSummary } from "../api.js"
@@ -18,6 +19,15 @@ interface Props {
   summary: SystemSummary | null
   onRefresh: () => void
 }
+
+const SLEEP_PRESETS = [0, 15, 30, 60, 120] as const
+
+const ROTATION_PRESETS = [
+  { label: "1m", sec: 60 },
+  { label: "5m", sec: 300 },
+  { label: "10m", sec: 600 },
+  { label: "30m", sec: 1800 },
+] as const
 
 const passkeyDateFmt = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -189,6 +199,16 @@ export const Settings = ({ summary, onRefresh }: Props) => {
   const [pendingTargetRoot, setPendingTargetRoot] = useState<string | null>(null)
   const [targetValidation, setTargetValidation] = useState<StorageTargetValidation | null>(null)
   const [validatingTarget, setValidatingTarget] = useState(false)
+  const [sleepBusy, setSleepBusy] = useState(false)
+  const [intervalBusy, setIntervalBusy] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+
+  const sleepActive = summary?.status.sleep.active ?? false
+  useEffect(() => {
+    if (!sleepActive) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [sleepActive])
 
   const runAction = async (label: string, action: () => Promise<StorageStatus>) => {
     setBusy(label)
@@ -201,6 +221,32 @@ export const Settings = ({ summary, onRefresh }: Props) => {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(null)
+    }
+  }
+
+  const handleSleep = async (minutes: number) => {
+    setSleepBusy(true)
+    setError(null)
+    try {
+      await api.setSleep(minutes)
+      onRefresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSleepBusy(false)
+    }
+  }
+
+  const handleInterval = async (seconds: number) => {
+    setIntervalBusy(true)
+    setError(null)
+    try {
+      await api.setRotationInterval(seconds)
+      onRefresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setIntervalBusy(false)
     }
   }
 
@@ -330,6 +376,62 @@ export const Settings = ({ summary, onRefresh }: Props) => {
               ) : (
                 <span className="setting-value-subtle">not configured</span>
               )
+            }
+          />
+        </section>
+
+        <section className="settings-group">
+          <h2 className="settings-group-title mono">Sleep timer</h2>
+          <SettingRow
+            label="auto-off"
+            value={
+              <div className="segmented segmented-compact">
+                {SLEEP_PRESETS.map((min) => (
+                  <button
+                    key={min}
+                    type="button"
+                    className="segmented-button"
+                    disabled={sleepBusy}
+                    onClick={() => void handleSleep(min)}
+                  >
+                    {min === 0 ? "Off" : `${min}m`}
+                  </button>
+                ))}
+              </div>
+            }
+          />
+          <SettingRow
+            label="state"
+            value={
+              status.sleep.active && status.sleep.deadline ? (
+                <StatusDot tone="ok">
+                  off in {formatSleepCountdown(status.sleep.deadline - now)}
+                </StatusDot>
+              ) : (
+                <span className="setting-value-subtle">inactive</span>
+              )
+            }
+          />
+        </section>
+
+        <section className="settings-group">
+          <h2 className="settings-group-title mono">Rotation interval</h2>
+          <SettingRow
+            label="every"
+            value={
+              <div className="segmented segmented-compact">
+                {ROTATION_PRESETS.map(({ label, sec }) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    className={`segmented-button ${status.player.rotation_interval_sec === sec ? "active" : ""}`}
+                    disabled={intervalBusy}
+                    onClick={() => void handleInterval(sec)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             }
           />
         </section>

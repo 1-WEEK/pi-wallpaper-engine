@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { isAdultContent, type DisplayMode, type LibraryItem } from "@pwe/shared"
 import useSWR from "swr"
 import { api } from "../api.js"
+import { spaceSavedPercent } from "../format.js"
 import { appIcons } from "../icons.js"
 import { useLayout } from "../components/mobile/index.js"
 
@@ -31,16 +32,6 @@ const isAdultRow = (row: LibraryItem): boolean =>
 
 const showsTranscodeBadge = (status: LibraryItem["transcode_status"]): boolean =>
   status === "failed" || status === "running" || status === "claimed" || status === "pending"
-
-// Returns the percent saved versus source, or null when the row has no
-// optimized result yet (or transcode somehow grew the file).
-const spaceSavedPercent = (row: LibraryItem): number | null => {
-  if (row.transcode_status !== "completed") return null
-  const source = row.source_size
-  const optimized = row.transcoded_size
-  if (!source || !optimized || optimized >= source) return null
-  return Math.round(((source - optimized) / source) * 100)
-}
 
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const { mobile } = useLayout()
@@ -76,6 +67,26 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
       })
       .catch((e: Error) => setError(e.message))
 
+  // Start a rotation over the currently visible (privacy-filtered) library:
+  // set the mode, then play the anchor so the backend arms the timer from it.
+  const handlePlayRotation = (mode: "sequential" | "shuffle") => {
+    // Rotation excludes adult wallpapers on the backend; pick a safe anchor too.
+    const safeRows = rows.filter((r) => !isAdultRow(r))
+    const start =
+      mode === "shuffle"
+        ? safeRows[Math.floor(Math.random() * safeRows.length)]
+        : safeRows[0]
+    if (!start) return
+    api
+      .playerMode(mode)
+      .then(() => api.play(start.workshop_id))
+      .then(() => {
+        setError(null)
+        onSystemRefresh()
+      })
+      .catch((e: Error) => setError(e.message))
+  }
+
   const handleDelete = (id: string) => {
     if (!confirm("Delete this wallpaper from library? Source file will be removed.")) return
     api
@@ -108,6 +119,26 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
           <span className="page-count mono">{countLabel}</span>
         </div>
         <div className="page-actions">
+          {visibleRows.length > 0 && (
+            <div className="library-rotation-actions">
+              <button
+                type="button"
+                className="btn library-rotation-btn"
+                onClick={() => handlePlayRotation("sequential")}
+              >
+                <span className="btn-icon">{appIcons.modeSequential}</span>
+                Play all
+              </button>
+              <button
+                type="button"
+                className="btn library-rotation-btn"
+                onClick={() => handlePlayRotation("shuffle")}
+              >
+                <span className="btn-icon">{appIcons.modeShuffle}</span>
+                Shuffle
+              </button>
+            </div>
+          )}
           <button
             type="button"
             className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
