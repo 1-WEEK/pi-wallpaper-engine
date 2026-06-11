@@ -26,11 +26,6 @@ Updated: 2026-06-08。
 
 ## P2 体验 / 质量优化
 
-### BL-15 SteamWorkshop search 测试回填(验收无关迭代 Phase 2)📋
-`packages/backend/src/services/SteamWorkshop.test.ts`:mock `fetch` + 内存 Config,驱动 `search()`,
-断言 requiredtags 含 Video 且去重、search_text trim、nextCursor 自指抑制、缓存命中不重复 fetch。
-对照 AGENTS.md 不变量,不 enshrine bug。
-
 ### BL-16 后续测试回填 + 卫生(验收无关迭代 后续候选)📋
 更多后端路由/服务测试(library/player/display/storage/system 路由,SleepTimer/DownloadTasks/
 PlayerWatch/Migrate 服务);删 4 个已完全合并的陈旧本地分支。可选:前端组件测试骨架(引入新
@@ -49,6 +44,11 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-15 SteamWorkshop search 测试回填(验收无关迭代 Phase 2),2026-06-12
+  - `packages/backend/src/services/SteamWorkshop.test.ts`:stub `fetch` + 内存 Config Layer,经真
+    `ManagedRuntime`(每 test 新建=新缓存)驱动 `search()`。6 cases:Video 必带 tag + 去重、空 query
+    不带 search_text、search_text trim、sort→query_type(trend 9 / recent 1)、next_cursor 自指抑制、
+    缓存命中不重复 fetch。对照 schema/不变量,未 enshrine bug。suite 153→159 pass。
 - ✅ BL-14 前端纯逻辑测试回填(验收无关迭代 Phase 1),2026-06-12
   - `packages/frontend/src/api.test.ts`:stub `globalThis.fetch`,断言 `api.workshopSearch` 拼的
     query string —— cursor 缺省 `*`、pageSize/tags/sort 缺省时不带、tags CSV 拼接、非 ok 响应以
