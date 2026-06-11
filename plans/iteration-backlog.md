@@ -26,10 +26,6 @@ Updated: 2026-06-08。
 
 ## P2 体验 / 质量优化
 
-### BL-14 前端纯逻辑测试回填(验收无关迭代 Phase 1)📋
-`packages/frontend/src/api.test.ts`:mock `fetch`,断言 `api.workshopSearch` 拼的 query string
-(cursor 缺省 `*`、pageSize 条件带、tags CSV、sort 透传)。照 `format.test.ts` 模式。
-
 ### BL-15 SteamWorkshop search 测试回填(验收无关迭代 Phase 2)📋
 `packages/backend/src/services/SteamWorkshop.test.ts`:mock `fetch` + 内存 Config,驱动 `search()`,
 断言 requiredtags 含 Video 且去重、search_text trim、nextCursor 自指抑制、缓存命中不重复 fetch。
@@ -53,6 +49,10 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-14 前端纯逻辑测试回填(验收无关迭代 Phase 1),2026-06-12
+  - `packages/frontend/src/api.test.ts`:stub `globalThis.fetch`,断言 `api.workshopSearch` 拼的
+    query string —— cursor 缺省 `*`、pageSize/tags/sort 缺省时不带、tags CSV 拼接、非 ok 响应以
+    `body.error` 抛错。4 cases,全 hermetic(不碰 window)。full suite 149→153 pass。
 - ✅ BL-13 CI 立门(验收无关迭代 Phase 0),2026-06-12
   - `.github/workflows/ci.yml`:`push→main` + `pull_request` 上跑 `bun install --frozen-lockfile`
     → `bun test` → `bun run typecheck` → `bun run build`。把机器门变成可信异步信号。
