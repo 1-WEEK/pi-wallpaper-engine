@@ -22,11 +22,7 @@ Updated: 2026-06-08。
 
 ## P1 工程债 / 功能补全
 
-### BL-13 CI 立门(验收无关迭代 Phase 0)📋
-仓库无 `.github/workflows`,机器门(test/typecheck/build)只靠本地 pre-commit 保证。加 GitHub
-Actions 在 push/PR 上跑 `bun install --frozen-lockfile` + `bun test` + `bun run typecheck` +
-`bun run build`,把"绿"变成可信的异步信号。报告先行,跑绿两次前不设 required。见
-`acceptance-free-iteration.md`。涉及:`.github/workflows/ci.yml`(新增)。
+当前无 P1 项。
 
 ## P2 体验 / 质量优化
 
@@ -57,6 +53,12 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-13 CI 立门(验收无关迭代 Phase 0),2026-06-12
+  - `.github/workflows/ci.yml`:`push→main` + `pull_request` 上跑 `bun install --frozen-lockfile`
+    → `bun test` → `bun run typecheck` → `bun run build`。把机器门变成可信异步信号。
+  - 报告先行,未设 required check(跑绿两次前不阻塞合并)。
+  - 本地预验:四条命令全绿,frozen-lockfile no changes,test 149 pass,build OK。
+  - 激活需 push 分支 / 开 PR 后 Actions 才触发;runner 为 x86 ubuntu,硬件项(BL-10/11/12)本就跑不了。
 - ✅ BL-6 移动端 MobileMiniPlayer 控件密度(方案 B:缩间距),2026-06-10
   - `styles.css`:`.mobile-mini-player` gap 10→6px、padding 12→10px(横向),`.mobile-mini-player-btn` 38→34px。保留全部 5 控件(含 stop)。
   - 选方案 B 而非方案 A(删 stop):删功能是产品决策,handoff 明确「不要替用户删 stop」,未获用户授权前不删。方案 B 纯 CSS、无功能损失、可逆。

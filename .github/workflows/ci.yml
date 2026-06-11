@@ -1,0 +1,43 @@
+name: CI
+
+# Machine gates for acceptance-free iteration: test + typecheck + build.
+# These are exactly the checks that need no Pi/NAS hardware, so a green run
+# here is a trustworthy async signal that the change is mergeable on
+# correctness grounds. Hardware validation (BL-10/11/12) still happens on the
+# real device and is intentionally out of scope here.
+#
+# Report-first: this workflow is not a required status check yet. Promote it to
+# required only after it has gone green a couple of times (see
+# plans/acceptance-free-iteration.md).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same ref cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        run: bun test
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
