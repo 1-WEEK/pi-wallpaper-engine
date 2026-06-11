@@ -22,11 +22,27 @@ Updated: 2026-06-08。
 
 ## P1 工程债 / 功能补全
 
-当前无 P1 项。
+### BL-13 CI 立门(验收无关迭代 Phase 0)📋
+仓库无 `.github/workflows`,机器门(test/typecheck/build)只靠本地 pre-commit 保证。加 GitHub
+Actions 在 push/PR 上跑 `bun install --frozen-lockfile` + `bun test` + `bun run typecheck` +
+`bun run build`,把"绿"变成可信的异步信号。报告先行,跑绿两次前不设 required。见
+`acceptance-free-iteration.md`。涉及:`.github/workflows/ci.yml`(新增)。
 
 ## P2 体验 / 质量优化
 
-当前无 P2 项。
+### BL-14 前端纯逻辑测试回填(验收无关迭代 Phase 1)📋
+`packages/frontend/src/api.test.ts`:mock `fetch`,断言 `api.workshopSearch` 拼的 query string
+(cursor 缺省 `*`、pageSize 条件带、tags CSV、sort 透传)。照 `format.test.ts` 模式。
+
+### BL-15 SteamWorkshop search 测试回填(验收无关迭代 Phase 2)📋
+`packages/backend/src/services/SteamWorkshop.test.ts`:mock `fetch` + 内存 Config,驱动 `search()`,
+断言 requiredtags 含 Video 且去重、search_text trim、nextCursor 自指抑制、缓存命中不重复 fetch。
+对照 AGENTS.md 不变量,不 enshrine bug。
+
+### BL-16 后续测试回填 + 卫生(验收无关迭代 后续候选)📋
+更多后端路由/服务测试(library/player/display/storage/system 路由,SleepTimer/DownloadTasks/
+PlayerWatch/Migrate 服务);删 4 个已完全合并的陈旧本地分支。可选:前端组件测试骨架(引入新
+devDep,较重)。见 `acceptance-free-iteration.md`。
 
 ## 🔒 Blocked(需硬件或真机,不在家取不了)
 
