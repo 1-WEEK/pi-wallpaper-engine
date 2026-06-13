@@ -2629,6 +2629,15 @@ a {
   font-size: 12px;
   min-height: 36px;
 }
+/* Settings rows: let segmented presets (e.g. 5 sleep-timer buttons) shrink and
+   wrap on narrow screens instead of forcing a fixed-width row that overflows. */
+.mobile-shell .setting-row .segmented {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.mobile-shell .setting-row .segmented-button {
+  min-width: 0;
+}
 .mobile-shell .browse-grid,
 .mobile-shell .library-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
