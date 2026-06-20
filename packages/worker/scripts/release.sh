@@ -9,6 +9,9 @@
 # Env:
 #   PWE_WORKER_REGISTRY   default: ghcr.io/${USER}/pwe-worker
 #   PWE_WORKER_TAG        default: read from packages/worker/package.json .version
+#
+# For ghcr.io pushes, this script depends on the GitHub CLI (gh) being installed
+# and logged in. It runs `gh auth token | docker login ghcr.io` automatically.
 
 set -euo pipefail
 
@@ -44,6 +47,31 @@ fi
 
 IMAGE_REF_VERSIONED="${REGISTRY}:${TAG}"
 IMAGE_REF_LATEST="${REGISTRY}:latest"
+
+ensure_ghcr_login() {
+  if [[ "${REGISTRY}" != ghcr.io/* ]]; then
+    return 0
+  fi
+
+  if ! gh --version >/dev/null 2>&1; then
+    echo "✗ Pushing to ghcr.io requires the GitHub CLI (gh). Install it and run 'gh auth login'." >&2
+    exit 2
+  fi
+
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "✗ 'gh auth login' is required to push to ghcr.io." >&2
+    exit 2
+  fi
+
+  local github_user
+  github_user="$(gh api user -q .login)"
+  echo "▶ Logging into ghcr.io as ${github_user} via gh"
+  gh auth token | docker login ghcr.io -u "${github_user}" --password-stdin
+}
+
+if [[ "${PUSH}" == "1" ]]; then
+  ensure_ghcr_login
+fi
 
 echo "▶ Building ${IMAGE_REF_VERSIONED} for ${PLATFORM}"
 
