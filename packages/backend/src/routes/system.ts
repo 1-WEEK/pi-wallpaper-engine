@@ -98,7 +98,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
                 ),
             ] as const)
 
-          const transcode = { pending: 0, claimed: 0, running: 0, completed: 0, failed: 0 }
+          const transcode = { pending: 0, claimed: 0, running: 0, uploading: 0, completed: 0, failed: 0 }
           for (const row of transcodeCounts) {
             if (row.status in transcode) {
               transcode[row.status as keyof typeof transcode] = Number(row.n)

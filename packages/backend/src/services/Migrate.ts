@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import { MigrateError, StorageError } from "@pwe/shared"
 import { copyTree, estimateSize, removeTree, verifyTree } from "@pwe/migrate"
 import { Config } from "./Config.js"
+import { Db } from "./Db.js"
 import { Logger } from "./Logger.js"
 import { Mpv } from "./Mpv.js"
 import { Storage, friendlyStorageError, isPathInsideRoot } from "./Storage.js"
@@ -54,6 +55,7 @@ export const MigrateLive = Layer.effect(
   Migrate,
   Effect.gen(function* () {
     const config = yield* Config
+    const db = yield* Db
     const logger = yield* Logger
     const mpv = yield* Mpv
     const storage = yield* Storage
@@ -90,127 +92,163 @@ export const MigrateLive = Layer.effect(
           )
         }
 
-        const fromRoot = yield* storage.mediaRoot()
-        const toRoot = targetRoot
-
-        const player = yield* mpv.status()
-        if (player.path && isPathInsideRoot(player.path, fromRoot)) {
-          return yield* Effect.fail(
-            new MigrateError({ kind: "Busy", message: "Please stop playback before switching roots." })
-          )
-        }
-
-        const subdirs = [config.paths.source_dir, config.paths.optimized_dir]
-        const sized = yield* Effect.forEach(subdirs, (sub) =>
-          Effect.promise(() => estimateSize(resolve(fromRoot, sub))).pipe(
-            Effect.map((bytes) => ({
-              bytes,
-              from: resolve(fromRoot, sub),
-              to: resolve(toRoot, sub),
-            }))
-          )
-        )
-        const totalBytes = sized.reduce((sum, entry) => sum + entry.bytes, 0)
-
-        const avail = yield* availableBytes(toRoot)
-        if (avail < totalBytes) {
-          return yield* Effect.fail(
-            new MigrateError({
-              kind: "Space",
-              message: `Not enough space for migration (needs ${formatGb(totalBytes)}, available ${formatGb(avail)}).`,
-            })
-          )
-        }
-
-        const initial: MigrationProgress = {
+        yield* Ref.set(jobRef, {
           state: "running",
           moved_bytes: 0,
-          total_bytes: totalBytes,
+          total_bytes: 0,
           error: null,
-        }
-        yield* Ref.set(jobRef, initial)
+        })
 
-        const job = Effect.gen(function* () {
-          let movedBase = 0
-          for (const { bytes, from, to } of sized) {
-            yield* Effect.tryPromise({
-              try: (signal) =>
-                copyTree({
-                  from,
-                  to,
-                  signal,
-                  onProgress: (moved) => {
-                    Effect.runSync(
-                      Ref.set(jobRef, {
-                        state: "running",
-                        moved_bytes: movedBase + moved,
-                        total_bytes: totalBytes,
-                        error: null,
-                      })
-                    )
-                  },
-                }),
-              catch: toMigrateError,
-            })
-            movedBase += bytes
+        const prepareAndFork = Effect.gen(function* () {
+          const fromRoot = yield* storage.mediaRoot()
+          const toRoot = targetRoot
+
+          const activeTranscodes = yield* db
+            .queryOne<{ n: number }>(
+              `SELECT COUNT(*) AS n
+               FROM transcode_jobs
+               WHERE status IN ('claimed','running','uploading')`
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new MigrateError({
+                    kind: "Copy",
+                    message: "Failed to check active transcode jobs.",
+                    cause,
+                  })
+              )
+            )
+          if (Number(activeTranscodes?.n ?? 0) > 0) {
+            return yield* Effect.fail(
+              new MigrateError({
+                kind: "Busy",
+                message: "A transcode job is active. Wait for it to finish before switching roots.",
+              })
+            )
+          }
+
+          const player = yield* mpv.status()
+          if (player.path && isPathInsideRoot(player.path, fromRoot)) {
+            return yield* Effect.fail(
+              new MigrateError({ kind: "Busy", message: "Please stop playback before switching roots." })
+            )
+          }
+
+          const subdirs = [config.paths.source_dir, config.paths.optimized_dir]
+          const sized = yield* Effect.forEach(subdirs, (sub) =>
+            Effect.promise(() => estimateSize(resolve(fromRoot, sub))).pipe(
+              Effect.map((bytes) => ({
+                bytes,
+                from: resolve(fromRoot, sub),
+                to: resolve(toRoot, sub),
+              }))
+            )
+          )
+          const totalBytes = sized.reduce((sum, entry) => sum + entry.bytes, 0)
+
+          const avail = yield* availableBytes(toRoot)
+          if (avail < totalBytes) {
+            return yield* Effect.fail(
+              new MigrateError({
+                kind: "Space",
+                message: `Not enough space for migration (needs ${formatGb(totalBytes)}, available ${formatGb(avail)}).`,
+              })
+            )
+          }
+
+          const initial: MigrationProgress = {
+            state: "running",
+            moved_bytes: 0,
+            total_bytes: totalBytes,
+            error: null,
+          }
+          yield* Ref.set(jobRef, initial)
+
+          const job = Effect.gen(function* () {
+            let movedBase = 0
+            for (const { bytes, from, to } of sized) {
+              yield* Effect.tryPromise({
+                try: (signal) =>
+                  copyTree({
+                    from,
+                    to,
+                    signal,
+                    onProgress: (moved) => {
+                      Effect.runSync(
+                        Ref.set(jobRef, {
+                          state: "running",
+                          moved_bytes: movedBase + moved,
+                          total_bytes: totalBytes,
+                          error: null,
+                        })
+                      )
+                    },
+                  }),
+                catch: toMigrateError,
+              })
+              movedBase += bytes
+              yield* Ref.set(jobRef, {
+                state: "running",
+                moved_bytes: movedBase,
+                total_bytes: totalBytes,
+                error: null,
+              })
+            }
+
+            for (const { from, to } of sized) {
+              yield* Effect.tryPromise({
+                try: () => verifyTree({ from, to }),
+                catch: toMigrateError,
+              })
+            }
+
+            yield* Effect.uninterruptible(
+              Effect.gen(function* () {
+                yield* storage.saveRoot(toRoot)
+                for (const { from } of sized) {
+                  yield* Effect.tryPromise({
+                    try: () => removeTree(from),
+                    catch: toMigrateError,
+                  })
+                }
+              })
+            )
+
             yield* Ref.set(jobRef, {
-              state: "running",
-              moved_bytes: movedBase,
+              state: "done",
+              moved_bytes: totalBytes,
               total_bytes: totalBytes,
               error: null,
             })
-          }
-
-          for (const { from, to } of sized) {
-            yield* Effect.tryPromise({
-              try: () => verifyTree({ from, to }),
-              catch: toMigrateError,
-            })
-          }
-
-          yield* Effect.uninterruptible(
-            Effect.gen(function* () {
-              yield* storage.saveRoot(toRoot)
-              for (const { from } of sized) {
-                yield* Effect.tryPromise({
-                  try: () => removeTree(from),
-                  catch: toMigrateError,
+            yield* logger.info(`Storage migration complete: ${fromRoot} -> ${toRoot}`)
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                const message =
+                  error instanceof MigrateError
+                    ? friendlyMigrateError(error)
+                    : friendlyStorageError(error)
+                yield* logger.warn(
+                  `Storage migration failed: ${error instanceof Error ? error.message : String(error)}`
+                )
+                yield* Ref.set(jobRef, {
+                  state: "failed",
+                  moved_bytes: 0,
+                  total_bytes: totalBytes,
+                  error: message,
                 })
-              }
-            })
+              })
+            ),
+            Effect.onInterrupt(() => Ref.set(jobRef, null))
           )
 
-          yield* Ref.set(jobRef, {
-            state: "done",
-            moved_bytes: totalBytes,
-            total_bytes: totalBytes,
-            error: null,
-          })
-          yield* logger.info(`Storage migration complete: ${fromRoot} -> ${toRoot}`)
-        }).pipe(
-          Effect.catchAll((error) =>
-            Effect.gen(function* () {
-              const message =
-                error instanceof MigrateError
-                  ? friendlyMigrateError(error)
-                  : friendlyStorageError(error)
-              yield* logger.warn(
-                `Storage migration failed: ${error instanceof Error ? error.message : String(error)}`
-              )
-              yield* Ref.set(jobRef, {
-                state: "failed",
-                moved_bytes: 0,
-                total_bytes: totalBytes,
-                error: message,
-              })
-            })
-          ),
-          Effect.onInterrupt(() => Ref.set(jobRef, null))
-        )
+          const fiber = yield* Effect.forkDaemon(job)
+          yield* Ref.set(fiberRef, fiber)
+          return initial
+        }).pipe(Effect.tapError(() => Ref.set(jobRef, null)))
 
-        const fiber = yield* Effect.forkDaemon(job)
-        yield* Ref.set(fiberRef, fiber)
-        return initial
+        return yield* prepareAndFork
       })
 
     const cancel = () =>

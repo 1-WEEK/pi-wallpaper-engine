@@ -2,8 +2,12 @@
 
 NAS-side transcoding worker. Pulls `TranscodeJob` entries from the Pi backend,
 runs ffmpeg with hardware HEVC (Intel QSV) when available, falls back to
-libx265 software encoding, and writes the result back over the shared media
-path.
+libx265 software encoding, and uploads the artifact back to the Pi.
+
+The Worker is a compute node only. It does not mount the media directory and
+does not decide where optimized files live. The Pi streams the source file to
+the Worker, receives the optimized artifact, writes it under the current media
+root, and updates SQLite.
 
 Deployment model: **the image is built on your dev machine and distributed**
 to the NAS via a container registry (recommended) or a docker tarball. The
@@ -12,9 +16,9 @@ checkout, no `docker build`.
 
 ## Prerequisites (one-time)
 
-1. The Pi `data_root` (or `storage.root` override) **must be the same
-   physical share** the Worker mounts at `/data`. If the Pi is serving from
-   its local SD card, the Worker has nothing to read.
+1. The NAS must be able to reach the Pi backend over the LAN, e.g.
+   `http://pi.local:8080` or `http://<pi-ip>:8080`. Avoid public Tunnel URLs
+   for Worker traffic.
 2. Generate a worker key and put the SAME value on both sides:
    ```bash
    openssl rand -hex 32
@@ -22,7 +26,7 @@ checkout, no `docker build`.
    - Pi: append `PWE_WORKER_API_KEY=<value>` to
      `~/.config/pi-wallpaper-engine/auth.env`, then restart the backend.
    - NAS: put it in the `.env` file next to `docker-compose.yml` (below).
-3. Intel iGPU at `/dev/dri/renderD128` for hardware encoding (optional —
+3. Intel iGPU at `/dev/dri/renderD128` for hardware encoding (optional -
    the Worker degrades to libx265 software encoding without it).
 
 ## Workflow
@@ -98,19 +102,23 @@ That's it. The image, the source, the lockfile — none of it touches the NAS.
 | `PWE_WORKER_API_KEY` | ✓ | Shared secret, ≥8 chars. Must match the Pi side. |
 | `PWE_BACKEND_URL` | ✓ | LAN URL of the Pi (avoid public Tunnel URLs). |
 | `PWE_WORKER_NAME` | – | Identifier reported during claim (default `nas-01`). |
-| `PWE_MEDIA_HOST` | ✓ | Host path of the shared media. Mounted into the container at `/data`. |
+| `PWE_WORK_DIR` | – | In-container temp directory for source/output files (default `/tmp/pwe-worker`). |
 
 ## Operations
 
 - One job at a time. No Worker-side concurrency by design — keeps NAS load
   predictable and avoids the need for resource limiters.
+- Source and artifact transfer through the Pi backend. The Worker never sees
+  `source/`, `optimized/`, `paths.data_root`, or `storage.root`.
 - Heartbeats every 15s. Stale claims (no heartbeat within
   `heartbeat_timeout_ms`, default 60s) are reset to `pending` by the Pi's
   `TranscodeMonitor` and re-claimed.
-- The Worker writes `<id>.mp4.partial` then renames on success. Crashes
-  leave the `.partial`; the next claim deletes it before re-running
-  ffmpeg, so jobs are idempotent.
+- The Worker writes only local temp files under `PWE_WORK_DIR`. The Pi writes
+  `<media-root>/optimized/<id>.mp4.partial.<jobId>` and renames it on upload
+  success. Crashes leave at most a partial file that the next retry can replace.
 - Progress reports are throttled to every 5% to keep DB write load minimal.
+- Storage migration pauses new claims and active transcodes block root
+  switching, so artifact placement stays owned by the Pi.
 
 ## Verifying QSV
 
@@ -124,7 +132,7 @@ Healthy QSV startup looks like:
 
 ```
 ▶ pwe-worker "nas-01" → http://pi.local:8080
-  media root: /data
+  work dir: /tmp/pwe-worker
   encoder: qsv — hevc_qsv device probe succeeded
 ```
 
@@ -140,4 +148,4 @@ docker compose down
 ```
 
 The job queue in the Pi DB stays as-is; `TranscodeMonitor` will reset any
-claimed/running rows back to `pending` within ~30s.
+claimed/running/uploading rows back to `pending` within ~30s.

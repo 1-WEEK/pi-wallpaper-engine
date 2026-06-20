@@ -6,6 +6,7 @@ export const TranscodeStatus = Schema.Literal(
   "pending",
   "claimed",
   "running",
+  "uploading",
   "completed",
   "failed"
 )

@@ -48,7 +48,7 @@ COPY packages/worker ./packages/worker
 COPY tsconfig.base.json ./
 
 ENV NODE_ENV=production
-ENV PWE_MEDIA_ROOT=/data
+ENV PWE_WORK_DIR=/tmp/pwe-worker
 
 # tini reaps zombie ffmpeg children and forwards SIGTERM cleanly so the
 # worker's graceful shutdown path (finish current job, then exit) actually

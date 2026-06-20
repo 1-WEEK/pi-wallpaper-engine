@@ -1,11 +1,13 @@
 import { createWorkerClient, WorkerHttpError } from "./client.js"
 import { detectEncoder, transcode } from "./ffmpeg.js"
+import { mkdir, rm } from "node:fs/promises"
+import { join } from "node:path"
 
 interface RuntimeConfig {
   readonly backendUrl: string
   readonly apiKey: string
   readonly workerName: string
-  readonly mediaRoot: string
+  readonly workDir: string
 }
 
 const requireEnv = (name: string): string => {
@@ -21,7 +23,7 @@ const loadConfig = (): RuntimeConfig => ({
   backendUrl: requireEnv("PWE_BACKEND_URL"),
   apiKey: requireEnv("PWE_WORKER_API_KEY"),
   workerName: process.env["PWE_WORKER_NAME"] ?? "worker",
-  mediaRoot: process.env["PWE_MEDIA_ROOT"] ?? "/data",
+  workDir: process.env["PWE_WORK_DIR"] ?? "/tmp/pwe-worker",
 })
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -45,7 +47,7 @@ const main = async () => {
   const client = createWorkerClient({ baseUrl: config.backendUrl, apiKey: config.apiKey })
 
   console.log(`▶ pwe-worker "${config.workerName}" → ${config.backendUrl}`)
-  console.log(`  media root: ${config.mediaRoot}`)
+  console.log(`  work dir: ${config.workDir}`)
 
   // Detect encoder once at startup. Reuse for every job so we don't pay the
   // ~1s detection cost per claim.
@@ -72,6 +74,9 @@ const main = async () => {
     }
 
     console.log(`◆ Claimed job ${job.id} for workshop ${job.workshop_id}`)
+    const jobDir = join(config.workDir, job.id)
+    const sourcePath = join(jobDir, "source")
+    const outputPath = join(jobDir, "output.mp4")
 
     const heartbeatTimer = setInterval(() => {
       client
@@ -85,9 +90,14 @@ const main = async () => {
     }, HEARTBEAT_INTERVAL_MS)
 
     try {
+      await rm(jobDir, { recursive: true, force: true })
+      await mkdir(jobDir, { recursive: true })
+      await client.downloadSource(job.source_url, sourcePath)
+
       let lastReportedPct = 0
       const result = await transcode(job, {
-        mediaRoot: config.mediaRoot,
+        sourcePath,
+        outputPath,
         encoder: encoderChoice.kind,
         onProgress: (pct) => {
           // Throttle: report every >= 5% to keep the backend write load low.
@@ -99,11 +109,7 @@ const main = async () => {
         },
       })
 
-      await client.complete(job.id, {
-        output_relative_path: result.outputRelativePath,
-        output_size: result.outputSize,
-        duration_ms: result.durationMs,
-      })
+      await client.uploadArtifact(job.artifact_url, result.outputPath, result.durationMs)
       console.log(
         `✓ Completed ${job.id} (${result.encoderUsed}) — ${result.outputSize} bytes in ${result.durationMs}ms`
       )
@@ -117,6 +123,7 @@ const main = async () => {
       }
     } finally {
       clearInterval(heartbeatTimer)
+      await rm(jobDir, { recursive: true, force: true }).catch(() => {})
     }
   }
 

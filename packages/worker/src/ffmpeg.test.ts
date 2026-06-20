@@ -1,30 +1,30 @@
 import { describe, expect, test } from "bun:test"
 import type { TranscodeJob } from "@pwe/shared"
-import { buildFfmpegArgs, parseProgressLine, resolveJobPaths } from "./ffmpeg.js"
+import { buildFfmpegArgs, buildJobPaths, parseProgressLine } from "./ffmpeg.js"
 
 const job: TranscodeJob = {
   id: "J1",
   workshop_id: "abc",
-  source_relative_path: "source/abc/wallpaper.mp4",
-  output_relative_path: "optimized/abc.mp4",
+  source_url: "/api/transcode/J1/source",
+  artifact_url: "/api/transcode/J1/artifact",
   target_width: 1200,
   target_height: 1080,
   target_codec: "hevc",
   target_quality: 23,
 }
 
-describe("resolveJobPaths", () => {
-  test("resolves source/partial/final under media root", () => {
-    const paths = resolveJobPaths(job, "/data")
-    expect(paths.sourceAbs).toBe("/data/source/abc/wallpaper.mp4")
-    expect(paths.finalAbs).toBe("/data/optimized/abc.mp4")
-    expect(paths.partialAbs).toBe("/data/optimized/abc.mp4.partial")
-    expect(paths.outputDir).toBe("/data/optimized")
+describe("buildJobPaths", () => {
+  test("builds source/partial/final paths for local worker files", () => {
+    const paths = buildJobPaths("/tmp/pwe/J1/source", "/tmp/pwe/J1/output.mp4")
+    expect(paths.sourceAbs).toBe("/tmp/pwe/J1/source")
+    expect(paths.finalAbs).toBe("/tmp/pwe/J1/output.mp4")
+    expect(paths.partialAbs).toBe("/tmp/pwe/J1/output.mp4.partial")
+    expect(paths.outputDir).toBe("/tmp/pwe/J1")
   })
 })
 
 describe("buildFfmpegArgs", () => {
-  const paths = resolveJobPaths(job, "/data")
+  const paths = buildJobPaths("/tmp/pwe/J1/source", "/tmp/pwe/J1/output.mp4")
 
   test("QSV path uses hevc_qsv + scale_qsv + global_quality", () => {
     const args = buildFfmpegArgs(job, paths, "qsv")

@@ -16,7 +16,7 @@
 #   PWE_WORKER_API_KEY   shared secret with the Pi backend (≥8 chars)
 #   PWE_BACKEND_URL      LAN URL of the Pi, e.g. http://pi.local:8080
 #   PWE_WORKER_NAME      identifier reported during claim, e.g. nas-01
-#   PWE_MEDIA_HOST       host path of the shared media, e.g. /mnt/nas/media
+#   PWE_WORK_DIR         optional in-container temp directory, e.g. /tmp/pwe-worker
 
 services:
   pwe-worker:
@@ -26,9 +26,7 @@ services:
       PWE_BACKEND_URL: ${PWE_BACKEND_URL:?set PWE_BACKEND_URL to the Pi LAN URL}
       PWE_WORKER_API_KEY: ${PWE_WORKER_API_KEY:?set PWE_WORKER_API_KEY}
       PWE_WORKER_NAME: ${PWE_WORKER_NAME:-nas-01}
-      PWE_MEDIA_ROOT: /data
-    volumes:
-      - ${PWE_MEDIA_HOST:?set PWE_MEDIA_HOST to the host media path}:/data
+      PWE_WORK_DIR: ${PWE_WORK_DIR:-/tmp/pwe-worker}
     devices:
       # Required for hevc_qsv. The Worker's runtime probe falls back to
       # libx265 if this device isn't present, so removing the line keeps

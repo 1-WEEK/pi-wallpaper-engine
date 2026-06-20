@@ -1,15 +1,14 @@
 import { spawn } from "node:child_process"
 import { mkdir, rename, stat, unlink } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import { dirname } from "node:path"
 import type { TranscodeJob } from "@pwe/shared"
 
 /**
  * ffmpeg wrapper. One job at a time. Detects hardware QSV at runtime
  * (encoder support + actual device probe) with a libx265 software fallback.
  *
- * Pure command-builder helpers (`buildFfmpegArgs`, `parseProgressLine`,
- * `resolveJobPaths`) are exported so the wrapper can be unit-tested without
- * actually spawning ffmpeg.
+ * Pure command-builder helpers (`buildFfmpegArgs`, `parseProgressLine`) are
+ * exported so the wrapper can be unit-tested without actually spawning ffmpeg.
  */
 
 const FFMPEG = process.env["FFMPEG_BIN"] ?? "ffmpeg"
@@ -28,13 +27,12 @@ export interface JobPaths {
   readonly outputDir: string
 }
 
-export const resolveJobPaths = (job: TranscodeJob, mediaRoot: string): JobPaths => {
-  const finalAbs = resolve(mediaRoot, job.output_relative_path)
+export const buildJobPaths = (sourcePath: string, outputPath: string): JobPaths => {
   return {
-    sourceAbs: resolve(mediaRoot, job.source_relative_path),
-    partialAbs: `${finalAbs}.partial`,
-    finalAbs,
-    outputDir: dirname(finalAbs),
+    sourceAbs: sourcePath,
+    partialAbs: `${outputPath}.partial`,
+    finalAbs: outputPath,
+    outputDir: dirname(outputPath),
   }
 }
 
@@ -212,7 +210,8 @@ export const parseProgressLine = (
 }
 
 export interface TranscodeOptions {
-  readonly mediaRoot: string
+  readonly sourcePath: string
+  readonly outputPath: string
   readonly onProgress?: (percent: number) => void
   readonly ffmpegBin?: string
   /**
@@ -224,7 +223,7 @@ export interface TranscodeOptions {
 }
 
 export interface TranscodeResult {
-  readonly outputRelativePath: string
+  readonly outputPath: string
   readonly outputSize: number
   readonly durationMs: number
   readonly encoderUsed: EncoderKind
@@ -249,9 +248,9 @@ export const transcode = async (
   opts: TranscodeOptions
 ): Promise<TranscodeResult> => {
   const ffmpegBin = opts.ffmpegBin ?? FFMPEG
-  const paths = resolveJobPaths(job, opts.mediaRoot)
+  const paths = buildJobPaths(opts.sourcePath, opts.outputPath)
 
-  // Source presence check — fail fast if storage isn't mounted.
+  // Source presence check — fail fast if the Pi download failed.
   await stat(paths.sourceAbs).catch(() => {
     throw new Error(`Source not found: ${paths.sourceAbs}`)
   })
@@ -309,7 +308,7 @@ export const transcode = async (
   const st = await stat(paths.finalAbs)
 
   return {
-    outputRelativePath: job.output_relative_path,
+    outputPath: paths.finalAbs,
     outputSize: st.size,
     durationMs: Date.now() - startedAt,
     encoderUsed: encoder,

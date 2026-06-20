@@ -6,6 +6,7 @@ import { Config, type RuntimeConfig } from "./Config.js"
 import { Db, type DbImpl } from "./Db.js"
 import { Library, type LibraryImpl } from "./Library.js"
 import { Logger, type LoggerImpl } from "./Logger.js"
+import { Storage, type StorageImpl } from "./Storage.js"
 import { TranscodeMonitor, TranscodeMonitorBareLayer } from "./TranscodeMonitor.js"
 
 let openDbs: Database[] = []
@@ -90,6 +91,30 @@ const makeConfigLayer = (heartbeatTimeoutMs: number) => {
   return Layer.succeed(Config, impl)
 }
 
+const makeStorageLayer = () => {
+  const impl: StorageImpl = {
+    status: () =>
+      Effect.succeed({
+        available: true,
+        data_root: "/tmp",
+        default_root: "/tmp",
+        using_default: true,
+        last_error: null,
+      }),
+    mediaRoot: () => Effect.succeed("/tmp"),
+    mediaRootOrNull: () => Effect.succeed(null),
+    saveRoot: () =>
+      Effect.succeed({
+        available: true,
+        data_root: "/tmp",
+        default_root: "/tmp",
+        using_default: true,
+        last_error: null,
+      }),
+  }
+  return Layer.succeed(Storage, impl)
+}
+
 afterEach(() => {
   for (const db of openDbs) db.close()
   openDbs = []
@@ -109,13 +134,14 @@ describe("TranscodeMonitor.sweep", () => {
     const stack = TranscodeMonitorBareLayer.pipe(
       Layer.provide(library.layer),
       Layer.provide(logger.layer),
+      Layer.provide(makeStorageLayer()),
       Layer.provide(dbStub.layer),
       Layer.provide(makeConfigLayer(60_000))
     )
     runtime = ManagedRuntime.make(stack)
   })
 
-  test("resets stale claimed/running jobs to pending and mirrors to library", async () => {
+  test("resets stale claimed/running/uploading jobs to pending and mirrors to library", async () => {
     const now = Date.now()
     const longAgo = now - 120_000 // older than the 60s heartbeat timeout
 
@@ -131,6 +157,12 @@ describe("TranscodeMonitor.sweep", () => {
          VALUES ('JFRESH', 'def', 'running', 'nas-01', ?, ?, 90, ?)`
       )
       .run(now, now, now)
+    dbHandle
+      .prepare(
+        `INSERT INTO transcode_jobs (id, workshop_id, status, worker, claimed_at, last_heartbeat, progress, created_at)
+         VALUES ('JOLD2', 'ghi', 'uploading', 'nas-01', ?, ?, 100, ?)`
+      )
+      .run(longAgo, longAgo, longAgo)
 
     const recovered = await runtime.runPromise(
       Effect.gen(function* () {
@@ -139,7 +171,7 @@ describe("TranscodeMonitor.sweep", () => {
       })
     )
 
-    expect(recovered).toBe(1)
+    expect(recovered).toBe(2)
 
     const stale = dbHandle
       .query("SELECT status, worker, claimed_at, last_heartbeat FROM transcode_jobs WHERE id = 'JOLD1'")
@@ -154,7 +186,7 @@ describe("TranscodeMonitor.sweep", () => {
       .get() as { status: string }
     expect(fresh.status).toBe("running")
 
-    expect(library.updates).toHaveLength(1)
+    expect(library.updates).toHaveLength(2)
     expect(library.updates[0]?.id).toBe("abc")
     expect(library.updates[0]?.patch.transcode_status).toBe("pending")
   })

@@ -45,6 +45,12 @@ export interface TranscodeQueueImpl {
   readonly progress: (jobId: string, percent: number) => Effect.Effect<void, DbError>
 
   /**
+   * Artifact upload has started. The Worker is done computing, but the Pi has
+   * not yet durably placed the optimized file.
+   */
+  readonly uploading: (jobId: string) => Effect.Effect<boolean, DbError>
+
+  /**
    * Final success. Updates transcode_jobs to completed and writes the optimized
    * file metadata into the library row.
    */
@@ -104,6 +110,11 @@ export const TranscodeQueueNoop = Layer.effect(
       progress: (jobId) =>
         Effect.sync(() => {
           console.warn(`TranscodeQueueNoop.progress(${jobId}) — ignored`)
+        }),
+      uploading: (jobId) =>
+        Effect.sync(() => {
+          console.warn(`TranscodeQueueNoop.uploading(${jobId}) — ignored`)
+          return false
         }),
       complete: (jobId) =>
         Effect.sync(() => {
@@ -201,8 +212,8 @@ export const TranscodeQueueLive = Layer.effect(
           return {
             id: row.id,
             workshop_id: row.workshop_id,
-            source_relative_path: lib.source_path,
-            output_relative_path: `${config.paths.optimized_dir}/${row.workshop_id}.mp4`,
+            source_url: `/api/transcode/${encodeURIComponent(row.id)}/source`,
+            artifact_url: `/api/transcode/${encodeURIComponent(row.id)}/artifact`,
             target_width: config.screen.width,
             target_height: config.screen.height,
             target_codec: config.transcode.target_codec,
@@ -219,7 +230,7 @@ export const TranscodeQueueLive = Layer.effect(
             `UPDATE transcode_jobs
              SET last_heartbeat = ?,
                  status = CASE WHEN status = 'claimed' THEN 'running' ELSE status END
-             WHERE id = ? AND status IN ('claimed','running')
+             WHERE id = ? AND status IN ('claimed','running','uploading')
              RETURNING workshop_id, status`,
             [Date.now(), jobId]
           )
@@ -238,7 +249,7 @@ export const TranscodeQueueLive = Layer.effect(
           const clamped = Math.max(0, Math.min(100, Math.round(percent)))
           const row = yield* db.queryOne<{ workshop_id: string }>(
             `UPDATE transcode_jobs SET progress = ?, last_heartbeat = ?
-             WHERE id = ? AND status IN ('claimed','running')
+             WHERE id = ? AND status IN ('claimed','running','uploading')
              RETURNING workshop_id`,
             [clamped, Date.now(), jobId]
           )
@@ -248,12 +259,28 @@ export const TranscodeQueueLive = Layer.effect(
           })
         }),
 
+      uploading: (jobId) =>
+        Effect.gen(function* () {
+          const row = yield* db.queryOne<{ workshop_id: string }>(
+            `UPDATE transcode_jobs
+             SET status = 'uploading', last_heartbeat = ?
+             WHERE id = ? AND status IN ('claimed','running','uploading')
+             RETURNING workshop_id`,
+            [Date.now(), jobId]
+          )
+          if (!row) return false
+          yield* library.update(row.workshop_id, {
+            transcode_status: "uploading",
+          })
+          return true
+        }),
+
       complete: (jobId, report, targetResolution, targetCodec) =>
         Effect.gen(function* () {
           const row = yield* db.queryOne<{ workshop_id: string }>(
             `UPDATE transcode_jobs
              SET status = 'completed', progress = 100, completed_at = ?, error = NULL
-             WHERE id = ? AND status IN ('claimed','running')
+             WHERE id = ? AND status IN ('claimed','running','uploading')
              RETURNING workshop_id`,
             [Date.now(), jobId]
           )

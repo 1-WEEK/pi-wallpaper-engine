@@ -6,6 +6,7 @@ import { constants } from "node:fs"
 import { dirname, isAbsolute, resolve } from "node:path"
 import { homedir } from "node:os"
 import { Config, type RuntimeConfig } from "../services/Config.js"
+import { Db } from "../services/Db.js"
 import { DownloadTasks } from "../services/DownloadTasks.js"
 import { Library } from "../services/Library.js"
 import { Migrate, friendlyMigrateError } from "../services/Migrate.js"
@@ -323,6 +324,7 @@ export const storageRoutes = (runtime: AppRuntime) =>
               const migrate = yield* Migrate
               const library = yield* Library
               const tasks = yield* DownloadTasks
+              const db = yield* Db
 
               const currentStatus = yield* storage.status()
               const target = yield* Effect.tryPromise({
@@ -348,6 +350,19 @@ export const storageRoutes = (runtime: AppRuntime) =>
                     new MigrateError({
                       kind: "Busy",
                       message: "Downloads are in progress. Wait for them to finish before switching roots.",
+                    })
+                  )
+                }
+                const activeTranscodes = yield* db.queryOne<{ n: number }>(
+                  `SELECT COUNT(*) AS n
+                   FROM transcode_jobs
+                   WHERE status IN ('claimed','running','uploading')`
+                )
+                if (Number(activeTranscodes?.n ?? 0) > 0) {
+                  return yield* Effect.fail(
+                    new MigrateError({
+                      kind: "Busy",
+                      message: "A transcode job is active. Wait for it to finish before switching roots.",
                     })
                   )
                 }

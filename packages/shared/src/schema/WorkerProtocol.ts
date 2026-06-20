@@ -8,6 +8,7 @@ export const TranscodeJobStatus = Schema.Literal(
   "pending",
   "claimed",
   "running",
+  "uploading",
   "completed",
   "failed"
 )
@@ -16,9 +17,10 @@ export type TranscodeJobStatus = typeof TranscodeJobStatus.Type
 export const TranscodeJob = Schema.Struct({
   id: Schema.String,
   workshop_id: Schema.String,
-  // Relative paths under data_root. Worker prefixes /data, Pi prefixes data_root.
-  source_relative_path: Schema.String,
-  output_relative_path: Schema.String,
+  // Worker is a compute node only. It pulls source bytes from the Pi and
+  // uploads the artifact back; the Pi owns final storage placement.
+  source_url: Schema.String,
+  artifact_url: Schema.String,
   target_width: Schema.Number,
   target_height: Schema.Number,
   target_codec: TargetCodec,
@@ -37,15 +39,6 @@ export const HeartbeatResponse = Schema.Union(
 
 export const ProgressReport = Schema.Struct({
   progress: Schema.Number.pipe(Schema.between(0, 100)),
-})
-
-export const CompleteReport = Schema.Struct({
-  // Worker writes <output>.partial then renames on success. Reports the final
-  // relative path (under data_root). Always equals job.output_relative_path
-  // but reported back for verification.
-  output_relative_path: Schema.String,
-  output_size: Schema.Number,
-  duration_ms: Schema.Number,
 })
 
 export const FailReport = Schema.Struct({

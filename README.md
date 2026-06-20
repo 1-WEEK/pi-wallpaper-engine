@@ -4,9 +4,10 @@ Wallpaper Engine Video wallpaper player for Raspberry Pi 4B. The backend uses
 Bun + Elysia to manage SteamCMD downloads, mpv fullscreen playback, and storage
 migration. The frontend is a Vite + React web UI.
 
-The current phase plays source video files directly. It does not transcode.
-Non-Video Wallpaper Engine projects fail fast during download finalization and
-partial files are cleaned up.
+By default the app plays source video files directly. When
+`PWE_WORKER_API_KEY` is configured, Phase 2 transcoding is enabled and a
+separate Worker can process jobs. Non-Video Wallpaper Engine projects fail fast
+during download finalization and partial files are cleaned up.
 
 ## Current Status
 
@@ -17,9 +18,11 @@ partial files are cleaned up.
   media-directory migration are implemented.
 - Phase 2 transcoding is implemented but inactive by default. The `@pwe/worker`
   package is a working NAS-side ffmpeg worker (hardware HEVC/QSV with a libx265
-  fallback, shipped as a Docker image). The Pi runs `TranscodeQueueNoop` until
+  fallback, shipped as a Docker image). The Worker is a compute node: it
+  downloads source bytes from the Pi and uploads the optimized artifact back;
+  the Pi owns final storage placement. The Pi runs `TranscodeQueueNoop` until
   `PWE_WORKER_API_KEY` is set, which switches it to `TranscodeQueueLive` and
-  mounts `/api/transcode/*`. No Worker is deployed yet — see
+  mounts `/api/transcode/*`. Worker deployment is documented in
   [packages/worker/README.md](packages/worker/README.md).
 - Optional Passkey authentication via Better Auth is implemented for public
   exposure (Cloudflare Tunnel, reverse proxy, etc.). Off by default for LAN-only

@@ -213,8 +213,8 @@ describe("TranscodeQueueLive", () => {
     expect(job).not.toBeNull()
     expect(job?.id).toBe("J1")
     expect(job?.workshop_id).toBe("abc")
-    expect(job?.source_relative_path).toBe("source/abc/wallpaper.mp4")
-    expect(job?.output_relative_path).toBe("optimized/abc.mp4")
+    expect(job?.source_url).toBe("/api/transcode/J1/source")
+    expect(job?.artifact_url).toBe("/api/transcode/J1/artifact")
     expect(job?.target_codec).toBe("hevc")
 
     const row = dbHandle
@@ -288,6 +288,29 @@ describe("TranscodeQueueLive", () => {
       .get() as { progress: number }
     expect(row.progress).toBe(100)
     expect(library.current().transcode_progress).toBe(100)
+  })
+
+  test("uploading marks job and library uploading", async () => {
+    dbHandle
+      .prepare(
+        `INSERT INTO transcode_jobs (id, workshop_id, status, progress, created_at, last_heartbeat)
+         VALUES ('J1', 'abc', 'running', 100, ?, ?)`
+      )
+      .run(Date.now(), Date.now())
+
+    const ok = await runtime.runPromise(
+      Effect.gen(function* () {
+        const queue = yield* TranscodeQueue
+        return yield* queue.uploading("J1")
+      })
+    )
+
+    expect(ok).toBe(true)
+    const row = dbHandle
+      .query("SELECT status FROM transcode_jobs WHERE id = 'J1'")
+      .get() as { status: string }
+    expect(row.status).toBe("uploading")
+    expect(library.current().transcode_status).toBe("uploading")
   })
 
   test("complete writes optimized metadata and marks library completed", async () => {

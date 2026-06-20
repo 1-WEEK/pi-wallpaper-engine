@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { createWorkerClient, WorkerHttpError } from "./client.js"
 
 interface RecordedCall {
@@ -38,8 +41,8 @@ describe("createWorkerClient", () => {
       body: {
         id: "J1",
         workshop_id: "abc",
-        source_relative_path: "source/abc/wallpaper.mp4",
-        output_relative_path: "optimized/abc.mp4",
+        source_url: "/api/transcode/J1/source",
+        artifact_url: "/api/transcode/J1/artifact",
         target_width: 1200,
         target_height: 1080,
         target_codec: "hevc",
@@ -96,7 +99,7 @@ describe("createWorkerClient", () => {
     expect((thrown as WorkerHttpError).code).toBe("auth")
   })
 
-  test("progress and complete encode JSON bodies correctly", async () => {
+  test("progress encodes JSON body correctly", async () => {
     const { fetch, calls } = mockFetch(() => ({ status: 200, body: { ok: true } }))
     const client = createWorkerClient({
       baseUrl: "http://pi.local:8080",
@@ -107,17 +110,47 @@ describe("createWorkerClient", () => {
     await client.progress("J1", 50)
     expect(calls[0]?.url).toContain("/api/transcode/J1/progress")
     expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({ progress: 50 })
+  })
 
-    await client.complete("J1", {
-      output_relative_path: "optimized/abc.mp4",
-      output_size: 9999,
-      duration_ms: 1000,
-    })
-    expect(JSON.parse(calls[1]?.body ?? "{}")).toEqual({
-      output_relative_path: "optimized/abc.mp4",
-      output_size: 9999,
-      duration_ms: 1000,
-    })
+  test("downloadSource streams source body to a local file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pwe-worker-client-"))
+    try {
+      const { fetch, calls } = mockFetch(() => ({ status: 200, body: "source-bytes" }))
+      const client = createWorkerClient({
+        baseUrl: "http://pi.local:8080",
+        apiKey: "key",
+        fetchImpl: fetch,
+      })
+      const target = join(dir, "source")
+      await client.downloadSource("/api/transcode/J1/source", target)
+      expect(await readFile(target, "utf-8")).toBe("source-bytes")
+      expect(calls[0]?.method).toBe("GET")
+      expect(calls[0]?.url).toBe("http://pi.local:8080/api/transcode/J1/source")
+      expect(calls[0]?.headers["x-worker-key"]).toBe("key")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("uploadArtifact PUTs artifact with duration header", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pwe-worker-client-"))
+    try {
+      const artifact = join(dir, "output.mp4")
+      await writeFile(artifact, "artifact-bytes")
+      const { fetch, calls } = mockFetch(() => ({ status: 200, body: { ok: true } }))
+      const client = createWorkerClient({
+        baseUrl: "http://pi.local:8080",
+        apiKey: "key",
+        fetchImpl: fetch,
+      })
+      await client.uploadArtifact("/api/transcode/J1/artifact", artifact, 1000)
+      expect(calls[0]?.method).toBe("PUT")
+      expect(calls[0]?.url).toBe("http://pi.local:8080/api/transcode/J1/artifact")
+      expect(calls[0]?.headers["x-worker-key"]).toBe("key")
+      expect(calls[0]?.headers["x-transcode-duration-ms"]).toBe("1000")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 
   test("trailing slash on baseUrl is normalized", async () => {

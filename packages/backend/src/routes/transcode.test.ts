@@ -2,11 +2,16 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { Database } from "bun:sqlite"
 import { Elysia } from "elysia"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
 import { DbError, type LibraryItem } from "@pwe/shared"
 import { Config, type RuntimeConfig } from "../services/Config.js"
 import { Db, type DbImpl } from "../services/Db.js"
 import { Library, type LibraryImpl } from "../services/Library.js"
 import { Logger, type LoggerImpl } from "../services/Logger.js"
+import { Migrate, type MigrateImpl } from "../services/Migrate.js"
+import { Storage, type StorageImpl } from "../services/Storage.js"
 import { TranscodeQueue, TranscodeQueueLive } from "../services/TranscodeQueue.js"
 import { transcodeRoutes } from "./transcode.js"
 
@@ -39,6 +44,7 @@ const DDL = `
 `
 
 let openDbs: Database[] = []
+let tempDirs: string[] = []
 
 const baseLibraryRow: LibraryItem = {
   workshop_id: "abc",
@@ -63,10 +69,15 @@ const baseLibraryRow: LibraryItem = {
   last_played_at: null,
 }
 
-const makeStack = () => {
+const makeStack = (opts: { migrationRunning?: boolean } = {}) => {
   const sqlite = new Database(":memory:")
   openDbs.push(sqlite)
   sqlite.exec(DDL)
+  const mediaRoot = mkdtempSync(join(tmpdir(), "pwe-transcode-routes-"))
+  tempDirs.push(mediaRoot)
+  const sourceAbs = join(mediaRoot, "source/abc/wallpaper.mp4")
+  mkdirSync(dirname(sourceAbs), { recursive: true })
+  writeFileSync(sourceAbs, "source-bytes")
 
   const tryDb =
     <T>(operation: string, fn: () => T): Effect.Effect<T, DbError> =>
@@ -107,7 +118,7 @@ const makeStack = () => {
 
   const configImpl: RuntimeConfig = {
     steam: { username: "u", web_api_key: "k", steamcmd_path: "/x" },
-    paths: { data_root: "/tmp", source_dir: "source", optimized_dir: "optimized" },
+    paths: { data_root: mediaRoot, source_dir: "source", optimized_dir: "optimized" },
     storage: { root: null },
     screen: { width: 1200, height: 1080, default_display_mode: "fill" },
     mpv: { binary_path: "mpv", ipc_socket: "/tmp/x.sock", hwdec: "auto", gpu_api: "opengl" },
@@ -115,23 +126,56 @@ const makeStack = () => {
     server: { host: "0.0.0.0", port: 8080 },
   }
 
-  // The route handler also yields `Config` directly (for screen dimensions in
-  // /complete). `provideMerge` keeps Config visible in the runtime's context
+  const storageImpl: StorageImpl = {
+    status: () =>
+      Effect.succeed({
+        available: true,
+        data_root: mediaRoot,
+        default_root: mediaRoot,
+        using_default: true,
+        last_error: null,
+      }),
+    mediaRoot: () => Effect.succeed(mediaRoot),
+    mediaRootOrNull: () => Effect.succeed(mediaRoot),
+    saveRoot: () =>
+      Effect.succeed({
+        available: true,
+        data_root: mediaRoot,
+        default_root: mediaRoot,
+        using_default: true,
+        last_error: null,
+      }),
+  }
+
+  const migrateImpl: MigrateImpl = {
+    start: () =>
+      Effect.succeed({ state: "running", moved_bytes: 0, total_bytes: 0, error: null }),
+    status: () => Effect.succeed(null),
+    cancel: () => Effect.succeed(null),
+    isRunning: () => Effect.succeed(Boolean(opts.migrationRunning)),
+  }
+
+  // The route handler also yields shared services directly. `provideMerge`
+  // keeps them visible in the runtime's context
   // instead of being fully consumed by TranscodeQueueLive.
   const layer = TranscodeQueueLive.pipe(
     Layer.provideMerge(Layer.succeed(Library, libImpl)),
     Layer.provideMerge(Layer.succeed(Logger, logImpl)),
+    Layer.provideMerge(Layer.succeed(Storage, storageImpl)),
+    Layer.provideMerge(Layer.succeed(Migrate, migrateImpl)),
     Layer.provideMerge(Layer.succeed(Db, dbImpl)),
     Layer.provideMerge(Layer.succeed(Config, configImpl))
   )
 
   const runtime = ManagedRuntime.make(layer)
-  return { runtime, sqlite, libRow: () => row }
+  return { runtime, sqlite, mediaRoot, libRow: () => row }
 }
 
 afterEach(() => {
   for (const db of openDbs) db.close()
   openDbs = []
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true })
+  tempDirs = []
 })
 
 describe("transcode routes — full lifecycle", () => {
@@ -177,12 +221,39 @@ describe("transcode routes — full lifecycle", () => {
       })
     )
     expect(res.status).toBe(200)
-    const job = (await res.json()) as { id: string; workshop_id: string }
+    const job = (await res.json()) as {
+      id: string
+      workshop_id: string
+      source_url: string
+      artifact_url: string
+    }
     expect(job.id).toBe("J1")
     expect(job.workshop_id).toBe("abc")
+    expect(job.source_url).toBe("/api/transcode/J1/source")
+    expect(job.artifact_url).toBe("/api/transcode/J1/artifact")
   })
 
-  test("full happy-path cycle: claim → heartbeat → progress → complete", async () => {
+  test("/claim returns 204 while storage migration is running", async () => {
+    stack = makeStack({ migrationRunning: true })
+    app = buildApp()
+    stack.sqlite
+      .prepare(
+        `INSERT INTO transcode_jobs (id, workshop_id, status, progress, created_at)
+         VALUES ('J1', 'abc', 'pending', 0, ?)`
+      )
+      .run(Date.now())
+
+    const res = await app.handle(
+      new Request("http://localhost/api/transcode/claim", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ worker: "nas-01" }),
+      })
+    )
+    expect(res.status).toBe(204)
+  })
+
+  test("full happy-path cycle: claim → source → heartbeat → progress → artifact", async () => {
     stack.sqlite
       .prepare(
         `INSERT INTO transcode_jobs (id, workshop_id, status, progress, created_at)
@@ -200,7 +271,17 @@ describe("transcode routes — full lifecycle", () => {
     )
     expect(res.status).toBe(200)
 
-    // 2. heartbeat
+    // 2. source
+    res = await app.handle(
+      new Request("http://localhost/api/transcode/J1/source", {
+        method: "GET",
+        headers: { "x-worker-key": TEST_KEY },
+      })
+    )
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe("source-bytes")
+
+    // 3. heartbeat
     res = await app.handle(
       new Request("http://localhost/api/transcode/J1/heartbeat", {
         method: "POST",
@@ -210,7 +291,7 @@ describe("transcode routes — full lifecycle", () => {
     )
     expect(res.status).toBe(200)
 
-    // 3. progress
+    // 4. progress
     res = await app.handle(
       new Request("http://localhost/api/transcode/J1/progress", {
         method: "POST",
@@ -224,16 +305,15 @@ describe("transcode routes — full lifecycle", () => {
       .get() as { progress: number }
     expect(progRow.progress).toBe(42)
 
-    // 4. complete
+    // 5. artifact upload completes the job and Pi owns final placement
     res = await app.handle(
-      new Request("http://localhost/api/transcode/J1/complete", {
-        method: "POST",
-        headers: headers(),
-        body: JSON.stringify({
-          output_relative_path: "optimized/abc.mp4",
-          output_size: 999_999,
-          duration_ms: 5_000,
-        }),
+      new Request("http://localhost/api/transcode/J1/artifact", {
+        method: "PUT",
+        headers: {
+          "x-worker-key": TEST_KEY,
+          "x-transcode-duration-ms": "5000",
+        },
+        body: "artifact-bytes",
       })
     )
     expect(res.status).toBe(200)
@@ -246,6 +326,10 @@ describe("transcode routes — full lifecycle", () => {
 
     expect(stack.libRow().transcoded_path).toBe("optimized/abc.mp4")
     expect(stack.libRow().transcode_status).toBe("completed")
+    expect(stack.libRow().transcoded_size).toBe("artifact-bytes".length)
+    const output = join(stack.mediaRoot, "optimized/abc.mp4")
+    expect(readFileSync(output, "utf-8")).toBe("artifact-bytes")
+    expect(existsSync(`${output}.partial.J1`)).toBe(false)
   })
 
   test("/heartbeat returns 404 for unknown job", async () => {

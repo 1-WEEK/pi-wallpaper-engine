@@ -31,7 +31,11 @@ const isAdultRow = (row: LibraryItem): boolean =>
   })
 
 const showsTranscodeBadge = (status: LibraryItem["transcode_status"]): boolean =>
-  status === "failed" || status === "running" || status === "claimed" || status === "pending"
+  status === "failed" ||
+  status === "running" ||
+  status === "uploading" ||
+  status === "claimed" ||
+  status === "pending"
 
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const { mobile } = useLayout()
