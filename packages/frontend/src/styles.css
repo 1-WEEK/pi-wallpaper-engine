@@ -76,6 +76,7 @@ a {
 /* ── Shared controls ─────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -136,6 +137,7 @@ a {
 
 .segmented {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 2px;
   padding: 2px;
@@ -179,12 +181,14 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   padding: 4px 8px;
   border-radius: 999px;
   background: var(--ink-2);
   color: var(--paper-dim);
   font-size: 11px;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .status-pill-ok,
@@ -523,6 +527,7 @@ a {
   width: 18px;
   height: 18px;
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   transition: color 0.18s, opacity 0.18s;
@@ -601,6 +606,7 @@ a {
 
 .sidebar-status-value {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 7px;
   color: var(--paper);
@@ -750,6 +756,7 @@ a {
 
 .player-control {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   min-height: 36px;
@@ -804,6 +811,7 @@ a {
 
 .display-toggle {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 8px;
   height: 32px;
@@ -841,6 +849,7 @@ a {
 
 .display-toggle-icon {
   display: inline-flex;
+  white-space: nowrap;
   width: 16px;
   height: 16px;
 }
@@ -853,6 +862,7 @@ a {
 
 .display-toggle-label {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 6px;
   font-size: 10px;
@@ -906,17 +916,20 @@ a {
 
 .library-rotation-actions {
   display: inline-flex;
+  white-space: nowrap;
   gap: 8px;
 }
 
 .library-rotation-btn {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 6px;
 }
 
 .library-rotation-btn .btn-icon {
   display: inline-flex;
+  white-space: nowrap;
   width: 15px;
   height: 15px;
 }
@@ -982,6 +995,7 @@ a {
 .command-bar-search-icon,
 .command-bar-sort .mono {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   color: var(--paper-faint);
@@ -1051,6 +1065,7 @@ a {
 
 .kbd {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   min-height: 42px;
@@ -1276,18 +1291,21 @@ a {
 /* ── Library ────────────────────────────────────────────────────── */
 .library-kicker-row {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 8px;
 }
 
 .library-page-title-block {
   display: inline-flex;
+  white-space: nowrap;
   align-items: baseline;
   gap: 10px;
 }
 
 .library-secret-trigger {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   min-width: 22px;
@@ -1471,6 +1489,7 @@ a {
 
 .library-card-play-icon {
   display: inline-flex;
+  white-space: nowrap;
   width: 12px;
   height: 12px;
 }
@@ -1713,6 +1732,7 @@ a {
 
 .settings-tag {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   padding: 2px 8px;
   border-radius: 999px;
@@ -1756,6 +1776,7 @@ a {
 
 .setting-status {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 6px;
 }
@@ -1918,6 +1939,7 @@ a {
 
 .settings-note-icon {
   display: inline-flex;
+  white-space: nowrap;
   flex-shrink: 0;
   color: var(--accent-2);
   margin-top: 2px;
@@ -1976,6 +1998,7 @@ a {
 
 .directory-dialog-close {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   width: 34px;
@@ -2043,6 +2066,7 @@ a {
 
 .directory-row-icon {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   width: 34px;
@@ -2297,6 +2321,7 @@ a {
 }
 .mobile-top-bar-status {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 4px;
 }
@@ -2320,6 +2345,7 @@ a {
   border: 1px solid var(--border);
   color: var(--paper-dim);
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
@@ -2424,6 +2450,7 @@ a {
   color: var(--paper);
   border: 1px solid var(--border);
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
@@ -2474,6 +2501,7 @@ a {
 }
 .mobile-tab-bar-icon {
   display: inline-flex;
+  white-space: nowrap;
   width: 22px;
   height: 22px;
   position: relative;
@@ -2493,6 +2521,7 @@ a {
   font-size: 9px;
   font-weight: 700;
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   line-height: 1;
@@ -2574,6 +2603,7 @@ a {
   border: 1px solid var(--border);
   color: var(--paper-dim);
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -2623,6 +2653,7 @@ a {
   font-size: 13px;
   min-height: 36px;
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
 }
 .mobile-shell .segmented-button {
@@ -2742,6 +2773,7 @@ a {
   font-size: 10px;
   font-weight: 700;
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   line-height: 1;
@@ -2825,6 +2857,7 @@ a {
   color: var(--paper);
   border: none;
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   cursor: pointer;
@@ -2869,6 +2902,7 @@ a {
 }
 .mobile-shell .card-sheet-actions .btn-primary {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: center;
   gap: 8px;
