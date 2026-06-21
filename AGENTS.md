@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md — pi-wallpaper-engine
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents (Claude Code, Codex, etc.) when working with code in this repository.
 
 ## What this is
 
@@ -32,7 +32,7 @@ CI (`.github/workflows/ci.yml`) runs `bun test` + `bun run typecheck` + `bun run
 
 ## Code reading
 
-When a task requires understanding code, architecture, data flow, call chains, or a bug path, use codegraph first. Start with `codegraph_context` for broad task context, then use `codegraph_trace`, `codegraph_callers`, `codegraph_callees`, or `codegraph_explore` for focused follow-up. Use `rg` and direct file reads after codegraph when you need exact text, non-indexed files, tests, config, docs, or generated output.
+When a task requires understanding code, architecture, data flow, call chains, or a bug path, use codegraph first. Start with `codegraph_explore` (one call returns the relevant symbols' source grouped by file — usually the only call you need), then use `codegraph_search` (locate a symbol by name), `codegraph_callers` (who calls a symbol), or `codegraph_node` (one symbol's details) for focused follow-up. Use `rg` and direct file reads after codegraph when you need exact text, non-indexed files, tests, config, docs, or generated output.
 
 ## Architecture
 
