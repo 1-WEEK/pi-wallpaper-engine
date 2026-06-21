@@ -1,6 +1,6 @@
 # 迭代 Backlog
 
-Updated: 2026-06-08。
+Updated: 2026-06-21。
 
 项目的细粒度任务池。和 `roadmap.md` 分工:roadmap 管产品大阶段(Phase 1 / Phase 2),这里管独立可迭代的技术债、小功能、bug。每一项都独立可合并、互不阻塞,有空取一项做。
 
@@ -22,7 +22,22 @@ Updated: 2026-06-08。
 
 ## P1 工程债 / 功能补全
 
-当前无 P1 项。
+### BL-17 Library 已转码视频预览(Plyr + HTTP Range 串流) 📋
+
+- 价值:用户可在前端直接预览转码完成的壁纸视频,减少反复播放/暂停 mpv 的试错成本。
+- 范围:
+  - 后端新增 `GET /api/library/:workshopId/stream`,仅当 `transcode_status === "completed"` 且 `transcoded_path` 存在时返回视频流,支持 HTTP Range 206。
+  - 前端引入 `plyr`,新增 `VideoPreview` 组件,在 Library 卡片加 Preview 入口。
+  - 仅播放 HEVC 转码文件;浏览器不支持 HEVC 时通过 Plyr error 事件提示,不做 H.264 fallback。
+  - 路径走 `Library.playablePath(row)` + `Storage.mediaRoot()`,Plyr 主题色覆盖为项目 CSS token。
+- 涉及文件:
+  - `packages/backend/src/routes/library.ts`
+  - `packages/frontend/package.json`
+  - `packages/frontend/src/api.ts`
+  - `packages/frontend/src/components/VideoPreview.tsx`
+  - `packages/frontend/src/pages/Library.tsx`
+  - `packages/frontend/src/styles.css`
+- 方案文档:`plans/preview-transcoded-video.md`
 
 ## P2 体验 / 质量优化
 
@@ -33,9 +48,6 @@ devDep,较重)。见 `acceptance-free-iteration.md`。
 
 ## 🔒 Blocked(需硬件或真机,不在家取不了)
 
-### BL-10 storage 真机迁移验证 🔒
-自定义目录双向迁移代码完成,需真 Pi 加可移动存储验收一次。
-
 ### BL-11 Phase 2 worker NAS 端到端 🔒
 worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心跳 / 进度 / 重试 / QSV 探测。
 
@@ -44,6 +56,9 @@ worker 代码完成,需 NAS 加 Intel iGPU 部署跑一次真实转码,验证心
 
 ## 已完成
 
+- ✅ BL-10 storage 真机迁移验证,2026-06-21
+  - 用户已在真 Pi + 可移动存储上完成双向迁移验收:本机↔NAS 切换、迁移进度、取消、迁移中下载 503、
+    NAS 掉线恢复等场景验证通过。移除 🔒 阻塞标记。
 - ✅ BL-15 SteamWorkshop search 测试回填(验收无关迭代 Phase 2),2026-06-12
   - `packages/backend/src/services/SteamWorkshop.test.ts`:stub `fetch` + 内存 Config Layer,经真
     `ManagedRuntime`(每 test 新建=新缓存)驱动 `search()`。6 cases:Video 必带 tag + 去重、空 query
