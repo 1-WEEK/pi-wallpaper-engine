@@ -284,18 +284,40 @@ export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = n
       return { ok: true, workshopId, status: "started" }
     })
 
-    .post("/:workshopId/cancel", ({ params, set }) => {
+    .post("/:workshopId/cancel", async ({ params, set }) => {
       const fiber = inflight.get(params.workshopId)
-      if (!fiber) {
-        set.status = 404
-        return { ok: false, error: "No active download for this workshop id" }
+      if (fiber) {
+        runtime.runFork(Fiber.interrupt(fiber))
+        set.status = 202
+        return { ok: true, workshopId: params.workshopId, status: "cancelling" }
       }
-      // Interrupt fires release of SteamCmd's acquireUseRelease (child.kill())
-      // and routes through the addObserver path which writes the task error
-      // row + cleans the orphan source dir.
-      runtime.runFork(Fiber.interrupt(fiber))
-      set.status = 202
-      return { ok: true, workshopId: params.workshopId, status: "cancelling" }
+
+      // No in-flight fiber — the workflow may have crashed or the backend
+      // restarted, leaving a zombie row. Check the DB and mark it cancelled
+      // if it is still in a non-terminal state.
+      const task = await runtime.runPromise(
+        Effect.gen(function* () {
+          const tasks = yield* DownloadTasks
+          return yield* tasks.get(params.workshopId)
+        })
+      )
+      if (task && task.finished_at === null) {
+        await runtime.runPromise(
+          Effect.gen(function* () {
+            const tasks = yield* DownloadTasks
+            yield* tasks.upsert(params.workshopId, {
+              stage: "error",
+              message: "Cancelled (zombie cleanup)",
+              finished_at: Date.now(),
+            })
+          })
+        )
+        set.status = 202
+        return { ok: true, workshopId: params.workshopId, status: "cancelled" }
+      }
+
+      set.status = 404
+      return { ok: false, error: "No active download for this workshop id" }
     })
 
     .get("/tasks", () =>
