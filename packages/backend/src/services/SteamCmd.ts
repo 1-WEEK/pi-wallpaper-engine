@@ -264,9 +264,20 @@ export const SteamCmdLive = Layer.effect(
                 message: "Launching SteamCMD",
               })
 
-              const readStream = async (stream: ReadableStream<Uint8Array> | undefined) => {
+              const readStream = async (
+                stream: ReadableStream<Uint8Array> | undefined,
+                signal: AbortSignal
+              ) => {
                 if (!stream) return
                 const reader = stream.getReader()
+                const abort = () => {
+                  try { reader.cancel() } catch {}
+                }
+                if (signal.aborted) {
+                  abort()
+                  return
+                }
+                signal.addEventListener("abort", abort, { once: true })
                 const decoder = new TextDecoder()
                 while (true) {
                   const { done, value } = await reader.read()
@@ -385,8 +396,11 @@ export const SteamCmdLive = Layer.effect(
               })
 
               const runIO = Effect.tryPromise({
-                try: async () => {
-                  await Promise.all([readStream(child.stdout), readStream(child.stderr)])
+                try: async (signal) => {
+                  await Promise.all([
+                    readStream(child.stdout, signal),
+                    readStream(child.stderr, signal),
+                  ])
                   const code = await child.exited
                   return code
                 },
