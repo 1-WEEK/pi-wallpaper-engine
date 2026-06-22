@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Fiber, Layer } from "effect"
 import { resolve } from "node:path"
 import { rm } from "node:fs/promises"
 import { Config } from "./Config.js"
@@ -168,6 +168,61 @@ export const DownloadTasksLive = Layer.effect(
     }).pipe(Effect.catchAll((e) => logger.error(`Reconcile failed: ${e.message}`)))
 
     yield* reconcile
+
+    // Periodic sweep: catch zombie rows that appear at runtime (fiber crash
+    // without DB update, backend restart between reconcile and task exit, etc).
+    // Runs every 5 minutes and expires tasks stuck in non-terminal state for
+    // more than 10 minutes.
+    const ZOMBIE_GRACE_MS = 10 * 60 * 1000
+    const SWEEP_INTERVAL_MS = 5 * 60 * 1000
+
+    const sweepZombies = Effect.gen(function* () {
+      const cutoff = Date.now() - ZOMBIE_GRACE_MS
+      const zombies = yield* db.query<{ workshop_id: string; started_at: number }>(
+        `SELECT workshop_id, started_at FROM download_tasks
+         WHERE finished_at IS NULL AND started_at < ?`,
+        [cutoff]
+      )
+      if (zombies.length > 0) {
+        yield* db.exec(
+          `UPDATE download_tasks
+           SET stage = 'error',
+               message = 'Cancelled (stale task)',
+               finished_at = ?
+           WHERE finished_at IS NULL AND started_at < ?`,
+          [Date.now(), cutoff]
+        )
+        yield* logger.info(`Cleaned ${zombies.length} stale download task(s)`)
+
+        const dataRoot = yield* storage.mediaRootOrNull()
+        for (const { workshop_id } of zombies) {
+          const lib = yield* library
+            .get(workshop_id)
+            .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
+          if (lib || !dataRoot) continue
+          const sourceDir = resolve(dataRoot, config.paths.source_dir, workshop_id)
+          yield* Effect.tryPromise({
+            try: () => rm(sourceDir, { recursive: true, force: true }),
+            catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+          }).pipe(
+            Effect.tap(() => logger.info(`Cleaned stale source dir: ${sourceDir}`)),
+            Effect.catchAll((e) => logger.warn(`Failed to clean stale ${sourceDir}: ${e.message}`))
+          )
+        }
+      }
+    }).pipe(Effect.catchAll((e) => logger.error(`Stale task sweep failed: ${e.message}`)))
+
+    const zombieSweeper = Effect.gen(function* () {
+      while (true) {
+        yield* Effect.sleep(`${SWEEP_INTERVAL_MS} millis`)
+        yield* sweepZombies
+      }
+    }).pipe(Effect.fork)
+
+    yield* Effect.gen(function* () {
+      const fiber = yield* zombieSweeper
+      // Fiber runs until the app shuts down; no need to join it.
+    })
 
     return {
       list: () =>
