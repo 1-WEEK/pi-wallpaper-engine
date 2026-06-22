@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { isAdultContent } from "@pwe/shared"
 import useSWR from "swr"
 import { api, type DownloadStage, type DownloadTask } from "../api.js"
+import { appIcons } from "../icons.js"
 import { useLayout } from "../components/mobile/index.js"
 
 // Active downloads need a snappier refresh than the global SWR default; 1s
@@ -115,11 +116,6 @@ export const Downloads = () => {
             <span className="summary-stat-label mono">finished</span>
             <strong>{finished.length}</strong>
           </div>
-          {finished.length > 0 && (
-            <button type="button" className="btn btn-secondary" onClick={dismissAllFinished}>
-              Clear finished
-            </button>
-          )}
         </div>
       </header>
 
@@ -177,7 +173,12 @@ export const Downloads = () => {
 
       {finished.length > 0 && (
         <section className="download-section">
-          <h2 className="section-title mono">Finished</h2>
+          <div className="download-section-header">
+            <h2 className="section-title mono">Finished</h2>
+            <button type="button" className="btn btn-secondary" onClick={dismissAllFinished} aria-label="Clear all finished downloads">
+              {appIcons.close}
+            </button>
+          </div>
           <ul className="download-list download-list-finished">
             {finished.map((t) => (
               <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} onCancel={cancel} />
