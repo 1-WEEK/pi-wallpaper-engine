@@ -17,6 +17,7 @@ pi-wallpaper-engine-data/
 # Agent local settings
 .claude/
 .codegraph/
+.commandcode/
 .playwright-mcp/
 
 # TypeScript
