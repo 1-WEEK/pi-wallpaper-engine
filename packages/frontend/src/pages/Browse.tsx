@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
 import { useLocation, useSearch } from "wouter"
@@ -7,6 +7,7 @@ import { api, type WorkshopSearchResult } from "../api.js"
 import { WallpaperCard } from "../components/WallpaperCard.js"
 import { appIcons } from "../icons.js"
 import { useLayout } from "../components/mobile/index.js"
+import { useColumnsPerRow } from "../useColumnsPerRow.js"
 import { MobileSheet } from "../components/mobile/index.js"
 import {
   AGE_TAGS,
@@ -16,6 +17,9 @@ import {
   type WorkshopSort,
 } from "../workshopTags.js"
 
+const MIN_CARD_WIDTH = 248
+const GRID_GAP = 14
+const ROWS_PER_FETCH = 4
 const PAGE_SIZE = 25
 
 // URL search params are the source of truth. localStorage is only consulted
@@ -73,6 +77,10 @@ export const Browse = () => {
   const submittedQuery = params.get("q") ?? ""
   const selectedTags = parseTags(params.get("tags"))
   const sort = parseSort(params.get("sort"))
+
+  const gridRef = useRef<HTMLDivElement>(null)
+  const columnsPerRow = useColumnsPerRow(gridRef, MIN_CARD_WIDTH, GRID_GAP)
+  const pageSize = Math.max(PAGE_SIZE, columnsPerRow * ROWS_PER_FETCH)
 
   const hasUrlState = params.has("q") || params.has("tags") || params.has("sort")
 
@@ -138,7 +146,7 @@ export const Browse = () => {
     ([, q, tags, s, cursor]) =>
       api.workshopSearch(q, {
         cursor,
-        pageSize: PAGE_SIZE,
+        pageSize,
         tags: tags ? tags.split(",") : [],
         sort: s as WorkshopSort,
       }),
@@ -346,7 +354,7 @@ export const Browse = () => {
       {isLoading && <div className="empty-state">Loading workshop results…</div>}
       {error && <div className="error-banner">Error: {(error as Error).message}</div>}
 
-      <div className="grid browse-grid">
+      <div ref={gridRef} className="grid browse-grid">
         {items.map((it) => (
           <WallpaperCard
             key={it.publishedfileid}
