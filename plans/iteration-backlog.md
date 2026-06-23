@@ -1,6 +1,6 @@
 # 迭代 Backlog
 
-Updated: 2026-06-21。
+Updated: 2026-06-23。
 
 项目的细粒度任务池。和 `roadmap.md` 分工:roadmap 管产品大阶段(Phase 1 / Phase 2),这里管独立可迭代的技术债、小功能、bug。每一项都独立可合并、互不阻塞,有空取一项做。
 
@@ -21,6 +21,18 @@ Updated: 2026-06-21。
 当前无 P0 项。
 
 ## P1 工程债 / 功能补全
+
+### BL-18 前端 E2E 测试（Playwright + API mock）📋
+
+- 价值:6 个页面 + 4 个组件零 UI 测试覆盖率,核心交互流程（浏览→搜索→下载→播放控制）从未被自动验证过。Playwright 已在 dep 但从未启用。
+- 范围:
+  - `playwright.config.ts`:只测 Chromium,Vite standalone + API route mocking,不进 pre-commit。
+  - `packages/frontend/e2e/{fixtures,helpers,browse,library,downloads,player-bar,settings,shell}.ts`:
+    Browse 搜索/tag/翻页/空结果/错误态、Library 网格/删除/play、Downloads 活跃/已完成/Clear、
+    PlayerBar 全部控件、Settings 各 tab/目录浏览器、Shell 导航/badge/Pi status。
+  - 不测 Auth(WebAuthn 不可 mock)、不测 WS、不测视觉回归。
+  - `.github/workflows/e2e.yml`:独立 workflow,不与 ci.yml 混用。
+- 方案文档:`plans/e2e-test-plan.md`
 
 ### BL-17 Library 已转码视频预览(Plyr + HTTP Range 串流) 📋
 
