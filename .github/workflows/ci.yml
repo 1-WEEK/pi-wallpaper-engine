@@ -20,6 +20,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # simple-git-hooks@2.13.1 postinstall crashes under bun's .bun/ virtual store
+  # (not in its known store dirs: .pnpm, .deno, .store). The hook-setup work is
+  # done by the `prepare` script anyway, so skip the built-in postinstall.
+  SKIP_INSTALL_SIMPLE_GIT_HOOKS: "true"
+
 # Least privilege: the gates only read the tree and run tests.
 permissions:
   contents: read
