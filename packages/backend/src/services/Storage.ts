@@ -54,10 +54,6 @@ export const friendlyStorageError = (error: StorageError): string => {
       return "Current media root is unavailable."
     case "Busy":
       return "A video from this directory is playing. Stop playback before switching roots."
-    case "Mount":
-      return "Directory is temporarily unavailable."
-    case "Secret":
-      return "Directory configuration is unavailable."
   }
 }
 

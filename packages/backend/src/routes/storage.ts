@@ -34,7 +34,7 @@ const mapError = (set: { status?: number | string }, error: unknown) => {
         ? 409
         : error.kind === "Disconnected"
           ? 503
-          : error.kind === "Mount" || error.kind === "Validation"
+          : error.kind === "Validation"
             ? 502
             : 400
     return { ok: false, error: friendlyStorageError(error), kind: error.kind }
@@ -50,8 +50,7 @@ const mapError = (set: { status?: number | string }, error: unknown) => {
 const mapDirectoryError = (set: { status?: number | string }, error: unknown) => {
   if (error instanceof StorageError) {
     set.status =
-      error.kind === "Disconnected" ? 503 : error.kind === "Mount" ? 502 : 400
-    return { ok: false, error: error.message, kind: error.kind }
+      error.kind === "Disconnected" ? 503 : 400
   }
   return mapError(set, error)
 }

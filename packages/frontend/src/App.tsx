@@ -4,7 +4,7 @@ import { Link, Redirect, Route, Switch, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
 import { SWRConfig, useSWRConfig } from "swr"
 import { api, onAuthChange } from "./api.js"
-import type { PlayerWatchSnapshot, SystemSummary } from "./api.js"
+import type { PlayerStatus, SystemSummary } from "@pwe/shared"
 import { fetchSession, fetchSetupState } from "./auth.js"
 import { appIcons } from "./icons.js"
 import { Browse } from "./pages/Browse.js"
@@ -119,7 +119,7 @@ const ShellBody = () => {
       ws = api.playerWatchWS()
       ws.onmessage = (event) => {
         try {
-          const snap = JSON.parse(event.data) as PlayerWatchSnapshot
+          const snap = JSON.parse(event.data) as PlayerStatus
           if (snap && typeof snap === "object" && "playing" in snap) {
             mutateSummary(
               (prev) =>

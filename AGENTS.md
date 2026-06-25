@@ -106,3 +106,17 @@ When a task requires understanding code, architecture, data flow, call chains, o
 - Don't drop the `transcode_jobs` table or the `WorkerProtocol` schema — Phase 2 needs them.
 - Don't assume SteamCMD lives at `/usr/games/steamcmd` (the apt path) — it's actually at `/usr/local/bin/steamcmd` (the box86 wrapper).
 - Don't revert the media-directory logic to a SMB / mode-toggle product surface — the current product is "pick a directory + validate + migrate", nothing more.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues at `1-WEEK/pi-wallpaper-engine` (use the `gh` CLI). External PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default label vocabulary — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

@@ -33,7 +33,7 @@ export const httpFromError = (err: Tagged): HttpErrorResult => {
             ? 409
             : kind === "Validation" || kind === "Config"
               ? 400
-              : kind === "Disconnected" || kind === "Mount"
+              : kind === "Disconnected"
                 ? 503
                 : 500,
         body: error(message),

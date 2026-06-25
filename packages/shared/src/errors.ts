@@ -69,11 +69,8 @@ export class DisplayError extends Data.TaggedError("DisplayError")<{
 export type StorageFailureKind =
   | "Disconnected"
   | "Config"
-  | "Secret"
-  | "Mount"
   | "Validation"
   | "Busy"
-
 export class StorageError extends Data.TaggedError("StorageError")<{
   readonly kind: StorageFailureKind
   readonly message: string

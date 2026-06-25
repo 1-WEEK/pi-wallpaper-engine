@@ -6,33 +6,7 @@ import { Db } from "./Db.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
 import { Storage } from "./Storage.js"
-
-export type DownloadStage =
-  | "starting"
-  | "downloading"
-  | "finalizing"
-  | "done"
-  | "complete"
-  | "error"
-
-export interface DownloadTask {
-  readonly workshop_id: string
-  readonly title: string
-  readonly preview_url: string
-  readonly content_rating: string | null
-  readonly rating_sex: string | null
-  readonly adult_hint: number
-  readonly stage: DownloadStage
-  readonly message: string
-  readonly started_at: number
-  readonly finished_at: number | null
-  // Populated only while SteamCMD is in the downloading phase and emitting
-  // its `progress: X.XX (Y / Z)` lines. UI falls back to an indeterminate
-  // bar when these are absent.
-  readonly percent: number | null
-  readonly bytes_done: number | null
-  readonly bytes_total: number | null
-}
+import type { DownloadStage, DownloadTask } from "@pwe/shared"
 
 export interface DownloadTasksImpl {
   readonly list: () => Effect.Effect<ReadonlyArray<DownloadTask>>

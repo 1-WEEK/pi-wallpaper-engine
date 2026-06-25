@@ -17,8 +17,6 @@ describe("httpFromError", () => {
     expect(httpFromError({ _tag: "StorageError", kind: "Busy", message: "m" }).status).toBe(409)
     expect(httpFromError({ _tag: "StorageError", kind: "Validation", message: "m" }).status).toBe(400)
     expect(httpFromError({ _tag: "StorageError", kind: "Disconnected", message: "m" }).status).toBe(503)
-    expect(httpFromError({ _tag: "StorageError", kind: "Mount", message: "m" }).status).toBe(503)
-    expect(httpFromError({ _tag: "StorageError", kind: "Secret", message: "m" }).status).toBe(500)
   })
 
   test("maps MigrateError by kind", () => {

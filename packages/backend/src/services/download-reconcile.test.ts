@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { decideSourcePathRepair, hasSuspectSourceMetadata } from "./Library.js"
-import {
-  mergeDownloadTaskRow,
-  reconcileFinishedTaskState,
-  type DownloadTask,
-} from "./DownloadTasks.js"
+import { mergeDownloadTaskRow, reconcileFinishedTaskState } from "./DownloadTasks.js"
+import type { DownloadTask } from "@pwe/shared"
 
 const baseTask = (patch: Partial<DownloadTask> = {}): DownloadTask => ({
   workshop_id: "123",

@@ -1,29 +1,7 @@
-import type { DisplayMode, LibraryItem, PlayMode, WorkshopItem } from "@pwe/shared"
+import type { DisplayMode, DownloadStage, DownloadTask, LibraryItem, PlayMode, PlayerStatus, SystemSummary, WorkshopItem } from "@pwe/shared"
+export type { DownloadStage, DownloadTask, PlayerStatus, SystemSummary }
 import type { WorkshopSort } from "./workshopTags.js"
 
-export type DownloadStage =
-  | "starting"
-  | "downloading"
-  | "finalizing"
-  | "done"
-  | "complete"
-  | "error"
-
-export interface DownloadTask {
-  workshop_id: string
-  title: string
-  preview_url: string
-  content_rating: string | null
-  rating_sex: string | null
-  adult_hint: number
-  stage: DownloadStage
-  message: string
-  started_at: number
-  finished_at: number | null
-  percent: number | null
-  bytes_done: number | null
-  bytes_total: number | null
-}
 
 export interface MigrationProgress {
   state: "running" | "done" | "failed"
@@ -77,79 +55,6 @@ export type StorageTargetValidation =
       error: string
     }
 
-export interface SystemSummary {
-  config: {
-    steam: {
-      username: string
-      web_api_key_masked: string
-      steamcmd_path: string
-    }
-    paths: {
-      data_root: string
-      source_dir: string
-      optimized_dir: string
-    }
-    screen: {
-      width: number
-      height: number
-      default_display_mode: DisplayMode
-    }
-    mpv: {
-      binary_path: string
-      ipc_socket: string
-      hwdec: string
-      gpu_api: string
-    }
-    server: {
-      host: string
-      port: number
-    }
-  }
-  status: {
-    player: {
-      playing: boolean
-      current_workshop_id: string | null
-      path: string | null
-      display_mode: DisplayMode
-      play_mode: PlayMode
-      rotation_interval_sec: number
-      current_title: string | null
-      current_preview_url: string | null
-      current_resolution: string | null
-      current_codec: string | null
-    }
-    display: {
-      configured: boolean
-      state: "on" | "off" | "unknown"
-      source: "probed" | "cached" | "default"
-      error_kind: string | null
-    }
-    storage: {
-      available: boolean
-      path: string
-      data_root: string
-      default_root: string
-      using_default: boolean
-      last_error: string | null
-      used_bytes: number | null
-      free_bytes: number | null
-      total_bytes: number | null
-      used_percent: number | null
-      error: string | null
-    }
-    library: {
-      total: number
-    }
-    downloads: {
-      active: number
-      finished: number
-    }
-    sleep: {
-      active: boolean
-      deadline: number | null
-    }
-  }
-}
 
 const AUTH_EVENT = "pwe-auth-changed"
 
@@ -318,15 +223,3 @@ export const api = {
   },
 }
 
-export interface PlayerWatchSnapshot {
-  playing: boolean
-  current_workshop_id: string | null
-  path: string | null
-  display_mode: DisplayMode
-  play_mode: PlayMode
-  rotation_interval_sec: number
-  current_title: string | null
-  current_preview_url: string | null
-  current_resolution: string | null
-  current_codec: string | null
-}
