@@ -27,9 +27,9 @@
     "post-checkout": "codegraph index"
   },
   "devDependencies": {
-    "@colbymchenry/codegraph": "^1.1.0",
+    "@colbymchenry/codegraph": "^1.1.1",
     "@types/bun": "latest",
-    "playwright": "^1.61.0",
+    "playwright": "^1.61.1",
     "simple-git-hooks": "^2.13.1",
     "typescript": "^6.0.3"
   },
