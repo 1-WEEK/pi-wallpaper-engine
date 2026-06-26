@@ -416,7 +416,7 @@ export const App = () => (
     value={{
       revalidateOnFocus: false,
       revalidateIfStale: false,
-      dedupingInterval: 60_000,
+      dedupingInterval: 10_000,
       shouldRetryOnError: false,
     }}
   >

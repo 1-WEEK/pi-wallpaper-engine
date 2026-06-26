@@ -83,7 +83,17 @@ export const StorageLive = (configPath: string) =>
               message: `Media root is not accessible at ${root}.`,
               cause,
             }),
-        })
+        }).pipe(
+          Effect.timeout("5 seconds"),
+          Effect.catchTag("TimeoutException", () =>
+            Effect.fail(
+              new StorageError({
+                kind: "Disconnected",
+                message: `Timed out checking accessibility of media root at ${root}.`,
+              })
+            )
+          )
+        )
 
       const getPersistedConfig = () =>
         Effect.tryPromise({

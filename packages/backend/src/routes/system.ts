@@ -20,6 +20,7 @@ const storageSummary = (path: string) =>
     try: () => statfs(path),
     catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
   }).pipe(
+    Effect.timeout("5 seconds"),
     Effect.map((fs) => {
       const total = fs.blocks * fs.bsize
       const free = fs.bavail * fs.bsize

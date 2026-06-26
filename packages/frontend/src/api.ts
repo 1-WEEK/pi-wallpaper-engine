@@ -66,6 +66,17 @@ export const onAuthChange = (handler: () => void): (() => void) => {
   window.addEventListener(AUTH_EVENT, handler)
   return () => window.removeEventListener(AUTH_EVENT, handler)
 }
+const FETCH_TIMEOUT_MS = 30_000
+
+const fetchWithTimeout = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs: number = FETCH_TIMEOUT_MS
+): Promise<Response> => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer))
+}
 
 const json = async <T>(res: Response): Promise<T> => {
   if (!res.ok) {
@@ -97,97 +108,96 @@ export const api = {
     if (opts.pageSize) params.set("pageSize", String(opts.pageSize))
     if (opts.tags && opts.tags.length > 0) params.set("tags", opts.tags.join(","))
     if (opts.sort) params.set("sort", opts.sort)
-    return fetch(`/api/workshop/search?${params.toString()}`).then(
+    return fetchWithTimeout(`/api/workshop/search?${params.toString()}`).then(
       json<WorkshopSearchResult>
     )
   },
 
   workshopItem: (id: string) =>
-    fetch(`/api/workshop/item/${id}`).then(json<WorkshopItem>),
+    fetchWithTimeout(`/api/workshop/item/${id}`).then(json<WorkshopItem>),
 
   download: (workshopId: string) =>
-    fetch(`/api/download/${workshopId}`, { method: "POST" }).then(
+    fetchWithTimeout(`/api/download/${workshopId}`, { method: "POST" }).then(
       json<{ ok: boolean; workshopId: string }>
     ),
 
-  downloadTasks: () => fetch(`/api/download/tasks`).then(json<DownloadTask[]>),
+  downloadTasks: () => fetchWithTimeout(`/api/download/tasks`).then(json<DownloadTask[]>),
   dismissDownloadTask: (id: string) =>
-    fetch(`/api/download/tasks/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+    fetchWithTimeout(`/api/download/tasks/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
   cancelDownload: (id: string) =>
-    fetch(`/api/download/${id}/cancel`, { method: "POST" }).then(
+    fetchWithTimeout(`/api/download/${id}/cancel`, { method: "POST" }).then(
       json<{ ok: boolean; workshopId?: string; status?: string; error?: string }>
     ),
 
-  systemSummary: () => fetch(`/api/system/summary`).then(json<SystemSummary>),
-  getStorage: () => fetch(`/api/storage`).then(json<StorageStatus>),
-  storageLocations: () => fetch(`/api/storage/locations`).then(json<StorageLocation[]>),
+  systemSummary: () => fetchWithTimeout(`/api/system/summary`).then(json<SystemSummary>),
+  getStorage: () => fetchWithTimeout(`/api/storage`).then(json<StorageStatus>),
+  storageLocations: () => fetchWithTimeout(`/api/storage/locations`).then(json<StorageLocation[]>),
   storageDirectories: (path: string) =>
-    fetch(`/api/storage/directories?${new URLSearchParams({ path }).toString()}`).then(
+    fetchWithTimeout(`/api/storage/directories?${new URLSearchParams({ path }).toString()}`).then(
       json<StorageDirectoryListing>
     ),
   createStorageDirectory: (body: { parent: string; name: string }) =>
-    fetch(`/api/storage/directories`, {
+    fetchWithTimeout(`/api/storage/directories`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then(json<{ path: string; display_path: string }>),
   validateStorageTarget: (targetRoot: string) =>
-    fetch(`/api/storage/validate-target`, {
+    fetchWithTimeout(`/api/storage/validate-target`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ target_root: targetRoot }),
     }).then(json<StorageTargetValidation>),
   switchStorageRoot: (targetRoot: string) =>
-    fetch(`/api/storage/root`, {
+    fetchWithTimeout(`/api/storage/root`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ target_root: targetRoot }),
     }).then(json<StorageStatus>),
-  cancelMigration: () =>
-    fetch(`/api/storage/cancel`, { method: "POST" }).then(json<StorageStatus>),
+  cancelMigration: () => fetchWithTimeout(`/api/storage/cancel`, { method: "POST" }).then(json<StorageStatus>),
 
-  libraryList: () => fetch(`/api/library`).then(json<LibraryItem[]>),
+  libraryList: () => fetchWithTimeout(`/api/library`).then(json<LibraryItem[]>),
   libraryDelete: (id: string) =>
-    fetch(`/api/library/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+    fetchWithTimeout(`/api/library/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
   libraryUpdate: (id: string, patch: { display_mode?: DisplayMode }) =>
-    fetch(`/api/library/${id}`, {
+    fetchWithTimeout(`/api/library/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }).then(json<{ ok: true }>),
 
-  play: (id: string) => fetch(`/api/player/play/${id}`, { method: "POST" }).then(json<unknown>),
-  pause: () => fetch(`/api/player/pause`, { method: "POST" }).then(json<unknown>),
-  resume: () => fetch(`/api/player/resume`, { method: "POST" }).then(json<unknown>),
-  stop: () => fetch(`/api/player/stop`, { method: "POST" }).then(json<unknown>),
+  play: (id: string) => fetchWithTimeout(`/api/player/play/${id}`, { method: "POST" }).then(json<unknown>),
+  pause: () => fetchWithTimeout(`/api/player/pause`, { method: "POST" }).then(json<unknown>),
+  resume: () => fetchWithTimeout(`/api/player/resume`, { method: "POST" }).then(json<unknown>),
+  stop: () => fetchWithTimeout(`/api/player/stop`, { method: "POST" }).then(json<unknown>),
   setDisplayMode: (mode: DisplayMode) =>
-    fetch(`/api/player/display-mode`, {
+    fetchWithTimeout(`/api/player/display-mode`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     }).then(json<unknown>),
   playerMode: (mode: PlayMode) =>
-    fetch(`/api/player/mode`, {
+    fetchWithTimeout(`/api/player/mode`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     }).then(json<unknown>),
-  playerNext: () => fetch(`/api/player/next`, { method: "POST" }).then(json<unknown>),
-  playerPrev: () => fetch(`/api/player/prev`, { method: "POST" }).then(json<unknown>),
+  playerNext: () => fetchWithTimeout(`/api/player/next`, { method: "POST" }).then(json<unknown>),
+  playerPrev: () => fetchWithTimeout(`/api/player/prev`, { method: "POST" }).then(json<unknown>),
   setRotationInterval: (seconds: number) =>
-    fetch(`/api/player/interval`, {
+    fetchWithTimeout(`/api/player/interval`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ seconds }),
     }).then(json<unknown>),
   setSleep: (minutes: number) =>
-    fetch(`/api/player/sleep`, {
+    fetchWithTimeout(`/api/player/sleep`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ minutes }),
     }).then(json<{ active: boolean; deadline: number | null }>),
   playerStatus: () =>
-    fetch(`/api/player/status`).then(
+    fetchWithTimeout(`/api/player/status`).then(
       json<{
         playing: boolean
         current_workshop_id: string | null
@@ -197,7 +207,7 @@ export const api = {
     ),
 
   displayOn: () =>
-    fetch(`/api/display/on`, { method: "POST" }).then(
+    fetchWithTimeout(`/api/display/on`, { method: "POST" }).then(
       json<{
         ok: boolean
         state?: "on" | "off"
@@ -208,7 +218,7 @@ export const api = {
       }>
     ),
   displayOff: () =>
-    fetch(`/api/display/off`, { method: "POST" }).then(
+    fetchWithTimeout(`/api/display/off`, { method: "POST" }).then(
       json<{ ok: boolean; state?: "on" | "off"; error?: string; kind?: string }>
     ),
 
