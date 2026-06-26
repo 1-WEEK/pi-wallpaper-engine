@@ -19,7 +19,6 @@ import {
 
 const MIN_CARD_WIDTH = 248
 const GRID_GAP = 14
-const ROWS_PER_FETCH = 4
 const PAGE_SIZE = 25
 
 // URL search params are the source of truth. localStorage is only consulted
@@ -80,7 +79,9 @@ export const Browse = () => {
 
   const gridRef = useRef<HTMLDivElement>(null)
   const columnsPerRow = useColumnsPerRow(gridRef, MIN_CARD_WIDTH, GRID_GAP)
-  const pageSize = Math.max(PAGE_SIZE, columnsPerRow * ROWS_PER_FETCH)
+  // Smallest multiple of columnsPerRow that's >= PAGE_SIZE; ensures every
+  // page loads enough items to fill complete rows, no orphan cards at the end.
+  const pageSize = Math.ceil(PAGE_SIZE / columnsPerRow) * columnsPerRow
 
   const hasUrlState = params.has("q") || params.has("tags") || params.has("sort")
 
@@ -138,15 +139,15 @@ export const Browse = () => {
       return null
     }
     const cursor = pageIndex === 0 ? "*" : (prev?.nextCursor ?? "*")
-    return ["workshop-search", submittedQuery, tagKey, sort, cursor] as const
+    return ["workshop-search", submittedQuery, tagKey, sort, cursor, pageSize] as const
   }
 
   const { data, error, isLoading, isValidating, size, setSize } = useSWRInfinite(
     getKey,
-    ([, q, tags, s, cursor]) =>
+    ([, q, tags, s, cursor, currentPageSize]) =>
       api.workshopSearch(q, {
         cursor,
-        pageSize,
+        pageSize: currentPageSize,
         tags: tags ? tags.split(",") : [],
         sort: s as WorkshopSort,
       }),

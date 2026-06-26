@@ -30,3 +30,5 @@ pi-wallpaper-engine-data/
 # Test artifacts
 packages/backend/src/test-assets/*.mp4
 !packages/backend/src/test-assets/.gitkeep
+test-results/
+playwright-report/

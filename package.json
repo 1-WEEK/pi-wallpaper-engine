@@ -13,6 +13,7 @@
     "build": "bun run --filter @pwe/frontend build",
     "check": "bun run --filter @pwe/backend check",
     "test": "bun test",
+    "test:e2e": "playwright test",
     "typecheck": "bun run --filter '*' typecheck",
     "service:start": "systemctl --user start pi-wallpaper-engine",
     "service:stop": "systemctl --user stop pi-wallpaper-engine",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@colbymchenry/codegraph": "^1.1.0",
     "@types/bun": "latest",
+    "playwright": "^1.61.0",
     "simple-git-hooks": "^2.13.1",
     "typescript": "^6.0.3"
   },

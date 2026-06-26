@@ -2,15 +2,19 @@ import { useLayoutEffect, useState } from "react"
 import type { RefObject } from "react"
 
 /**
- * Tracks how many grid columns fit in a container at the current width.
+ * Pure computation: how many grid columns fit in a container of the given width.
  *
- * The calculation mirrors what CSS `auto-fill, minmax(M, 1fr)` resolves:
+ * Mirrors what CSS `auto-fill, minmax(M, 1fr)` resolves:
  *   columns = floor((containerWidth + gap) / (minCardWidth + gap))
- *
- * @param ref - ref attached to the grid container
- * @param minCardWidth - the `minmax(M, ...)` minimum, pixels
- * @param gap - `gap` value, pixels
- * @returns number of columns that fit (>= 1)
+ */
+export const computeFitColumns = (
+  containerWidth: number,
+  minCardWidth: number,
+  gap: number
+): number => Math.max(1, Math.floor((containerWidth + gap) / (minCardWidth + gap)))
+
+/**
+ * Tracks how many grid columns fit in a container at the current width.
  */
 export const useColumnsPerRow = (
   ref: RefObject<HTMLElement | null>,
@@ -20,8 +24,8 @@ export const useColumnsPerRow = (
   const [columns, setColumns] = useState<number>(() => {
     if (typeof window === "undefined") return 4
     // Best-effort initial guess before ResizeObserver fires
-    const w = Math.max(320, window.innerWidth - 260) // 260 ≈ sidebar width
-    return Math.max(1, Math.floor((w + gap) / (minCardWidth + gap)))
+    const w = Math.max(320, window.innerWidth - 260) // 260 is about the sidebar width
+    return computeFitColumns(w, minCardWidth, gap)
   })
 
   useLayoutEffect(() => {
@@ -31,8 +35,7 @@ export const useColumnsPerRow = (
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (!entry) return
-      const w = entry.contentRect.width
-      setColumns(Math.max(1, Math.floor((w + gap) / (minCardWidth + gap))))
+      setColumns(computeFitColumns(entry.contentRect.width, minCardWidth, gap))
     })
 
     ro.observe(el)
