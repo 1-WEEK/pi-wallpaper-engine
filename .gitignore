@@ -15,6 +15,7 @@ pi-wallpaper-engine-data/
 .idea/
 
 # Agent local settings
+.agents/
 .claude/
 .codegraph/
 .commandcode/
