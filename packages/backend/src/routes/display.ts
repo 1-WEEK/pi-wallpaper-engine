@@ -2,6 +2,7 @@ import { Elysia } from "elysia"
 import { Effect } from "effect"
 import { Display } from "../services/Display.js"
 import { PlayerPower } from "../services/PlayerPower.js"
+import { Rotation } from "../services/Rotation.js"
 import { httpFromError } from "./httpError.js"
 import type { AppContext, AppRuntime } from "../runtime.js"
 
@@ -46,6 +47,8 @@ export const displayRoutes = (runtime: AppRuntime) => {
         set,
         Effect.gen(function* () {
           const playerPower = yield* PlayerPower
+          const rotation = yield* Rotation
+          yield* rotation.disarm()
           return yield* playerPower.displayOff()
         })
       )

@@ -21,7 +21,8 @@ const RSYNC_ENV = { ...process.env, LC_ALL: "C" }
  */
 export async function estimateSize(dir: string): Promise<number> {
   if (!existsSync(dir)) return 0
-  const proc = Bun.spawn(["du", "-sb", dir], {
+  const isMac = process.platform === "darwin"
+  const proc = Bun.spawn(isMac ? ["du", "-sk", dir] : ["du", "-sb", dir], {
     stdout: "pipe",
     stderr: "ignore",
     stdin: "ignore",
@@ -30,7 +31,8 @@ export async function estimateSize(dir: string): Promise<number> {
   if (code !== 0) return 0
   const first = stdout.trim().split(/\s+/)[0]
   const n = Number(first)
-  return Number.isFinite(n) ? n : 0
+  if (!Number.isFinite(n)) return 0
+  return isMac ? n * 1024 : n
 }
 
 const runRsyncCopy = async (
@@ -43,8 +45,10 @@ const runRsyncCopy = async (
   // CIFS mounts enforce their own uid/gid/modes, so preserving metadata both
   // fails and is pointless. `--size-only` keeps re-runs idempotent (a fully
   // copied file is skipped); `--partial` resumes a half-copied file.
+  const isMac = process.platform === "darwin"
+  const progressFlag = isMac ? "--progress" : "--info=progress2"
   const proc = Bun.spawn(
-    ["rsync", "-r", "--partial", "--size-only", "--info=progress2", `${from}/`, `${to}/`],
+    ["rsync", "-r", "--partial", "--size-only", progressFlag, `${from}/`, `${to}/`],
     { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: RSYNC_ENV }
   )
 
