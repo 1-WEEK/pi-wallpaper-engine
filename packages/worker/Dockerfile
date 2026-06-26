@@ -5,39 +5,39 @@
 # Distribution target: linux/amd64 NAS with Intel iGPU. ARM64 builds also work
 # (auto fall-back to libx265). The QSV runtime detection in src/ffmpeg.ts
 # probes the device at startup — no build-arg gate needed.
+#
+# The worker's only non-built-in import is a type-only `import type` from
+# @pwe/shared, so its runtime third-party footprint is zero. We bundle the
+# entrypoint into a single self-contained file in a builder stage and ship only
+# that — the runtime image carries no node_modules and runs no `bun install`.
 
-# ── stage 1: install workspace deps once, reuse across rebuilds ────────────
-FROM oven/bun:1.3-debian AS deps
+# ── stage 1: bundle the worker into one self-contained file ────────────────
+FROM oven/bun:1.3-debian AS builder
 
 WORKDIR /app
 
-# Lockfile + manifests first → Docker layer cache keeps the install layer warm
-# across source changes.
-COPY package.json bun.lock ./
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/worker/package.json ./packages/worker/
-# `--frozen-lockfile` checks the lockfile against the FULL workspace set, so the
-# sibling manifests must be present even though the worker only runs
-# shared + worker. Their source is never copied into the runtime image.
-COPY packages/backend/package.json ./packages/backend/
-COPY packages/frontend/package.json ./packages/frontend/
-COPY packages/migrate/package.json ./packages/migrate/
+# Only the source the bundle touches. No install needed: type-only imports are
+# erased by the transpiler, so `bun build` resolves with the source alone.
+COPY tsconfig.base.json package.json ./
+COPY packages/shared ./packages/shared
+COPY packages/worker ./packages/worker
 
-# `bun install` honors the workspace `workspaces` field in the root
-# package.json and links @pwe/shared into the worker via the workspace
-# protocol. Frozen lockfile ensures reproducible image builds.
-# `--ignore-scripts`: the root `prepare` hook runs simple-git-hooks, which
-# needs a .git dir that doesn't exist in the build context. The worker/shared
-# deps are pure JS with no native postinstall, so skipping scripts is safe.
-RUN bun install --frozen-lockfile --ignore-scripts
+# Tree-shaking bundle targeting the bun runtime. Emits dist/index.js plus a
+# linked dist/index.js.map so stack traces from the running worker stay
+# readable. (bun 1.3's --outfile drops external source maps; --outdir keeps
+# them, so we use --outdir and run the resulting dist/index.js.)
+RUN bun build packages/worker/src/index.ts \
+      --target=bun \
+      --outdir dist \
+      --sourcemap=linked
 
-# ── stage 2: runtime image with ffmpeg + Intel media driver ────────────────
-FROM oven/bun:1.3-debian AS runtime
+# ── stage 2: minimal runtime — ffmpeg + Intel media driver + the bundle ────
+FROM oven/bun:1.3-slim AS runtime
 
-# `intel-media-va-driver-non-free` ships the modern iHD driver used by
-# Tiger Lake and later Intel iGPUs. Add `i965-va-driver` for very old chips.
-# That driver lives in Debian's `non-free` component, which the base image's
-# deb822 sources only enable `main` for — turn it on before installing.
+# `intel-media-va-driver-non-free` ships the modern iHD driver used by Tiger
+# Lake and later Intel iGPUs. Add `i965-va-driver` for very old chips. That
+# driver lives in Debian's `non-free` component, which the base image's deb822
+# sources only enable `main` for — turn it on before installing.
 RUN sed -i 's/^Components: main$/Components: main non-free non-free-firmware/' \
        /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
@@ -50,15 +50,8 @@ RUN sed -i 's/^Components: main$/Components: main non-free non-free-firmware/' \
 
 WORKDIR /app
 
-# Bring deps from the deps stage; node_modules holds the entire workspace.
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package.json ./package.json
-COPY --from=deps /app/bun.lock ./bun.lock
-
-# Bring source for the two packages the worker actually runs.
-COPY packages/shared ./packages/shared
-COPY packages/worker ./packages/worker
-COPY tsconfig.base.json ./
+# The self-contained bundle is the entire application — no node_modules.
+COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production
 ENV PWE_WORK_DIR=/tmp/pwe-worker
@@ -66,4 +59,4 @@ ENV PWE_WORK_DIR=/tmp/pwe-worker
 # tini reaps zombie ffmpeg children and forwards SIGTERM cleanly so the
 # worker's graceful shutdown path (finish current job, then exit) actually
 # fires when `docker compose down` runs.
-ENTRYPOINT ["/usr/bin/tini", "--", "bun", "run", "packages/worker/src/index.ts"]
+ENTRYPOINT ["/usr/bin/tini", "--", "bun", "run", "dist/index.js"]

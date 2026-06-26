@@ -51,3 +51,25 @@ jobs:
 
       - name: Build
         run: bun run build
+
+  # Builds the worker image and boots it against an unreachable broker to prove
+  # the bundled artifact runs — all imports resolve, ffmpeg is present, and the
+  # encoder probe completes. Runs natively on the amd64 runner.
+  worker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/worker/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: pwe-worker:ci
+
+      - name: Smoke test (boots, resolves imports, detects encoder)
+        run: bash scripts/smoke-test-worker-image.sh pwe-worker:ci
