@@ -10,6 +10,13 @@
 !packages/shared/**
 !packages/worker/**
 
+# `bun install --frozen-lockfile` validates against the whole workspace set
+# recorded in bun.lock, so the sibling manifests must be in context too (just
+# the package.json — their source never enters the image).
+!packages/backend/package.json
+!packages/frontend/package.json
+!packages/migrate/package.json
+
 # Re-exclude things we never want even inside whitelisted dirs.
 **/node_modules
 **/.bun

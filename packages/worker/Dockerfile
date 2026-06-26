@@ -16,18 +16,31 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/worker/package.json ./packages/worker/
+# `--frozen-lockfile` checks the lockfile against the FULL workspace set, so the
+# sibling manifests must be present even though the worker only runs
+# shared + worker. Their source is never copied into the runtime image.
+COPY packages/backend/package.json ./packages/backend/
+COPY packages/frontend/package.json ./packages/frontend/
+COPY packages/migrate/package.json ./packages/migrate/
 
 # `bun install` honors the workspace `workspaces` field in the root
 # package.json and links @pwe/shared into the worker via the workspace
 # protocol. Frozen lockfile ensures reproducible image builds.
-RUN bun install --frozen-lockfile
+# `--ignore-scripts`: the root `prepare` hook runs simple-git-hooks, which
+# needs a .git dir that doesn't exist in the build context. The worker/shared
+# deps are pure JS with no native postinstall, so skipping scripts is safe.
+RUN bun install --frozen-lockfile --ignore-scripts
 
 # ── stage 2: runtime image with ffmpeg + Intel media driver ────────────────
 FROM oven/bun:1.3-debian AS runtime
 
 # `intel-media-va-driver-non-free` ships the modern iHD driver used by
 # Tiger Lake and later Intel iGPUs. Add `i965-va-driver` for very old chips.
-RUN apt-get update \
+# That driver lives in Debian's `non-free` component, which the base image's
+# deb822 sources only enable `main` for — turn it on before installing.
+RUN sed -i 's/^Components: main$/Components: main non-free non-free-firmware/' \
+       /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && apt-get install -y --no-install-recommends \
        ffmpeg \
        intel-media-va-driver-non-free \
