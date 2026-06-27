@@ -2,7 +2,7 @@
 
 A Wallpaper Engine video player for the Raspberry Pi 4B. Use the web interface from your phone or computer to browse the Steam Workshop, download video wallpapers, and play them directly on your monitor via mpv.
 
-![Web Interface](assets/screenshot.png)
+![Web Interface](assets/screenshot.jpg)
 
 ## Features
 
