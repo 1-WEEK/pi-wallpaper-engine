@@ -1,6 +1,6 @@
 # Pi Wallpaper Engine
 
-A Wallpaper Engine video player for the Raspberry Pi 4B. Use the web interface from your phone or computer to browse the Steam Workshop, download video wallpapers, and play them directly on your TV via mpv.
+A Wallpaper Engine video player for the Raspberry Pi 4B. Use the web interface from your phone or computer to browse the Steam Workshop, download video wallpapers, and play them directly on your monitor via mpv.
 
 ![Web Interface](assets/screenshot.png)
 
@@ -8,7 +8,7 @@ A Wallpaper Engine video player for the Raspberry Pi 4B. Use the web interface f
 
 - **Direct Playback**: Downloads and plays original Workshop video files directly on the Pi.
 - **Remote Control**: Mobile-friendly web UI for managing your library, rotating playlists (sequential, shuffle, or single loop), and setting sleep timers.
-- **Display Power Management**: Automatically turns the TV on when playback starts and off when idle.
+- **Display Power Management**: Automatically turns the monitor on when playback starts and off when idle.
 - **Storage Management**: Store wallpapers anywhere on the Pi. The UI includes a directory browser to safely move your media library across drives.
 - **Optional NAS Transcoding**: Avoid overloading the Pi's CPU. Deploy a companion Docker worker to an Intel NAS to handle heavy HEVC conversions.
 - **Secure Access**: Enable Passkey authentication if you expose the web UI to the internet via Cloudflare Tunnel or a reverse proxy.
