@@ -2,6 +2,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { ConfigLive, Config as ConfigTag } from "./services/Config.js"
 import { DbLive } from "./services/Db.js"
 import { DisplayLive } from "./services/Display.js"
+import { DownloadIntakeLive } from "./services/DownloadIntake.js"
 import { DownloadTasksLive } from "./services/DownloadTasks.js"
 import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
@@ -42,6 +43,7 @@ export const transcodeMode = (): "live" | "noop" => {
 export const buildLayer = (configPath: string) => {
   const queueLayer = transcodeMode() === "live" ? TranscodeQueueLive : TranscodeQueueNoop
   return TranscodeMonitorLive.pipe(
+    Layer.provideMerge(DownloadIntakeLive),
     Layer.provideMerge(queueLayer),
     Layer.provideMerge(SleepTimerLive),
     Layer.provideMerge(PlayerWatchLive),
