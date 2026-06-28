@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { Database } from "bun:sqlite"
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { DbError, LibraryNotFoundError, type DownloadTask, type LibraryItem } from "@pwe/shared"
 import { Config, type RuntimeConfig } from "./Config.js"
 import { Db, type DbImpl } from "./Db.js"
@@ -12,8 +15,12 @@ import {
   DownloadTasks,
   DownloadTasksLive,
   mergeDownloadTaskRow,
-  reconcileFinishedTaskState,
 } from "./DownloadTasks.js"
+import {
+  DownloadReconciler,
+  makeDownloadReconcilerLive,
+  reconcileFinishedTaskState,
+} from "./DownloadReconciler.js"
 import { decideSourcePathRepair, hasSuspectSourceMetadata } from "./Library.js"
 import { Library, type LibraryImpl } from "./Library.js"
 import { Logger, type LoggerImpl } from "./Logger.js"
@@ -38,6 +45,42 @@ const baseTask = (patch: Partial<DownloadTask> = {}): DownloadTask => ({
 
 let openDbs: Database[] = []
 let runtimes: Array<ManagedRuntime.ManagedRuntime<unknown, never>> = []
+let tempDirs: string[] = []
+
+const tempMediaRoot = () => {
+  const dir = mkdtempSync(join(tmpdir(), "pwe-reconcile-"))
+  tempDirs.push(dir)
+  return dir
+}
+
+const makeSourceDir = (mediaRoot: string, workshopId: string) => {
+  const dir = join(mediaRoot, "source", workshopId)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+const libraryRow = (workshopId: string): LibraryItem => ({
+  workshop_id: workshopId,
+  title: `Library ${workshopId}`,
+  author: "",
+  preview_url: "",
+  content_rating: null,
+  rating_sex: null,
+  source_path: `source/${workshopId}/video.mp4`,
+  source_resolution: "1920x1080",
+  source_codec: "h264",
+  source_size: 123,
+  downloaded_at: 1,
+  transcode_status: "skipped",
+  transcode_progress: 0,
+  transcode_error: null,
+  transcoded_path: null,
+  transcoded_resolution: null,
+  transcoded_codec: null,
+  transcoded_size: null,
+  display_mode: "fill",
+  last_played_at: null,
+})
 
 const DOWNLOAD_TASKS_DDL = `
   CREATE TABLE IF NOT EXISTS download_tasks (
@@ -105,22 +148,23 @@ const makeConfigLayer = () => {
   return Layer.succeed(Config, impl)
 }
 
-const makeStorageLayer = () => {
+const makeStorageLayer = (mediaRoot: string | null = null) => {
+  const root = mediaRoot ?? "/tmp"
   const impl: StorageImpl = {
     status: () =>
       Effect.succeed({
-        available: false,
-        data_root: "/tmp",
+        available: mediaRoot !== null,
+        data_root: root,
         default_root: "/tmp",
-        using_default: true,
-        last_error: "Directory is unavailable.",
+        using_default: mediaRoot === null,
+        last_error: mediaRoot === null ? "Directory is unavailable." : null,
       }),
-    mediaRoot: () => Effect.succeed("/tmp"),
-    mediaRootOrNull: () => Effect.succeed(null),
+    mediaRoot: () => Effect.succeed(root),
+    mediaRootOrNull: () => Effect.succeed(mediaRoot),
     saveRoot: () =>
       Effect.succeed({
         available: true,
-        data_root: "/tmp",
+        data_root: root,
         default_root: "/tmp",
         using_default: true,
         last_error: null,
@@ -129,10 +173,13 @@ const makeStorageLayer = () => {
   return Layer.succeed(Storage, impl)
 }
 
-const makeLibraryLayer = () => {
+const makeLibraryLayer = (rows: ReadonlyMap<string, LibraryItem> = new Map()) => {
   const impl: LibraryImpl = {
-    list: () => Effect.succeed([]),
-    get: (workshopId) => Effect.fail(new LibraryNotFoundError({ workshopId })),
+    list: () => Effect.succeed([...rows.values()]),
+    get: (workshopId) => {
+      const row = rows.get(workshopId)
+      return row ? Effect.succeed(row) : Effect.fail(new LibraryNotFoundError({ workshopId }))
+    },
     insert: () => Effect.void,
     update: () => Effect.void,
     remove: () => Effect.void,
@@ -159,11 +206,35 @@ const makeProcessRegistryLayer = () => {
   return { layer: Layer.succeed(DownloadProcessRegistry, impl), stops }
 }
 
+const makeReconcilerRuntime = (
+  layers: {
+    readonly db: ReturnType<typeof makeDbLayer>
+    readonly logger: ReturnType<typeof makeLoggerLayer>
+    readonly registry: ReturnType<typeof makeProcessRegistryLayer>
+    readonly storage?: Layer.Layer<Storage>
+    readonly library?: Layer.Layer<Library>
+  },
+  opts: Parameters<typeof makeDownloadReconcilerLive>[0] = {}
+) =>
+  ManagedRuntime.make(
+    makeDownloadReconcilerLive({ startSweeper: false, ...opts }).pipe(
+      Layer.provideMerge(DownloadTasksLive),
+      Layer.provideMerge(layers.db.layer),
+      Layer.provideMerge(layers.logger.layer),
+      Layer.provideMerge(layers.library ?? makeLibraryLayer()),
+      Layer.provideMerge(makeConfigLayer()),
+      Layer.provideMerge(layers.storage ?? makeStorageLayer()),
+      Layer.provideMerge(layers.registry.layer)
+    )
+  )
+
 afterEach(async () => {
   for (const runtime of runtimes) await runtime.dispose()
   runtimes = []
   for (const db of openDbs) db.close()
   openDbs = []
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true })
+  tempDirs = []
 })
 
 describe("mergeDownloadTaskRow", () => {
@@ -219,7 +290,40 @@ describe("mergeDownloadTaskRow", () => {
   })
 })
 
-describe("DownloadTasksLive startup reconcile", () => {
+describe("DownloadTasksLive store", () => {
+  test("does not reconcile unfinished tasks on construction", async () => {
+    const db = makeDbLayer()
+    const logger = makeLoggerLayer()
+    db.db
+      .prepare(
+        `INSERT INTO download_tasks (
+          workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, ?, '', 0, ?, ?, ?, NULL)`
+      )
+      .run("123", "Task 123", "downloading", "Connecting...", 10)
+
+    const runtime = ManagedRuntime.make(
+      DownloadTasksLive.pipe(
+        Layer.provideMerge(db.layer),
+        Layer.provideMerge(logger.layer)
+      )
+    )
+    runtimes.push(runtime as ManagedRuntime.ManagedRuntime<unknown, never>)
+
+    const task = await runtime.runPromise(
+      Effect.gen(function* () {
+        const tasks = yield* DownloadTasks
+        return yield* tasks.get("123")
+      })
+    )
+
+    expect(task?.stage).toBe("downloading")
+    expect(task?.message).toBe("Connecting...")
+    expect(task?.finished_at).toBeNull()
+  })
+})
+
+describe("DownloadReconciler startup", () => {
   test("marks unfinished tasks interrupted even after registry sweep removed process evidence", async () => {
     const db = makeDbLayer()
     const logger = makeLoggerLayer()
@@ -232,16 +336,7 @@ describe("DownloadTasksLive startup reconcile", () => {
       )
       .run("123", "Task 123", "downloading", "Connecting...", 10)
 
-    const runtime = ManagedRuntime.make(
-      DownloadTasksLive.pipe(
-        Layer.provideMerge(db.layer),
-        Layer.provideMerge(logger.layer),
-        Layer.provideMerge(makeLibraryLayer()),
-        Layer.provideMerge(makeConfigLayer()),
-        Layer.provideMerge(makeStorageLayer()),
-        Layer.provideMerge(registry.layer)
-      )
-    )
+    const runtime = makeReconcilerRuntime({ db, logger, registry })
     runtimes.push(runtime as ManagedRuntime.ManagedRuntime<unknown, never>)
 
     const task = await runtime.runPromise(
@@ -259,6 +354,128 @@ describe("DownloadTasksLive startup reconcile", () => {
     expect(logger.lines).toContain(
       "WARN Skipping orphan source cleanup because mounted storage is disconnected"
     )
+  })
+
+  test("does not remove source leftovers when a library row owns the media", async () => {
+    const db = makeDbLayer()
+    const logger = makeLoggerLayer()
+    const registry = makeProcessRegistryLayer()
+    const mediaRoot = tempMediaRoot()
+    const sourceDir = makeSourceDir(mediaRoot, "123")
+    db.db
+      .prepare(
+        `INSERT INTO download_tasks (
+          workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, ?, '', 0, ?, ?, ?, NULL)`
+      )
+      .run("123", "Task 123", "downloading", "Connecting...", 10)
+
+    const runtime = makeReconcilerRuntime({
+      db,
+      logger,
+      registry,
+      storage: makeStorageLayer(mediaRoot),
+      library: makeLibraryLayer(new Map([["123", libraryRow("123")]])),
+    })
+    runtimes.push(runtime as ManagedRuntime.ManagedRuntime<unknown, never>)
+
+    const task = await runtime.runPromise(
+      Effect.gen(function* () {
+        const tasks = yield* DownloadTasks
+        return yield* tasks.get("123")
+      })
+    )
+
+    expect(task?.stage).toBe("error")
+    expect(task?.message).toBe("Interrupted by restart")
+    expect(existsSync(sourceDir)).toBe(true)
+    expect(registry.stops).toEqual(["123"])
+  })
+
+  test("repairs inconsistent finished task state using library ownership", async () => {
+    const db = makeDbLayer()
+    const logger = makeLoggerLayer()
+    const registry = makeProcessRegistryLayer()
+    db.db
+      .prepare(
+        `INSERT INTO download_tasks (
+          workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, ?, '', 0, ?, ?, ?, ?)`
+      )
+      .run("123", "Task 123", "finalizing", "Validating files...", 10, 20)
+
+    const runtime = makeReconcilerRuntime({
+      db,
+      logger,
+      registry,
+      library: makeLibraryLayer(new Map([["123", libraryRow("123")]])),
+    })
+    runtimes.push(runtime as ManagedRuntime.ManagedRuntime<unknown, never>)
+
+    const task = await runtime.runPromise(
+      Effect.gen(function* () {
+        const tasks = yield* DownloadTasks
+        return yield* tasks.get("123")
+      })
+    )
+
+    expect(task?.stage).toBe("complete")
+    expect(task?.message).toBe("Library updated")
+    expect(logger.lines).toContain("INFO Reconciled 1 inconsistent finished download task(s)")
+  })
+})
+
+describe("DownloadReconciler stale task sweep", () => {
+  test("marks stale unfinished tasks terminal and removes unowned source leftovers", async () => {
+    const db = makeDbLayer()
+    const logger = makeLoggerLayer()
+    const registry = makeProcessRegistryLayer()
+    const mediaRoot = tempMediaRoot()
+    const sourceDir = makeSourceDir(mediaRoot, "123")
+    const runtime = makeReconcilerRuntime(
+      {
+        db,
+        logger,
+        registry,
+        storage: makeStorageLayer(mediaRoot),
+      },
+      { now: () => 1_000, staleGraceMs: 100 }
+    )
+    runtimes.push(runtime as ManagedRuntime.ManagedRuntime<unknown, never>)
+    await runtime.runPromise(
+      Effect.gen(function* () {
+        yield* DownloadReconciler
+      })
+    )
+
+    db.db
+      .prepare(
+        `INSERT INTO download_tasks (
+          workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, ?, '', 0, ?, ?, ?, NULL)`
+      )
+      .run("123", "Task 123", "downloading", "Connecting...", 10)
+
+    await runtime.runPromise(
+      Effect.gen(function* () {
+        const reconciler = yield* DownloadReconciler
+        yield* reconciler.reconcileStale()
+      })
+    )
+
+    const task = await runtime.runPromise(
+      Effect.gen(function* () {
+        const tasks = yield* DownloadTasks
+        return yield* tasks.get("123")
+      })
+    )
+
+    expect(task?.stage).toBe("error")
+    expect(task?.message).toBe("Cancelled (stale task)")
+    expect(task?.finished_at).toBe(1_000)
+    expect(existsSync(sourceDir)).toBe(false)
+    expect(registry.stops).toEqual(["123"])
+    expect(logger.lines).toContain("INFO Cleaned 1 stale download task(s)")
   })
 })
 

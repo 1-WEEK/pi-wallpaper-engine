@@ -4,6 +4,7 @@ import { DbLive } from "./services/Db.js"
 import { DisplayLive } from "./services/Display.js"
 import { DownloadIntakeLive } from "./services/DownloadIntake.js"
 import { DownloadProcessRegistryLive } from "./services/DownloadProcessRegistry.js"
+import { DownloadReconcilerLive } from "./services/DownloadReconciler.js"
 import { DownloadTasksLive } from "./services/DownloadTasks.js"
 import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
@@ -43,7 +44,7 @@ export const transcodeMode = (): "live" | "noop" => {
  */
 export const buildLayer = (configPath: string) => {
   const queueLayer = transcodeMode() === "live" ? TranscodeQueueLive : TranscodeQueueNoop
-  return TranscodeMonitorLive.pipe(
+  const applicationLayer = TranscodeMonitorLive.pipe(
     Layer.provideMerge(DownloadIntakeLive),
     Layer.provideMerge(queueLayer),
     Layer.provideMerge(SleepTimerLive),
@@ -52,7 +53,11 @@ export const buildLayer = (configPath: string) => {
     Layer.provideMerge(PlayerPowerLive),
     Layer.provideMerge(PlayerStateLive),
     Layer.provideMerge(PlaybackPrefsLive),
-    Layer.provideMerge(DownloadTasksLive),
+    Layer.provideMerge(DownloadReconcilerLive),
+    Layer.provideMerge(DownloadTasksLive)
+  )
+
+  return applicationLayer.pipe(
     Layer.provideMerge(MigrateLive),
     Layer.provideMerge(LibraryLive),
     Layer.provideMerge(DisplayLive),

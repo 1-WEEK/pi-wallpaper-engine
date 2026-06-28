@@ -1,12 +1,6 @@
-import { Context, Effect, Fiber, Layer } from "effect"
-import { resolve } from "node:path"
-import { rm } from "node:fs/promises"
-import { Config } from "./Config.js"
+import { Context, Effect, Layer } from "effect"
 import { Db } from "./Db.js"
-import { DownloadProcessRegistry } from "./DownloadProcessRegistry.js"
-import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
-import { Storage } from "./Storage.js"
 import type { DownloadStage, DownloadTask } from "@pwe/shared"
 
 export interface DownloadTasksImpl {
@@ -61,146 +55,16 @@ export const mergeDownloadTaskRow = (
   return { ...row, ...patch }
 }
 
-export const reconcileFinishedTaskState = (
-  hasLibraryRow: boolean
-): Pick<DownloadTask, "stage" | "message"> =>
-  hasLibraryRow
-    ? { stage: "complete", message: "Library updated" }
-    : { stage: "error", message: "Download did not finalize" }
-
 export const DownloadTasksLive = Layer.effect(
   DownloadTasks,
   Effect.gen(function* () {
     const db = yield* Db
     const logger = yield* Logger
-    const library = yield* Library
-    const config = yield* Config
-    const storage = yield* Storage
-    const processRegistry = yield* DownloadProcessRegistry
 
     const sweep = () =>
       db.exec(`DELETE FROM download_tasks WHERE finished_at IS NOT NULL AND finished_at < ?`, [
         Date.now() - FINISHED_TTL_MS,
       ])
-
-    // Startup reconcile: any row still marked in-flight is a zombie from a
-    // previous crash. Mark them errored and remove their source dir unless
-    // the library already has a successful entry (in which case the files
-    // are real and belong to that entry, not the failed download).
-    const reconcile = Effect.gen(function* () {
-      const orphans = yield* db.query<{ workshop_id: string }>(
-        `SELECT workshop_id FROM download_tasks WHERE finished_at IS NULL`
-      )
-      if (orphans.length > 0) {
-        yield* db.exec(
-          `UPDATE download_tasks
-           SET stage = 'error',
-               message = 'Interrupted by restart',
-               finished_at = ?
-           WHERE finished_at IS NULL`,
-          [Date.now()]
-        )
-        yield* logger.info(`Reconciled ${orphans.length} interrupted download task(s)`)
-
-        const dataRoot = yield* storage.mediaRootOrNull()
-        for (const { workshop_id } of orphans) {
-          yield* processRegistry.stop(workshop_id)
-          const lib = yield* library
-            .get(workshop_id)
-            .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
-          if (lib || !dataRoot) continue
-          const sourceDir = resolve(dataRoot, config.paths.source_dir, workshop_id)
-          yield* Effect.tryPromise({
-            try: () => rm(sourceDir, { recursive: true, force: true }),
-            catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-          }).pipe(
-            Effect.tap(() => logger.info(`Cleaned orphan source dir: ${sourceDir}`)),
-            Effect.catchAll((e) => logger.warn(`Failed to clean orphan ${sourceDir}: ${e.message}`))
-          )
-        }
-
-        if (!dataRoot) {
-          yield* logger.warn("Skipping orphan source cleanup because mounted storage is disconnected")
-        }
-      }
-
-      const inconsistent = yield* db.query<DownloadTask>(
-        `SELECT * FROM download_tasks WHERE finished_at IS NOT NULL AND stage NOT IN ('complete', 'error')`
-      )
-
-      for (const row of inconsistent) {
-        const lib = yield* library
-          .get(row.workshop_id)
-          .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
-        const patch = reconcileFinishedTaskState(lib !== null)
-        yield* db.exec(
-          `UPDATE download_tasks SET stage = ?, message = ? WHERE workshop_id = ?`,
-          [patch.stage, patch.message, row.workshop_id]
-        )
-      }
-
-      if (inconsistent.length > 0) {
-        yield* logger.info(`Reconciled ${inconsistent.length} inconsistent finished download task(s)`)
-      }
-    }).pipe(Effect.catchAll((e) => logger.error(`Reconcile failed: ${e.message}`)))
-
-    yield* reconcile
-
-    // Periodic sweep: catch zombie rows that appear at runtime (fiber crash
-    // without DB update, backend restart between reconcile and task exit, etc).
-    // Runs every 5 minutes and expires tasks stuck in non-terminal state for
-    // more than 10 minutes.
-    const ZOMBIE_GRACE_MS = 10 * 60 * 1000
-    const SWEEP_INTERVAL_MS = 5 * 60 * 1000
-
-    const sweepZombies = Effect.gen(function* () {
-      const cutoff = Date.now() - ZOMBIE_GRACE_MS
-      const zombies = yield* db.query<{ workshop_id: string; started_at: number }>(
-        `SELECT workshop_id, started_at FROM download_tasks
-         WHERE finished_at IS NULL AND started_at < ?`,
-        [cutoff]
-      )
-      if (zombies.length > 0) {
-        yield* db.exec(
-          `UPDATE download_tasks
-           SET stage = 'error',
-               message = 'Cancelled (stale task)',
-               finished_at = ?
-           WHERE finished_at IS NULL AND started_at < ?`,
-          [Date.now(), cutoff]
-        )
-        yield* logger.info(`Cleaned ${zombies.length} stale download task(s)`)
-
-        const dataRoot = yield* storage.mediaRootOrNull()
-        for (const { workshop_id } of zombies) {
-          yield* processRegistry.stop(workshop_id)
-          const lib = yield* library
-            .get(workshop_id)
-            .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
-          if (lib || !dataRoot) continue
-          const sourceDir = resolve(dataRoot, config.paths.source_dir, workshop_id)
-          yield* Effect.tryPromise({
-            try: () => rm(sourceDir, { recursive: true, force: true }),
-            catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-          }).pipe(
-            Effect.tap(() => logger.info(`Cleaned stale source dir: ${sourceDir}`)),
-            Effect.catchAll((e) => logger.warn(`Failed to clean stale ${sourceDir}: ${e.message}`))
-          )
-        }
-      }
-    }).pipe(Effect.catchAll((e) => logger.error(`Stale task sweep failed: ${e.message}`)))
-
-    const zombieSweeper = Effect.gen(function* () {
-      while (true) {
-        yield* Effect.sleep(`${SWEEP_INTERVAL_MS} millis`)
-        yield* sweepZombies
-      }
-    }).pipe(Effect.fork)
-
-    yield* Effect.gen(function* () {
-      const fiber = yield* zombieSweeper
-      // Fiber runs until the app shuts down; no need to join it.
-    })
 
     return {
       list: () =>
