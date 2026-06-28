@@ -266,7 +266,8 @@ export const makeDownloadProcessRegistryImpl = (
 
   const stopRegistryEntry = (
     entry: DownloadProcessEntry,
-    source: "registry"
+    source: "registry",
+    context: "cancel" | "startup-sweep" = "cancel"
   ): Effect.Effect<DownloadProcessStopResult | null> =>
     Effect.gen(function* () {
       const argv = yield* Effect.tryPromise({
@@ -276,7 +277,8 @@ export const makeDownloadProcessRegistryImpl = (
 
       if (!argv || !matchesSteamCmdWorkshopCommand(argv, entry.workshopId)) {
         yield* removeEntry(entry.workshopId)
-        yield* logger.info(`Removed stale SteamCMD registry entry for ${entry.workshopId}`)
+        const prefix = context === "startup-sweep" ? "Startup sweep removed" : "Removed"
+        yield* logger.info(`${prefix} stale SteamCMD registry entry for ${entry.workshopId}`)
         return null
       }
 
@@ -284,7 +286,11 @@ export const makeDownloadProcessRegistryImpl = (
       if (!killed) return null
 
       yield* removeEntry(entry.workshopId)
-      yield* logger.info(`Stopped SteamCMD process for ${entry.workshopId} via ${source}`)
+      const action =
+        context === "startup-sweep"
+          ? "Startup sweep stopped leftover SteamCMD process"
+          : "Stopped SteamCMD process"
+      yield* logger.info(`${action} for ${entry.workshopId} via ${source}`)
       return { _tag: "Stopped", workshopId: entry.workshopId, source }
     })
 
@@ -362,6 +368,17 @@ export const makeDownloadProcessRegistryImpl = (
           catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
         }).pipe(Effect.catchAll(() => Effect.succeed<string[]>([])))
 
+        const registryFiles = files.filter((file) => file.endsWith(".json"))
+        if (registryFiles.length > 0) {
+          yield* logger.info(
+            `Startup sweeping ${registryFiles.length} download process registry entr${
+              registryFiles.length === 1 ? "y" : "ies"
+            }`
+          )
+        }
+
+        let stopped = 0
+        let invalid = 0
         for (const file of files) {
           if (!file.endsWith(".json")) continue
           const raw = yield* Effect.tryPromise({
@@ -370,13 +387,21 @@ export const makeDownloadProcessRegistryImpl = (
           }).pipe(Effect.catchAll(() => Effect.succeed("")))
           const entry = parseRegistryEntry(raw)
           if (!entry) {
+            invalid += 1
             yield* Effect.tryPromise({
               try: () => rm(resolve(dir, file), { force: true }),
               catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
             }).pipe(Effect.catchAll(() => Effect.void))
             continue
           }
-          yield* stopRegistryEntry(entry, "registry")
+          const result = yield* stopRegistryEntry(entry, "registry", "startup-sweep")
+          if (result?._tag === "Stopped") stopped += 1
+        }
+
+        if (registryFiles.length > 0) {
+          yield* logger.info(
+            `Startup download process registry sweep complete: stopped=${stopped}, invalid=${invalid}`
+          )
         }
       }),
   }

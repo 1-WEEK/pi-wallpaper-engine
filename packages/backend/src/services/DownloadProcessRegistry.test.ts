@@ -11,6 +11,7 @@ import {
   type ProcessCommandLine,
   type ProcessRegistryPlatform,
 } from "./DownloadProcessRegistry.js"
+import type { LoggerImpl } from "./Logger.js"
 
 const tempDirs: string[] = []
 
@@ -49,6 +50,17 @@ const makePlatform = (
     now: () => 123,
   }
   return { platform, kills }
+}
+
+const makeLogger = () => {
+  const lines: string[] = []
+  const logger: LoggerImpl = {
+    info: (message) => Effect.sync(() => void lines.push(`INFO ${message}`)),
+    warn: (message) => Effect.sync(() => void lines.push(`WARN ${message}`)),
+    error: (message) => Effect.sync(() => void lines.push(`ERROR ${message}`)),
+    debug: () => Effect.void,
+  }
+  return { logger, lines }
 }
 
 describe("matchesSteamCmdWorkshopCommand", () => {
@@ -146,5 +158,58 @@ describe("DownloadProcessRegistry", () => {
 
     expect(result).toEqual({ _tag: "Stopped", workshopId: "123", source: "scan" })
     expect(kills).toEqual([99])
+  })
+
+  test("startup sweep removes stale entries without killing unrelated processes", async () => {
+    const stateRoot = tempStateRoot()
+    const { platform, kills } = makePlatform({
+      commandLines: new Map([[42, null]]),
+      processes: [{ pid: 99, argv: steamCmdArgs("999") }],
+    })
+    const { logger, lines } = makeLogger()
+    const registry = makeDownloadProcessRegistryImpl({ stateRoot, platform, logger })
+    await Effect.runPromise(registry.register("123", 42, steamCmdArgs("123")))
+
+    await Effect.runPromise(registry.sweep())
+
+    expect(kills).toEqual([])
+    expect(existsSync(downloadProcessRegistryPath("123", stateRoot))).toBe(false)
+    expect(lines).toContain("INFO Startup sweeping 1 download process registry entry")
+    expect(lines).toContain("INFO Startup sweep removed stale SteamCMD registry entry for 123")
+  })
+
+  test("startup sweep kills verified leftover SteamCMD processes", async () => {
+    const stateRoot = tempStateRoot()
+    const { platform, kills } = makePlatform({
+      commandLines: new Map([[42, steamCmdArgs("123")]]),
+    })
+    const { logger, lines } = makeLogger()
+    const registry = makeDownloadProcessRegistryImpl({ stateRoot, platform, logger })
+    await Effect.runPromise(registry.register("123", 42, steamCmdArgs("123")))
+
+    await Effect.runPromise(registry.sweep())
+
+    expect(kills).toEqual([42])
+    expect(existsSync(downloadProcessRegistryPath("123", stateRoot))).toBe(false)
+    expect(lines).toContain(
+      "INFO Startup sweep stopped leftover SteamCMD process for 123 via registry"
+    )
+    expect(lines).toContain(
+      "INFO Startup download process registry sweep complete: stopped=1, invalid=0"
+    )
+  })
+
+  test("startup sweep treats mismatched PIDs as stale evidence and does not kill", async () => {
+    const stateRoot = tempStateRoot()
+    const { platform, kills } = makePlatform({
+      commandLines: new Map([[42, ["/bin/sleep", "1000"]]]),
+    })
+    const registry = makeDownloadProcessRegistryImpl({ stateRoot, platform })
+    await Effect.runPromise(registry.register("123", 42, steamCmdArgs("123")))
+
+    await Effect.runPromise(registry.sweep())
+
+    expect(kills).toEqual([])
+    expect(existsSync(downloadProcessRegistryPath("123", stateRoot))).toBe(false)
   })
 })
