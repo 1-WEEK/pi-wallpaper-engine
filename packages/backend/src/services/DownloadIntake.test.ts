@@ -36,6 +36,20 @@ const WE_APPID = "431960"
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const withTimeout = async <T>(promise: Promise<T>, ms = 1_500): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Timed out waiting for condition")), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 const waitFor = async <T>(probe: () => T | null | undefined | false): Promise<T> => {
   const deadline = Date.now() + 1_500
   while (Date.now() < deadline) {
@@ -315,6 +329,9 @@ const makeHarness = (
 const start = async (harness: ReturnType<typeof makeHarness>, workshopId: string) =>
   (await harness.intake()).start(workshopId).pipe((effect) => harness.runtime.runPromise(effect))
 
+const cancel = async (harness: ReturnType<typeof makeHarness>, workshopId: string) =>
+  (await harness.intake()).cancel(workshopId).pipe((effect) => harness.runtime.runPromise(effect))
+
 describe("DownloadIntake.start", () => {
   test("starts asynchronously and finalizes a video wallpaper into the library", async () => {
     const harness = makeHarness()
@@ -450,5 +467,128 @@ describe("DownloadIntake.start", () => {
     expect(result).toEqual({ _tag: "Started", workshopId: "fallback" })
     await waitFor(() => harness.tasks.rows.get("fallback")?.stage === "complete")
     expect(harness.library.rows.get("fallback")?.title).toBe("fallback")
+  })
+})
+
+describe("DownloadIntake.cancel", () => {
+  test("cancels a live intake, publishes a terminal event, and cleans source leftovers", async () => {
+    let started = false
+    const harness = makeHarness({
+      download: (workshopId, onProgress) =>
+        Effect.gen(function* () {
+          started = true
+          createWallpaper(harness.mediaRoot, workshopId)
+          onProgress?.({
+            workshopId,
+            stage: "downloading",
+            message: "1.0 MB / 2.0 MB",
+            percent: 50,
+            bytes_done: 1_000_000,
+            bytes_total: 2_000_000,
+          })
+          yield* Effect.never
+          return { workshopId, localPath: "", sizeBytes: 0 } satisfies DownloadResult
+        }),
+    })
+    const intake = await harness.intake()
+
+    const terminalEvent = harness.runtime.runPromise(
+      intake.progressStream("live-cancel").pipe(
+        Stream.filter((event) => event.stage === "error"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.map((events) => Array.from(events)[0])
+      )
+    )
+
+    const startedResult = await harness.runtime.runPromise(intake.start("live-cancel"))
+    expect(startedResult).toEqual({ _tag: "Started", workshopId: "live-cancel" })
+    await waitFor(() => (started ? true : null))
+    await waitFor(() => {
+      const row = harness.tasks.rows.get("live-cancel")
+      return row?.stage === "downloading" ? row : null
+    })
+    expect(existsSync(join(harness.mediaRoot, "source", "live-cancel"))).toBe(true)
+
+    const result = await harness.runtime.runPromise(intake.cancel("live-cancel"))
+
+    expect(result).toEqual({ _tag: "Cancelling", workshopId: "live-cancel" })
+    const task = await waitFor(() => {
+      const row = harness.tasks.rows.get("live-cancel")
+      return row?.stage === "error" ? row : null
+    })
+    expect(task.message).toBe("Cancelled")
+    expect(task.finished_at).toBeNumber()
+    expect(await withTimeout(terminalEvent)).toEqual({
+      workshopId: "live-cancel",
+      stage: "error",
+      message: "Cancelled",
+    })
+    expect(harness.library.rows.has("live-cancel")).toBe(false)
+    expect(existsSync(join(harness.mediaRoot, "source", "live-cancel"))).toBe(false)
+  })
+
+  test("marks an unfinished task without live work as zombie-cancelled", async () => {
+    const harness = makeHarness()
+    harness.tasks.rows.set(
+      "zombie",
+      baseTask("zombie", {
+        stage: "downloading",
+        message: "Still downloading",
+        finished_at: null,
+      })
+    )
+    createWallpaper(harness.mediaRoot, "zombie")
+    const intake = await harness.intake()
+    const terminalEvent = harness.runtime.runPromise(
+      intake.progressStream("zombie").pipe(
+        Stream.filter((event) => event.stage === "error"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.map((events) => Array.from(events)[0])
+      )
+    )
+    await sleep(10)
+
+    const result = await harness.runtime.runPromise(intake.cancel("zombie"))
+
+    expect(result).toEqual({ _tag: "CancelledZombie", workshopId: "zombie" })
+    const task = harness.tasks.rows.get("zombie")
+    expect(task?.stage).toBe("error")
+    expect(task?.message).toBe("Cancelled (zombie cleanup)")
+    expect(task?.finished_at).toBeNumber()
+    expect(await withTimeout(terminalEvent)).toEqual({
+      workshopId: "zombie",
+      stage: "error",
+      message: "Cancelled (zombie cleanup)",
+    })
+    expect(existsSync(join(harness.mediaRoot, "source", "zombie"))).toBe(false)
+  })
+
+  test("returns not-found when there is no live or unfinished task evidence", async () => {
+    const harness = makeHarness()
+    harness.tasks.rows.set(
+      "finished",
+      baseTask("finished", {
+        stage: "complete",
+        message: "Library updated",
+        finished_at: Date.now(),
+      })
+    )
+
+    const missing = await cancel(harness, "missing")
+    const finished = await cancel(harness, "finished")
+
+    expect(missing).toEqual({
+      _tag: "NotFound",
+      workshopId: "missing",
+      message: "No active download for this workshop id",
+    })
+    expect(finished).toEqual({
+      _tag: "NotFound",
+      workshopId: "finished",
+      message: "No active download for this workshop id",
+    })
+    expect(harness.tasks.rows.get("finished")?.stage).toBe("complete")
   })
 })

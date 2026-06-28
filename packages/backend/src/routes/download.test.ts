@@ -93,6 +93,38 @@ describe("download routes", () => {
     })
   })
 
+  test("POST /:workshopId/cancel maps live cancellation to 202", async () => {
+    const { app, runtime } = buildApp({
+      start: (workshopId) => Effect.succeed({ _tag: "Started", workshopId }),
+      cancel: (workshopId) => Effect.succeed({ _tag: "Cancelling", workshopId }),
+      progressStream: () => Stream.empty,
+    })
+    runtimes.push(runtime as ManagedRuntime.ManagedRuntime<unknown, never>)
+
+    const res = await app.handle(
+      new Request("http://localhost/api/download/abc/cancel", { method: "POST" })
+    )
+
+    expect(res.status).toBe(202)
+    expect(await res.json()).toEqual({ ok: true, workshopId: "abc", status: "cancelling" })
+  })
+
+  test("POST /:workshopId/cancel maps zombie cancellation to 202", async () => {
+    const { app, runtime } = buildApp({
+      start: (workshopId) => Effect.succeed({ _tag: "Started", workshopId }),
+      cancel: (workshopId) => Effect.succeed({ _tag: "CancelledZombie", workshopId }),
+      progressStream: () => Stream.empty,
+    })
+    runtimes.push(runtime as ManagedRuntime.ManagedRuntime<unknown, never>)
+
+    const res = await app.handle(
+      new Request("http://localhost/api/download/abc/cancel", { method: "POST" })
+    )
+
+    expect(res.status).toBe(202)
+    expect(await res.json()).toEqual({ ok: true, workshopId: "abc", status: "cancelled" })
+  })
+
   test("POST /:workshopId/cancel maps NotFound to 404", async () => {
     const { app, runtime } = buildApp({
       start: (workshopId) => Effect.succeed({ _tag: "Started", workshopId }),
