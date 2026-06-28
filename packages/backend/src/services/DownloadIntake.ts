@@ -11,6 +11,7 @@ import { decideTranscode } from "../transcode/decide.js"
 import { ffprobe } from "../transcode/ffprobe.js"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
+import { DownloadProcessRegistry } from "./DownloadProcessRegistry.js"
 import { DownloadTasks } from "./DownloadTasks.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
@@ -88,6 +89,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
       const tasks = yield* DownloadTasks
       const storage = yield* Storage
       const migrate = yield* Migrate
+      const processRegistry = yield* DownloadProcessRegistry
       const pubsub = yield* PubSub.unbounded<DownloadProgressEvent>()
       const inflight = new Map<string, Fiber.RuntimeFiber<unknown, unknown>>()
       const probeVideo = deps.probeVideo ?? ffprobe
@@ -324,6 +326,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
         Effect.gen(function* () {
           const fiber = inflight.get(workshopId)
           if (fiber) {
+            yield* processRegistry.stop(workshopId)
             yield* Fiber.interrupt(fiber).pipe(Effect.forkDaemon)
             return { _tag: "Cancelling", workshopId }
           }
@@ -331,6 +334,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           const task = yield* tasks.get(workshopId)
           if (task && task.finished_at === null) {
             const message = "Cancelled (zombie cleanup)"
+            yield* processRegistry.stop(workshopId)
             yield* publish({ workshopId, stage: "error", message })
             yield* markError(workshopId, message)
             yield* cleanupOrphan(workshopId)

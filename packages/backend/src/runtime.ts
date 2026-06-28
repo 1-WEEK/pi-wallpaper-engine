@@ -3,6 +3,7 @@ import { ConfigLive, Config as ConfigTag } from "./services/Config.js"
 import { DbLive } from "./services/Db.js"
 import { DisplayLive } from "./services/Display.js"
 import { DownloadIntakeLive } from "./services/DownloadIntake.js"
+import { DownloadProcessRegistryLive } from "./services/DownloadProcessRegistry.js"
 import { DownloadTasksLive } from "./services/DownloadTasks.js"
 import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
@@ -56,6 +57,7 @@ export const buildLayer = (configPath: string) => {
     Layer.provideMerge(LibraryLive),
     Layer.provideMerge(DisplayLive),
     Layer.provideMerge(SteamCmdLive),
+    Layer.provideMerge(DownloadProcessRegistryLive),
     Layer.provideMerge(StorageLive(configPath)),
     Layer.provideMerge(DbLive),
     Layer.provideMerge(MpvLive),

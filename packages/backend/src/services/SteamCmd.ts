@@ -4,6 +4,7 @@ import { existsSync } from "node:fs"
 import { readdir, stat } from "node:fs/promises"
 import { SteamCmdError } from "@pwe/shared"
 import { Config } from "./Config.js"
+import { DownloadProcessRegistry, steamCmdWorkshopCommand } from "./DownloadProcessRegistry.js"
 import { Logger } from "./Logger.js"
 import { Storage } from "./Storage.js"
 
@@ -191,6 +192,7 @@ export const SteamCmdLive = Layer.effect(
     const config = yield* Config
     const logger = yield* Logger
     const storage = yield* Storage
+    const processRegistry = yield* DownloadProcessRegistry
     const pubsub = yield* PubSub.unbounded<DownloadProgress>()
 
     if (!existsSync(config.steam.steamcmd_path)) {
@@ -214,32 +216,27 @@ export const SteamCmdLive = Layer.effect(
                 })
               )
             )
+            const installDir = resolve(dataRoot, config.paths.source_dir, workshopId)
+            const argv = steamCmdWorkshopCommand({
+              steamcmdPath: config.steam.steamcmd_path,
+              installDir,
+              username: config.steam.username,
+              workshopId,
+            })
             const child = yield* Effect.try({
               try: () =>
-                Bun.spawn(
-                  [
-                    config.steam.steamcmd_path,
-                    "+force_install_dir",
-                    resolve(dataRoot, config.paths.source_dir, workshopId),
-                    "+login",
-                    config.steam.username,
-                    "+workshop_download_item",
-                    WE_APPID,
-                    workshopId,
-                    "+quit",
-                  ],
-                  {
-                    stdout: "pipe",
-                    stderr: "pipe",
-                    stdin: "ignore",
-                  }
-                ),
+                Bun.spawn(argv, {
+                  stdout: "pipe",
+                  stderr: "pipe",
+                  stdin: "ignore",
+                }),
               catch: (cause) =>
                 new SteamCmdError({
                   kind: "BinaryNotFound",
                   message: `Failed to spawn SteamCMD: ${cause instanceof Error ? cause.message : String(cause)}`,
                 }),
             })
+            yield* processRegistry.register(workshopId, child.pid, argv)
             return { child, dataRoot }
           }),
 
@@ -465,12 +462,15 @@ export const SteamCmdLive = Layer.effect(
 
           // release — kill if still running
           ({ child }) =>
-            Effect.sync(() => {
-              try {
-                child.kill()
-              } catch {
-                // ignore
-              }
+            Effect.gen(function* () {
+              yield* Effect.sync(() => {
+                try {
+                  child.kill()
+                } catch {
+                  // ignore
+                }
+              })
+              yield* processRegistry.unregister(workshopId)
             })
         ),
     }

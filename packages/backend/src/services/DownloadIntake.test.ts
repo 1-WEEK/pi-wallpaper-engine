@@ -18,6 +18,11 @@ import { join } from "node:path"
 import { Config, type RuntimeConfig } from "./Config.js"
 import { Db, type DbImpl } from "./Db.js"
 import {
+  DownloadProcessRegistry,
+  type DownloadProcessRegistryImpl,
+  type DownloadProcessStopResult,
+} from "./DownloadProcessRegistry.js"
+import {
   DownloadIntake,
   makeDownloadIntakeLive,
   type DownloadIntakeImpl,
@@ -199,6 +204,25 @@ const makeTranscodeQueue = () => {
   return { impl, enqueues }
 }
 
+const makeProcessRegistry = () => {
+  const stops: string[] = []
+  const impl: DownloadProcessRegistryImpl = {
+    register: () => Effect.void,
+    unregister: () => Effect.void,
+    stop: (workshopId) =>
+      Effect.sync(() => {
+        stops.push(workshopId)
+        return {
+          _tag: "Stopped",
+          workshopId,
+          source: "registry",
+        } satisfies DownloadProcessStopResult
+      }),
+    sweep: () => Effect.void,
+  }
+  return { impl, stops }
+}
+
 const makeDb = (): DbImpl => ({
   query: () => Effect.succeed([]),
   queryOne: () => Effect.succeed(null),
@@ -240,6 +264,7 @@ const makeHarness = (
   const tasks = makeTasks()
   const library = makeLibrary()
   const transcode = makeTranscodeQueue()
+  const registry = makeProcessRegistry()
 
   const storageImpl: StorageImpl = {
     status: () =>
@@ -305,6 +330,7 @@ const makeHarness = (
     Layer.provideMerge(Layer.succeed(Db, makeDb())),
     Layer.provideMerge(Layer.succeed(SteamWorkshop, workshopImpl)),
     Layer.provideMerge(Layer.succeed(SteamCmd, steamImpl)),
+    Layer.provideMerge(Layer.succeed(DownloadProcessRegistry, registry.impl)),
     Layer.provideMerge(Layer.succeed(Library, library.impl)),
     Layer.provideMerge(Layer.succeed(TranscodeQueue, transcode.impl)),
     Layer.provideMerge(Layer.succeed(Logger, makeLogger())),
@@ -323,7 +349,7 @@ const makeHarness = (
       })
     )
 
-  return { runtime, intake, mediaRoot, tasks, library, transcode }
+  return { runtime, intake, mediaRoot, tasks, library, transcode, registry }
 }
 
 const start = async (harness: ReturnType<typeof makeHarness>, workshopId: string) =>
@@ -513,6 +539,7 @@ describe("DownloadIntake.cancel", () => {
     const result = await harness.runtime.runPromise(intake.cancel("live-cancel"))
 
     expect(result).toEqual({ _tag: "Cancelling", workshopId: "live-cancel" })
+    expect(harness.registry.stops).toEqual(["live-cancel"])
     const task = await waitFor(() => {
       const row = harness.tasks.rows.get("live-cancel")
       return row?.stage === "error" ? row : null
@@ -553,6 +580,7 @@ describe("DownloadIntake.cancel", () => {
     const result = await harness.runtime.runPromise(intake.cancel("zombie"))
 
     expect(result).toEqual({ _tag: "CancelledZombie", workshopId: "zombie" })
+    expect(harness.registry.stops).toEqual(["zombie"])
     const task = harness.tasks.rows.get("zombie")
     expect(task?.stage).toBe("error")
     expect(task?.message).toBe("Cancelled (zombie cleanup)")

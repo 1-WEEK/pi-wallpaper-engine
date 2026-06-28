@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import { rm } from "node:fs/promises"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
+import { DownloadProcessRegistry } from "./DownloadProcessRegistry.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
 import { Storage } from "./Storage.js"
@@ -75,6 +76,7 @@ export const DownloadTasksLive = Layer.effect(
     const library = yield* Library
     const config = yield* Config
     const storage = yield* Storage
+    const processRegistry = yield* DownloadProcessRegistry
 
     const sweep = () =>
       db.exec(`DELETE FROM download_tasks WHERE finished_at IS NOT NULL AND finished_at < ?`, [
@@ -102,6 +104,7 @@ export const DownloadTasksLive = Layer.effect(
 
         const dataRoot = yield* storage.mediaRootOrNull()
         for (const { workshop_id } of orphans) {
+          yield* processRegistry.stop(workshop_id)
           const lib = yield* library
             .get(workshop_id)
             .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
@@ -170,6 +173,7 @@ export const DownloadTasksLive = Layer.effect(
 
         const dataRoot = yield* storage.mediaRootOrNull()
         for (const { workshop_id } of zombies) {
+          yield* processRegistry.stop(workshop_id)
           const lib = yield* library
             .get(workshop_id)
             .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
