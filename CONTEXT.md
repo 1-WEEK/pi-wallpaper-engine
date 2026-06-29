@@ -9,6 +9,13 @@ A Wallpaper Engine **Video** wallpaper player on a Raspberry Pi 4B. The web UI b
 - **Download process registry**: The local record used to reconnect a download intake to the SteamCMD process doing the work.
 - **Download progress stream**: The live per-item observations that tell the UI where a download intake is in its lifecycle.
 - **Download reconciler**: The startup and stale-task maintenance that turns interrupted download intake state into a terminal visible result and removes unsafe leftovers.
+- **Media root**: The currently-active storage directory media reads and writes target (`currentRoot` / `mediaRoot()` internally; `data_root` in API responses). It is the custom root if set, else the default root.
+- **Default root**: The factory-default storage location (`default_root` in API responses; config `paths.data_root`).
+- **Custom root**: The user's persisted override of the media root (config `storage.root`; `null` means "use the default root").
+- **Allowed roots**: The whitelist fence a root must sit inside to be browsed or selected (`allowedRoots` / `candidateRoots`). A guardrail for the single admin, enforced via `realpath` escape detection — not exposed in the API.
+- **Target root**: A root being switched to, pending validation and possible migration (`target_root` request field).
+
+> Naming convention: `snake_case` at boundaries (HTTP JSON, config keys, SQLite columns); `camelCase` for internal TypeScript.
 
 ## Architecture
 - **Phase 1 (Active)**: Direct playback of original video files via `mpv` spawned by the backend over JSON IPC.
