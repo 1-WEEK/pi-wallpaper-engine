@@ -11,6 +11,8 @@ interface FakeFailures {
   readonly armFails?: boolean
   readonly displayOffFails?: boolean
   readonly stopForIdleFails?: boolean
+  // When set, fake displayOn reports a successful restore of this wallpaper.
+  readonly displayOnRestores?: string
 }
 
 // Recording fakes: every dependency call appends to `events`, so the ordering
@@ -46,7 +48,14 @@ const makeRuntime = (failures: FakeFailures = {}) => {
     displayOn: () =>
       Effect.sync(() => {
         events.push("playerPower.displayOn")
-        return { ok: true as const, state: "on" as const, restored: false }
+        return failures.displayOnRestores
+          ? {
+              ok: true as const,
+              state: "on" as const,
+              restored: true,
+              restored_workshop_id: failures.displayOnRestores,
+            }
+          : { ok: true as const, state: "on" as const, restored: false }
       }),
   })
 
@@ -129,12 +138,35 @@ describe("PlaybackLive", () => {
     }
   })
 
-  test("displayOn delegates to playerPower and never arms rotation (ADR 0009 preserved behavior)", async () => {
+  test("displayOn without a restore does not arm rotation", async () => {
     const { events, runtime } = makeRuntime()
     try {
       const result = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.displayOn()))
       expect(result).toEqual({ ok: true, state: "on", restored: false })
       expect(events).toEqual(["playerPower.displayOn"])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("displayOn re-arms rotation on the restored wallpaper and strips the internal id (ADR 0009 follow-up, signed off 2026-07-06)", async () => {
+    const { events, runtime } = makeRuntime({ displayOnRestores: "456" })
+    try {
+      const result = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.displayOn()))
+      // The internal restored_workshop_id never leaks into the public result.
+      expect(result).toEqual({ ok: true, state: "on", restored: true })
+      expect(events).toEqual(["playerPower.displayOn", "rotation.arm:456"])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("displayOn still reports the restore when re-arming rotation fails", async () => {
+    const { events, runtime } = makeRuntime({ displayOnRestores: "456", armFails: true })
+    try {
+      const result = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.displayOn()))
+      expect(result).toEqual({ ok: true, state: "on", restored: true })
+      expect(events).toEqual(["playerPower.displayOn", "rotation.arm:456"])
     } finally {
       await runtime.dispose()
     }

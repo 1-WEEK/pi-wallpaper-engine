@@ -102,8 +102,16 @@ export const PlaybackLive = Layer.scoped(
           return yield* playerPower.displayOff()
         }),
 
-      // Deliberately no rotation.arm after restore (ADR 0009 preserved behavior).
-      displayOn: () => playerPower.displayOn(),
+      displayOn: () =>
+        Effect.gen(function* () {
+          const { restored_workshop_id, ...result } = yield* playerPower.displayOn()
+          // Re-arm rotation on the restored wallpaper (ADR 0009 follow-up,
+          // signed off 2026-07-06). Best-effort, like arming after play.
+          if (result.restored && restored_workshop_id) {
+            yield* rotation.arm(restored_workshop_id).pipe(Effect.catchAll(() => Effect.void))
+          }
+          return result
+        }),
 
       next: () => rotation.next(),
       prev: () => rotation.prev(),

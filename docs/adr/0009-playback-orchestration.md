@@ -57,12 +57,18 @@ Introduce a `Playback` Effect service
 - **Behavior-preserving**: every route-visible result, error mapping, and
   ordering is mirrored exactly; acceptance is the machine gate (ADR 0005).
 
-**Explicitly preserved, recorded as an open follow-up:** display-on restore and
-startup restore do NOT re-arm rotation. After an off→on cycle the restored
-wallpaper loops but rotation stays disarmed until the next explicit play. This
-matches ADR 0004's "arm on explicit play" rule. Changing it is now a one-line
-decision inside `Playback.displayOn()`, but it is a behavior change requiring
-human sign-off — do not bundle it into refactors.
+**Follow-up resolved (signed off 2026-07-06):** display-on restore now re-arms
+rotation on the restored wallpaper. `PlayerPower.displayOn()` reports the
+restored workshop id as an internal fact (`restored_workshop_id`), and
+`Playback.displayOn()` arms rotation with it best-effort, stripping the field
+before the result reaches HTTP — the response body is unchanged. Arming
+respects `play_mode` as usual (`Rotation.arm` no-ops in `single`).
+
+**Still preserved:** startup restore (inside `PlayerPower`'s forkScoped boot
+effect) does NOT re-arm rotation — after a backend restart the restored
+wallpaper loops until the next explicit play or display-on. Changing that would
+mean moving startup restore into `Playback`; it remains an open follow-up
+requiring human sign-off.
 
 ## Consequences
 

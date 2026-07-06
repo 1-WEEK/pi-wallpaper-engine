@@ -20,6 +20,9 @@ export interface PowerOnResult {
   readonly state: "on"
   readonly restored: boolean
   readonly restore_error?: string
+  // Internal fact for the Playback orchestrator (which wallpaper was restored);
+  // stripped before the result reaches HTTP.
+  readonly restored_workshop_id?: string
 }
 
 export interface PlayerPowerImpl {
@@ -161,7 +164,7 @@ export const PlayerPowerLive = Layer.scoped(
         )
 
         return restored
-          ? ({ restored: true } as const)
+          ? ({ restored: true, restored_workshop_id: saved.workshop_id } as const)
           : ({ restored: false, restore_error: "Restore failed; saved state kept." } as const)
       })
 
