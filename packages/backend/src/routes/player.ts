@@ -1,10 +1,8 @@
 import { Elysia, t } from "elysia"
 import { Effect, Stream } from "effect"
 import { Mpv } from "../services/Mpv.js"
-import { PlayerPower } from "../services/PlayerPower.js"
+import { Playback } from "../services/Playback.js"
 import { PlayerWatch } from "../services/PlayerWatch.js"
-import { Rotation } from "../services/Rotation.js"
-import { SleepTimer } from "../services/SleepTimer.js"
 import { httpFromError } from "./httpError.js"
 import type { AppContext, AppRuntime } from "../runtime.js"
 import type { AuthService } from "../services/Auth.js"
@@ -40,12 +38,8 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
       runRoute(
         set,
         Effect.gen(function* () {
-          const playerPower = yield* PlayerPower
-          const rotation = yield* Rotation
-          const result = yield* playerPower.play(params.workshopId)
-          // Best-effort: a play succeeds even if arming rotation hiccups.
-          yield* rotation.arm(params.workshopId).pipe(Effect.catchAll(() => Effect.void))
-          return result
+          const playback = yield* Playback
+          return yield* playback.play(params.workshopId)
         })
       )
     )
@@ -76,10 +70,8 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
       runRoute(
         set,
         Effect.gen(function* () {
-          const playerPower = yield* PlayerPower
-          const rotation = yield* Rotation
-          yield* rotation.disarm()
-          return yield* playerPower.stopForIdle()
+          const playback = yield* Playback
+          return yield* playback.stop()
         })
       )
     )
@@ -114,8 +106,8 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
         runRoute(
           set,
           Effect.gen(function* () {
-            const rotation = yield* Rotation
-            yield* rotation.setMode(body.mode)
+            const playback = yield* Playback
+            yield* playback.setMode(body.mode)
             return { ok: true, mode: body.mode }
           })
         ),
@@ -129,8 +121,8 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
       runRoute(
         set,
         Effect.gen(function* () {
-          const rotation = yield* Rotation
-          yield* rotation.next()
+          const playback = yield* Playback
+          yield* playback.next()
           return { ok: true }
         })
       )
@@ -139,8 +131,8 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
       runRoute(
         set,
         Effect.gen(function* () {
-          const rotation = yield* Rotation
-          yield* rotation.prev()
+          const playback = yield* Playback
+          yield* playback.prev()
           return { ok: true }
         })
       )
@@ -151,8 +143,8 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
         runRoute(
           set,
           Effect.gen(function* () {
-            const sleep = yield* SleepTimer
-            return yield* sleep.set(body.minutes)
+            const playback = yield* Playback
+            return yield* playback.sleep(body.minutes)
           })
         ),
       {
@@ -165,8 +157,8 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
         runRoute(
           set,
           Effect.gen(function* () {
-            const rotation = yield* Rotation
-            yield* rotation.setInterval(body.seconds)
+            const playback = yield* Playback
+            yield* playback.setRotationInterval(body.seconds)
             return { ok: true, seconds: body.seconds }
           })
         ),
