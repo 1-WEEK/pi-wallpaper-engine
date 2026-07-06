@@ -14,6 +14,7 @@ A Wallpaper Engine **Video** wallpaper player on a Raspberry Pi 4B. The web UI b
 - **Custom root**: The user's persisted override of the media root (config `storage.root`; `null` means "use the default root").
 - **Allowed roots**: The whitelist fence a root must sit inside to be browsed or selected (`allowedRoots` / `candidateRoots`). A guardrail for the single admin, enforced via `realpath` escape detection — not exposed in the API.
 - **Target root**: A root being switched to, pending validation and possible migration (`target_root` request field).
+- **Switch plan**: The internal decision for a target root after validation: keep the current root, persist the target immediately, or start a background media migration. The route executes this plan; the root-selection module owns the decision.
 
 > Naming convention: `snake_case` at boundaries (HTTP JSON, config keys, SQLite columns); `camelCase` for internal TypeScript.
 
