@@ -149,9 +149,11 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           const tag = (err as { _tag?: string })._tag
           const message = downloadFailureMessage(err)
           yield* logger.error(`Download ${workshopId} failed (${tag ?? "unknown"}): ${message}`)
+          // Cleanup must finish before the task turns terminal: once finished_at
+          // is set a retry can start, and its fresh download must never race the rm.
+          yield* cleanupOrphan(workshopId)
           yield* publish({ workshopId, stage: "error", message })
           yield* markError(workshopId, message)
-          yield* cleanupOrphan(workshopId)
         }).pipe(
           Effect.catchAll((e) =>
             logger.error(`Download failure handling failed for ${workshopId}: ${String(e)}`)
@@ -335,9 +337,9 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           if (task && task.finished_at === null) {
             const message = "Cancelled (zombie cleanup)"
             yield* processRegistry.stop(workshopId)
+            yield* cleanupOrphan(workshopId)
             yield* publish({ workshopId, stage: "error", message })
             yield* markError(workshopId, message)
-            yield* cleanupOrphan(workshopId)
             return { _tag: "CancelledZombie", workshopId }
           }
 

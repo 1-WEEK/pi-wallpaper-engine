@@ -165,6 +165,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }).then(json<{ ok: true }>),
+  libraryTranscode: (id: string) =>
+    fetchWithTimeout(`/api/library/${id}/transcode`, { method: "POST" }).then(
+      json<{ ok: true; transcode_status: "pending" | "skipped"; reason: string }>
+    ),
+  libraryTranscodeRetryAll: () =>
+    fetchWithTimeout(`/api/library/transcode/retry-all`, { method: "POST" }).then(
+      json<{ ok: true; queued: number; skipped: number; invalid: number }>
+    ),
 
   play: (id: string) => fetchWithTimeout(`/api/player/play/${id}`, { method: "POST" }).then(json<unknown>),
   pause: () => fetchWithTimeout(`/api/player/pause`, { method: "POST" }).then(json<unknown>),

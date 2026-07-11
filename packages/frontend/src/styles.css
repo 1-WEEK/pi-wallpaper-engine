@@ -245,6 +245,15 @@ a {
   color: var(--danger);
 }
 
+.info-banner {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-2);
+}
+
 .summary-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1545,6 +1554,18 @@ a {
   min-height: 30px;
   padding: 0 10px;
   font-size: 12px;
+}
+
+.library-card-transcode {
+  margin-left: auto;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* When the transcode button is present it takes the auto gap; keep delete snug. */
+.library-card-transcode ~ .library-card-delete {
+  margin-left: 0;
 }
 
 .library-card-modes-row {

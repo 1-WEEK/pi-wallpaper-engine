@@ -151,6 +151,7 @@ export const TranscodeQueueLive = Layer.effect(
             yield* library.update(workshopId, {
               transcode_status: "skipped",
               transcode_progress: 0,
+              transcode_error: null,
             })
             return
           }

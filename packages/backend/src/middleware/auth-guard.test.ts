@@ -111,6 +111,16 @@ describe("originGuard", () => {
     expect(res.status).toBe(200)
   })
 
+  test("allows worker protocol POST requests without a browser origin", async () => {
+    const app = new Elysia()
+      .use(originGuard(config))
+      .post("/api/transcode/claim", () => ({ ok: true }))
+    const res = await app.handle(
+      new Request("http://localhost/api/transcode/claim", { method: "POST" })
+    )
+    expect(res.status).toBe(200)
+  })
+
   test("ignores non-api paths", async () => {
     const app = new Elysia().use(originGuard(config)).get("/", () => "ok")
     const res = await app.handle(new Request("http://localhost/"))

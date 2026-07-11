@@ -37,12 +37,16 @@ const showsTranscodeBadge = (status: LibraryItem["transcode_status"]): boolean =
   status === "claimed" ||
   status === "pending"
 
+const canRetranscode = (status: LibraryItem["transcode_status"]): boolean =>
+  status === "failed" || status === "skipped"
+
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const { mobile } = useLayout()
   const [view, setView] = useState<"grid" | "list">("grid")
   const [privacyOpen, setPrivacyOpen] = useState(false)
   const [showAdult, setShowAdult] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     if (mobile && view !== "grid") setView("grid")
@@ -102,6 +106,26 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
       })
       .catch((e: Error) => setError(e.message))
   }
+  const handleTranscode = (id: string) =>
+    api
+      .libraryTranscode(id)
+      .then(async (res) => {
+        setError(null)
+        setNotice(res.transcode_status === "skipped" ? `Not queued — ${res.reason}` : null)
+        await mutate()
+      })
+      .catch((e: Error) => setError(e.message))
+
+  const handleTranscodeAll = () =>
+    api
+      .libraryTranscodeRetryAll()
+      .then(async (res) => {
+        setError(null)
+        setNotice(`Transcode sweep: ${res.queued} queued, ${res.skipped} skipped`)
+        await mutate()
+      })
+      .catch((e: Error) => setError(e.message))
+
   const handleDisplayMode = (id: string, mode: DisplayMode) => {
     api
       .libraryUpdate(id, { display_mode: mode })
@@ -141,6 +165,15 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                 <span className="btn-icon">{appIcons.modeShuffle}</span>
                 Shuffle
               </button>
+              {rows.some((row) => canRetranscode(row.transcode_status)) && (
+                <button
+                  type="button"
+                  className="btn library-rotation-btn"
+                  onClick={handleTranscodeAll}
+                >
+                  Transcode all
+                </button>
+              )}
             </div>
           )}
           <button
@@ -207,6 +240,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+      {notice && <div className="info-banner">{notice}</div>}
       {visibleRows.length === 0 && (
         <div className="empty-state">Library is empty. Download some wallpapers in Browse.</div>
       )}
@@ -278,6 +312,16 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                         </button>
                       ))}
                     </div>
+                  )}
+                  {canRetranscode(row.transcode_status) && (
+                    <button
+                      type="button"
+                      className="btn library-card-transcode"
+                      onClick={() => handleTranscode(row.workshop_id)}
+                      aria-label="Transcode this wallpaper"
+                    >
+                      {mobile ? "⟳" : "Transcode"}
+                    </button>
                   )}
                   <button
                     type="button"
@@ -359,6 +403,15 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     </button>
                   ))}
                 </div>
+                {canRetranscode(row.transcode_status) && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => handleTranscode(row.workshop_id)}
+                  >
+                    Transcode
+                  </button>
+                )}
                 <button type="button" className="btn btn-primary" onClick={() => handlePlay(row.workshop_id)}>
                   Play
                 </button>
