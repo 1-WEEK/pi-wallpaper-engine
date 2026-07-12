@@ -103,8 +103,8 @@ describe("uniqueByPath", () => {
     ]
     const result = uniqueByPath(items)
     expect(result).toHaveLength(2)
-    expect(result[0].name).toBe("first")
-    expect(result[1].name).toBe("second")
+    expect(result[0]!.name).toBe("first")
+    expect(result[1]!.name).toBe("second")
   })
 
   test("preserves order of first occurrence", () => {
