@@ -37,17 +37,20 @@ const SOCKET_CONNECT_DELAY_MS = 200
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
-const connectSocket = async (path: string): Promise<UnixSocket> => {
+const connectSocket = async (
+  path: string,
+  handlers: {
+    data: (socket: UnixSocket, data: Buffer) => void
+    error: (socket: UnixSocket, error: Error) => void
+    close: (socket: UnixSocket) => void
+  }
+): Promise<UnixSocket> => {
   let lastErr: unknown
   for (let i = 0; i < SOCKET_CONNECT_RETRIES; i++) {
     try {
       const socket = await Bun.connect({
         unix: path,
-        socket: {
-          data() {},
-          error() {},
-          close() {},
-        },
+        socket: handlers,
       })
       return socket
     } catch (e) {
@@ -130,16 +133,6 @@ export const MpvLive = Layer.scoped(
 
     yield* logger.info(`mpv spawned pid=${child.pid}, connecting to ${config.mpv.ipc_socket}`)
 
-    // Connect to IPC socket
-    const socket = yield* Effect.tryPromise({
-      try: () => connectSocket(config.mpv.ipc_socket),
-      catch: (cause) =>
-        new MpvSpawnError({
-          reason: `mpv IPC socket not available after ${(SOCKET_CONNECT_RETRIES * SOCKET_CONNECT_DELAY_MS) / 1000}s`,
-          cause,
-        }),
-    })
-
     const pendingRef = yield* Ref.make<Map<number, PendingCommand>>(new Map())
     const requestIdRef = yield* Ref.make(0)
     const statusRef = yield* Ref.make<PlayerStatus>({
@@ -149,9 +142,6 @@ export const MpvLive = Layer.scoped(
       display_mode: config.screen.default_display_mode,
     })
 
-    // Replace the no-op data handler by re-creating the connection with a real handler
-    // is awkward; instead, attach event-style handling via socket events at the Bun level.
-    // For Bun unix sockets we get data() called inside the socket options. Re-bind here:
     let buffer = ""
     const handleData = async (chunk: string) => {
       buffer += chunk
@@ -189,37 +179,22 @@ export const MpvLive = Layer.scoped(
       }
     }
 
-    // Bun unix sockets don't expose `.on('data')` directly the same way; we used
-    // the `socket` config which is bound at connect time. As a workaround we
-    // patch the data handler by reading from the underlying connection. For mpv
-    // we instead pipe its stdout for line-based parsing — but mpv writes its
-    // command responses only over the IPC socket, not stdout.
-    //
-    // Bun's connect API: pass a socket handler at connect time. We need to
-    // refactor: connect with a real data handler that closes over our state.
-    // Cleaner — re-connect with handler now that state is set up.
-
-    socket.end()
-
     const realSocket = yield* Effect.tryPromise({
       try: () =>
-        Bun.connect({
-          unix: config.mpv.ipc_socket,
-          socket: {
-            data(_s, data) {
-              void handleData(data.toString("utf-8"))
-            },
-            error(_s, err) {
-              void Effect.runPromise(logger.error(`mpv IPC socket error: ${err.message}`))
-            },
-            close() {
-              void Effect.runPromise(logger.warn("mpv IPC socket closed"))
-            },
+        connectSocket(config.mpv.ipc_socket, {
+          data(_s, data) {
+            void handleData(data.toString("utf-8"))
+          },
+          error(_s, err) {
+            void Effect.runPromise(logger.error(`mpv IPC socket error: ${err.message}`))
+          },
+          close() {
+            void Effect.runPromise(logger.warn("mpv IPC socket closed"))
           },
         }),
       catch: (cause) =>
         new MpvSpawnError({
-          reason: "Failed to re-connect mpv IPC socket with handler",
+          reason: `mpv IPC socket not available after ${(SOCKET_CONNECT_RETRIES * SOCKET_CONNECT_DELAY_MS) / 1000}s`,
           cause,
         }),
     })
