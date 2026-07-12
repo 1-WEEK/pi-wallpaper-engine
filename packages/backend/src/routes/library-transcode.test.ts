@@ -66,7 +66,10 @@ const makeRow = (overrides: Partial<LibraryItem>): LibraryItem => ({
   ...overrides,
 })
 
-const makeStack = (rowList: LibraryItem[]) => {
+const makeStack = (
+  rowList: LibraryItem[],
+  options: { readonly failPendingUpdate?: boolean } = {}
+) => {
   const sqlite = new Database(":memory:")
   openDbs.push(sqlite)
   sqlite.exec(DDL)
@@ -85,7 +88,14 @@ const makeStack = (rowList: LibraryItem[]) => {
         sqlite.prepare(sql).run(...(params as any[]))
       }),
     transaction: <A, E, R>(fn: () => Effect.Effect<A, E, R>) =>
-      fn() as Effect.Effect<A, E | DbError, R>,
+      Effect.gen(function* () {
+        yield* tryDb("begin", () => sqlite.exec("BEGIN"))
+        const result = yield* fn().pipe(
+          Effect.tapError(() => tryDb("rollback", () => sqlite.exec("ROLLBACK")))
+        )
+        yield* tryDb("commit", () => sqlite.exec("COMMIT"))
+        return result
+      }) as Effect.Effect<A, E | DbError, R>,
   }
 
   const rows = new Map(rowList.map((r) => [r.workshop_id, r]))
@@ -99,10 +109,12 @@ const makeStack = (rowList: LibraryItem[]) => {
     },
     insert: () => Effect.void,
     update: (id, patch) =>
-      Effect.sync(() => {
-        const row = rows.get(id)
-        if (row) rows.set(id, { ...row, ...patch } as LibraryItem)
-      }),
+      options.failPendingUpdate && patch.transcode_status === "pending"
+        ? Effect.fail(new DbError({ operation: "library.update", cause: "injected" }))
+        : Effect.sync(() => {
+            const row = rows.get(id)
+            if (row) rows.set(id, { ...row, ...patch } as LibraryItem)
+          }),
     remove: () => Effect.void,
     playablePath: (row) => Effect.succeed(row.transcoded_path ?? row.source_path),
   }
@@ -211,6 +223,31 @@ describe("POST /api/library/:workshopId/transcode", () => {
     } finally {
       process.env[ENV] = TEST_KEY
     }
+  })
+
+  test("concurrent retriggers enqueue at most one active job", async () => {
+    const stack = makeStack([makeRow({ transcode_status: "failed" })])
+    const responses = await Promise.all([
+      post(stack.app, "/api/library/abc/transcode"),
+      post(stack.app, "/api/library/abc/transcode"),
+    ])
+
+    expect(responses.map((res) => res.status).sort()).toEqual([200, 409])
+    const jobs = stack.sqlite.query("SELECT id FROM transcode_jobs").all()
+    expect(jobs).toHaveLength(1)
+  })
+
+  test("rolls back the job when the library transition fails", async () => {
+    const stack = makeStack(
+      [makeRow({ transcode_status: "failed" })],
+      { failPendingUpdate: true }
+    )
+
+    const response = await post(stack.app, "/api/library/abc/transcode")
+
+    expect(response.status).toBe(500)
+    const jobs = stack.sqlite.query("SELECT id FROM transcode_jobs").all()
+    expect(jobs).toHaveLength(0)
   })
 })
 

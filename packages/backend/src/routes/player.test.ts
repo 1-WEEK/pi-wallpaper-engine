@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer, ManagedRuntime, Stream } from "effect"
 import { Elysia } from "elysia"
-import { Playback } from "../services/Playback.js"
+import { Playback, type PlaybackImpl } from "../services/Playback.js"
 import { Mpv } from "../services/Mpv.js"
 import { PlayerWatch } from "../services/PlayerWatch.js"
 import { playerRoutes } from "./player.js"
 
 describe("playerRoutes", () => {
-  const mockPlayback = {
+  const mockPlayback: PlaybackImpl = {
     play: () => Effect.succeed({ ok: true as const, path: "/some/path" }),
     stop: () => Effect.succeed({ ok: true as const }),
     displayOff: () => Effect.succeed({ ok: true as const, state: "off" as const }),
@@ -33,7 +33,7 @@ describe("playerRoutes", () => {
     stream: () => Stream.empty,
   }
 
-  const getApp = (overrides: Partial<typeof mockPlayback> = {}) => {
+  const getApp = (overrides: Partial<PlaybackImpl> = {}) => {
     const playbackLayer = Layer.succeed(Playback, { ...mockPlayback, ...overrides })
     const mpvLayer = Layer.succeed(Mpv, mockMpv as any)
     const playerWatchLayer = Layer.succeed(PlayerWatch, mockPlayerWatch as any)
@@ -86,7 +86,7 @@ describe("playerRoutes", () => {
       sleep: (mins) =>
         Effect.sync(() => {
           sleepCalledWith = mins
-          return { active: true, deadline: "now" }
+          return { active: true, deadline: 123_456_789 }
         }),
     })
 
@@ -99,7 +99,7 @@ describe("playerRoutes", () => {
     )
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ active: true, deadline: "now" })
+    expect(await response.json()).toEqual({ active: true, deadline: 123_456_789 })
     expect(sleepCalledWith).toBe(30)
   })
 })

@@ -139,6 +139,11 @@ export const buildFfmpegArgs = (
     "-an", // wallpapers are silent on the Pi anyway
     "-progress",
     "pipe:1",
+    // The temporary filename ends in `.partial`, so ffmpeg cannot infer the
+    // output container from its extension. Keep the atomic rename workflow and
+    // declare the muxer explicitly.
+    "-f",
+    "mp4",
   ]
 
   const w = job.target_width

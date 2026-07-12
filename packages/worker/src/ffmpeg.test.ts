@@ -62,6 +62,14 @@ describe("buildFfmpegArgs", () => {
     const args = buildFfmpegArgs(job, paths, "qsv")
     expect(args).toContain("-an")
   })
+
+  test("declares the MP4 muxer when writing to a .partial path", () => {
+    const args = buildFfmpegArgs(job, paths, "x265")
+    const formatIndex = args.indexOf("-f")
+    expect(formatIndex).toBeGreaterThan(-1)
+    expect(args[formatIndex + 1]).toBe("mp4")
+    expect(args[args.length - 1]).toBe(paths.partialAbs)
+  })
 })
 
 describe("parseProgressLine", () => {

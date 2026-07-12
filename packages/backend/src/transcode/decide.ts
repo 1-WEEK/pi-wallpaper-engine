@@ -1,8 +1,12 @@
-import type { VideoProbe } from "@pwe/shared"
-
 export interface ScreenSpec {
   readonly width: number
   readonly height: number
+}
+
+export interface TranscodeSourceSpec {
+  readonly width: number
+  readonly height: number
+  readonly codec: string
 }
 
 export type TranscodeDecision =
@@ -15,7 +19,7 @@ export type TranscodeDecision =
       readonly reason: string
     }
 
-const isSameResolution = (probe: VideoProbe, screen: ScreenSpec): boolean =>
+const isSameResolution = (probe: TranscodeSourceSpec, screen: ScreenSpec): boolean =>
   probe.width === screen.width && probe.height === screen.height
 
 const aspectRatio = (w: number, h: number): number => w / h
@@ -23,7 +27,7 @@ const aspectRatio = (w: number, h: number): number => w / h
 const ASPECT_TOLERANCE = 0.05
 
 export const decideTranscode = (
-  probe: VideoProbe,
+  probe: TranscodeSourceSpec,
   screen: ScreenSpec,
   preferredCodec: "hevc" | "h264" = "hevc"
 ): TranscodeDecision => {

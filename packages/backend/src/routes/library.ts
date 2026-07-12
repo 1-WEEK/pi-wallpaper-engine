@@ -1,10 +1,11 @@
 import { Elysia, t } from "elysia"
 import { Effect } from "effect"
-import type { DisplayMode, LibraryItem, VideoProbe } from "@pwe/shared"
+import type { DisplayMode, LibraryItem } from "@pwe/shared"
 import { Config } from "../services/Config.js"
+import { Db } from "../services/Db.js"
 import { Library } from "../services/Library.js"
 import { TranscodeQueue } from "../services/TranscodeQueue.js"
-import { decideTranscode } from "../transcode/decide.js"
+import { decideTranscode, type TranscodeSourceSpec } from "../transcode/decide.js"
 import { httpFromError } from "./httpError.js"
 import { transcodeMode, type AppContext, type AppRuntime } from "../runtime.js"
 
@@ -15,20 +16,22 @@ import { transcodeMode, type AppContext, type AppRuntime } from "../runtime.js"
 const canRetrigger = (status: LibraryItem["transcode_status"]): boolean =>
   status === "failed" || status === "skipped"
 
-// Rebuild the probe decideTranscode needs from what intake stored on the
-// library row — width/height/codec are all the decision reads, so no
-// re-ffprobe of the source file is required.
-const probeFromRow = (row: LibraryItem): VideoProbe | null => {
+// Rebuild only the inputs decideTranscode needs from what intake persisted.
+const sourceSpecFromRow = (row: LibraryItem): TranscodeSourceSpec | null => {
   const match = /^(\d+)x(\d+)$/.exec(row.source_resolution)
   if (!match) return null
   return {
     width: Number(match[1]),
     height: Number(match[2]),
     codec: row.source_codec,
-    duration_seconds: 0,
-    size_bytes: row.source_size,
   }
 }
+
+type RetriggerResult =
+  | { readonly kind: "queued"; readonly reason: string }
+  | { readonly kind: "skipped"; readonly reason: string }
+  | { readonly kind: "conflict"; readonly status: LibraryItem["transcode_status"] }
+  | { readonly kind: "invalid"; readonly resolution: string }
 
 export const libraryRoutes = (runtime: AppRuntime) => {
   // See player.ts for the rationale: closes over `runtime` to keep the R
@@ -53,6 +56,35 @@ export const libraryRoutes = (runtime: AppRuntime) => {
         set.status = 500
         return { error: e instanceof Error ? e.message : String(e) }
       })
+
+  const retrigger = (workshopId: string) =>
+    Effect.gen(function* () {
+      const db = yield* Db
+      const lib = yield* Library
+      const config = yield* Config
+      const queue = yield* TranscodeQueue
+
+      return yield* db.transaction(() =>
+        Effect.gen(function* () {
+          const row = yield* lib.get(workshopId)
+          if (!canRetrigger(row.transcode_status)) {
+            return { kind: "conflict", status: row.transcode_status } as const
+          }
+
+          const source = sourceSpecFromRow(row)
+          if (!source) {
+            return { kind: "invalid", resolution: row.source_resolution } as const
+          }
+
+          const decision = decideTranscode(source, config.screen, config.transcode.target_codec)
+          yield* queue.enqueue(row.workshop_id, decision, row.source_path)
+          return {
+            kind: decision.kind === "skip" ? "skipped" : "queued",
+            reason: decision.reason,
+          } as RetriggerResult
+        })
+      )
+    })
 
   return new Elysia({ prefix: "/api/library" })
     .get("/", () =>
@@ -82,8 +114,6 @@ export const libraryRoutes = (runtime: AppRuntime) => {
             return { error: "No transcode worker is configured (PWE_WORKER_API_KEY is not set)." }
           }
           const lib = yield* Library
-          const config = yield* Config
-          const queue = yield* TranscodeQueue
           const rows = yield* lib.list()
 
           let queued = 0
@@ -91,15 +121,10 @@ export const libraryRoutes = (runtime: AppRuntime) => {
           let invalid = 0
           for (const row of rows) {
             if (!canRetrigger(row.transcode_status)) continue
-            const probe = probeFromRow(row)
-            if (!probe) {
-              invalid += 1
-              continue
-            }
-            const decision = decideTranscode(probe, config.screen, config.transcode.target_codec)
-            yield* queue.enqueue(row.workshop_id, decision, row.source_path)
-            if (decision.kind === "skip") skipped += 1
-            else queued += 1
+            const result = yield* retrigger(row.workshop_id)
+            if (result.kind === "invalid") invalid += 1
+            else if (result.kind === "skipped") skipped += 1
+            else if (result.kind === "queued") queued += 1
           }
           return { ok: true, queued, skipped, invalid }
         })
@@ -113,27 +138,21 @@ export const libraryRoutes = (runtime: AppRuntime) => {
             set.status = 503
             return { error: "No transcode worker is configured (PWE_WORKER_API_KEY is not set)." }
           }
-          const lib = yield* Library
-          const row = yield* lib.get(params.workshopId)
-          if (!canRetrigger(row.transcode_status)) {
+          const result = yield* retrigger(params.workshopId)
+          if (result.kind === "conflict") {
             set.status = 409
             return {
-              error: `Transcode can only be retriggered from failed or skipped (current: ${row.transcode_status}).`,
+              error: `Transcode can only be retriggered from failed or skipped (current: ${result.status}).`,
             }
           }
-          const probe = probeFromRow(row)
-          if (!probe) {
+          if (result.kind === "invalid") {
             set.status = 422
-            return { error: `Source resolution "${row.source_resolution}" is not parseable.` }
+            return { error: `Source resolution "${result.resolution}" is not parseable.` }
           }
-          const config = yield* Config
-          const queue = yield* TranscodeQueue
-          const decision = decideTranscode(probe, config.screen, config.transcode.target_codec)
-          yield* queue.enqueue(row.workshop_id, decision, row.source_path)
           return {
             ok: true,
-            transcode_status: decision.kind === "skip" ? "skipped" : "pending",
-            reason: decision.reason,
+            transcode_status: result.kind === "skipped" ? "skipped" : "pending",
+            reason: result.reason,
           }
         })
       )
