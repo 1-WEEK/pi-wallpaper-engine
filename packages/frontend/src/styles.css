@@ -1533,21 +1533,7 @@ a {
   display: block;
 }
 
-.library-card-modes {
-  flex: 0 1 auto;
-}
 
-.library-card-modes .segmented {
-  padding: 1px;
-  gap: 0;
-}
-
-.library-card-modes .segmented-button {
-  min-width: 0;
-  padding: 2px 6px;
-  font-size: 9px;
-  letter-spacing: 0.02em;
-}
 
 .library-card-delete {
   margin-left: auto;
@@ -1557,22 +1543,12 @@ a {
 }
 
 .library-card-transcode {
-  margin-left: auto;
   min-height: 30px;
   padding: 0 10px;
   font-size: 12px;
 }
 
-/* When the transcode button is present it takes the auto gap; keep delete snug. */
-.library-card-transcode ~ .library-card-delete {
-  margin-left: 0;
-}
 
-.library-card-modes-row {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 12px 10px;
-}
 
 .library-list {
   list-style: none;
@@ -2769,20 +2745,7 @@ a {
 .mobile-shell .library-card-play {
   flex: 1;
 }
-.mobile-shell .library-card-modes-row {
-  padding: 0 10px 10px;
-}
-.mobile-shell .library-card-modes-row .segmented {
-  width: 100%;
-}
-.mobile-shell .library-card-modes-row .segmented-button {
-  flex: 1;
-  min-width: 0;
-  font-size: 10px;
-  letter-spacing: 0.03em;
-  padding: 4px 4px;
-  min-height: 26px;
-}
+
 .mobile-shell .library-card-badge,
 .mobile-shell .library-playing-pill {
   top: 8px;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { isAdultContent, type DisplayMode, type LibraryItem } from "@pwe/shared"
+import { isAdultContent, type LibraryItem } from "@pwe/shared"
 import useSWR from "swr"
 import { api } from "../api.js"
 import { spaceSavedPercent } from "../format.js"
@@ -11,7 +11,7 @@ interface Props {
   onSystemRefresh: () => void
 }
 
-const DISPLAY_MODES: DisplayMode[] = ["fill", "fit", "stretch"]
+
 
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -126,16 +126,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
       })
       .catch((e: Error) => setError(e.message))
 
-  const handleDisplayMode = (id: string, mode: DisplayMode) => {
-    api
-      .libraryUpdate(id, { display_mode: mode })
-      .then(async () => {
-        setError(null)
-        await mutate()
-        onSystemRefresh()
-      })
-      .catch((e: Error) => setError(e.message))
-  }
+
 
   const countLabel = `${visibleRows.length} wallpaper${visibleRows.length === 1 ? "" : "s"} · ${formatBytes(totalSize)}`
 
@@ -297,22 +288,6 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     <span className="library-card-play-icon">{appIcons.play}</span>
                     Play
                   </button>
-                  {!mobile && (
-                    <div className="segmented segmented-compact library-card-modes">
-                      {DISPLAY_MODES.map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          className={`segmented-button ${
-                            row.display_mode === mode ? "active" : ""
-                          }`}
-                          onClick={() => handleDisplayMode(row.workshop_id, mode)}
-                        >
-                          {mode}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                   {canRetranscode(row.transcode_status) && (
                     <button
                       type="button"
@@ -332,24 +307,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     {mobile ? "✕" : "Delete"}
                   </button>
                 </div>
-                {mobile && (
-                  <div className="library-card-modes-row">
-                    <div className="segmented segmented-compact library-card-modes">
-                      {DISPLAY_MODES.map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          className={`segmented-button ${
-                            row.display_mode === mode ? "active" : ""
-                          }`}
-                          onClick={() => handleDisplayMode(row.workshop_id, mode)}
-                        >
-                          {mode}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+
               </article>
             )
           })}
@@ -391,18 +349,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     {formatBytes(row.transcoded_size ?? row.source_size)}
                   </div>
                 </div>
-                <div className="segmented segmented-compact">
-                  {DISPLAY_MODES.map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={`segmented-button ${row.display_mode === mode ? "active" : ""}`}
-                      onClick={() => handleDisplayMode(row.workshop_id, mode)}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
+
                 {canRetranscode(row.transcode_status) && (
                   <button
                     type="button"
