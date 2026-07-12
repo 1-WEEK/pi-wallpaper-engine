@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia"
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
 import type { DisplayMode, LibraryItem } from "@pwe/shared"
 import { Config } from "../services/Config.js"
 import { Db } from "../services/Db.js"
@@ -8,6 +8,7 @@ import { TranscodeQueue } from "../services/TranscodeQueue.js"
 import { decideTranscode, type TranscodeSourceSpec } from "../transcode/decide.js"
 import { httpFromError } from "./httpError.js"
 import { transcodeMode, type AppContext, type AppRuntime } from "../runtime.js"
+import type { AuthService } from "../services/Auth.js"
 
 // Manual retrigger only makes sense from a terminal state: `failed` (retry)
 // and `skipped` (items downloaded before a worker existed, or re-evaluate
@@ -33,7 +34,7 @@ type RetriggerResult =
   | { readonly kind: "conflict"; readonly status: LibraryItem["transcode_status"] }
   | { readonly kind: "invalid"; readonly resolution: string }
 
-export const libraryRoutes = (runtime: AppRuntime) => {
+export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = null) => {
   // See player.ts for the rationale: closes over `runtime` to keep the R
   // channel inferred, owns only the error path via httpFromError.
   const runRoute = <A, E extends { readonly _tag: string }>(
@@ -177,4 +178,58 @@ export const libraryRoutes = (runtime: AppRuntime) => {
         }),
       }
     )
+    .ws("/transcode/watch", {
+      open: async (ws) => {
+        // WebSocket frames bypass the global sessionGuard onBeforeHandle, so
+        // when auth is enabled we re-check the cookie session here.
+        if (auth) {
+          const headers = new Headers()
+          const cookieHeader = (ws.data as { headers?: Record<string, string | undefined> }).headers
+            ?.cookie
+          if (cookieHeader) headers.set("cookie", cookieHeader)
+          const session = await auth.instance.api
+            .getSession({ headers })
+            .catch(() => null)
+          if (!session) {
+            try {
+              ws.send(JSON.stringify({ status: "failed", error: "Authentication required" }))
+            } catch {
+              // ignore
+            }
+            ws.close()
+            return
+          }
+        }
+
+        const stream = await runtime.runPromise(
+          Effect.gen(function* () {
+            const queue = yield* TranscodeQueue
+            return queue.watch()
+          })
+        )
+
+        const fiber = runtime.runFork(
+          stream.pipe(
+            Stream.runForEach((event) =>
+              Effect.sync(() => {
+                try {
+                  ws.send(JSON.stringify(event))
+                } catch {
+                  // ignore send-after-close
+                }
+              })
+            )
+          )
+        )
+        ;(ws.data as Record<string, unknown>)["fiber"] = fiber
+      },
+      close: (ws) => {
+        const fiber = (ws.data as Record<string, unknown>)["fiber"] as
+          | ReturnType<AppRuntime["runFork"]>
+          | undefined
+        if (fiber) {
+          runtime.runFork(fiber.interruptAsFork(fiber.id()))
+        }
+      },
+    })
 }

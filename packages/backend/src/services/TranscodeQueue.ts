@@ -1,7 +1,8 @@
 import { Context, Effect, Layer } from "effect"
 import { ulid } from "ulid"
-import type { TranscodeJob } from "@pwe/shared"
+import type { TranscodeJob, TranscodeProgressEvent } from "@pwe/shared"
 import { DbError } from "@pwe/shared"
+import { Stream, PubSub } from "effect"
 import type { ScreenSpec, TranscodeDecision } from "../transcode/decide.js"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
@@ -69,6 +70,11 @@ export interface TranscodeQueueImpl {
    * Terminal failure. transcode_jobs.status = failed; library.transcode_error = message.
    */
   readonly fail: (jobId: string, error: string) => Effect.Effect<void, DbError>
+
+  /**
+   * Stream of transcode progress events.
+   */
+  readonly watch: () => Stream.Stream<TranscodeProgressEvent>
 }
 
 export class TranscodeQueue extends Context.Tag("TranscodeQueue")<
@@ -128,6 +134,7 @@ export const TranscodeQueueNoop = Layer.effect(
         Effect.sync(() => {
           console.warn(`TranscodeQueueNoop.fail(${jobId}, ${error}) — ignored`)
         }),
+      watch: () => Stream.empty,
     }
   })
 )
@@ -147,6 +154,24 @@ export const TranscodeQueueLive = Layer.effect(
       width: config.screen.width,
       height: config.screen.height,
     }
+
+    const pubsub = yield* PubSub.unbounded<TranscodeProgressEvent>()
+    const publish = (event: TranscodeProgressEvent) => Effect.runFork(pubsub.publish(event))
+
+    const updateAndPublish = (
+      jobId: string,
+      workshopId: string,
+      status: import("@pwe/shared").TranscodeJobStatus,
+      patch: Record<string, unknown> = {},
+      eventFields: Partial<TranscodeProgressEvent> = {}
+    ) =>
+      Effect.gen(function* () {
+        yield* library.update(workshopId, {
+          transcode_status: status,
+          ...patch,
+        })
+        publish({ jobId, workshopId, status, ...eventFields })
+      })
 
     return {
       enqueue: (workshopId, decision, sourceRelativePath) =>
@@ -169,17 +194,15 @@ export const TranscodeQueueLive = Layer.effect(
             [jobId, workshopId, Date.now()]
           )
 
-          yield* library.update(workshopId, {
-            transcode_status: "pending",
-            transcode_progress: 0,
-            transcode_error: null,
-          })
-
           yield* logger.info(`Enqueued transcode job ${jobId} for ${workshopId}`, {
             sourceRelativePath,
             outputRelativePath,
             targetCodec: decision.target_codec,
             screen,
+          })
+          yield* updateAndPublish(jobId, workshopId, "pending", {
+            transcode_progress: 0,
+            transcode_error: null,
           })
         }),
 
@@ -208,8 +231,7 @@ export const TranscodeQueueLive = Layer.effect(
             .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
           if (!lib) return null
 
-          yield* library.update(row.workshop_id, {
-            transcode_status: "claimed",
+          yield* updateAndPublish(row.id, row.workshop_id, "claimed", {
             transcode_progress: 0,
             transcode_error: null,
           })
@@ -242,9 +264,7 @@ export const TranscodeQueueLive = Layer.effect(
           if (!row) return false
 
           if (row.status === "running") {
-            yield* library.update(row.workshop_id, {
-              transcode_status: "running",
-            })
+            yield* updateAndPublish(jobId, row.workshop_id, "running")
           }
           return true
         }),
@@ -259,9 +279,13 @@ export const TranscodeQueueLive = Layer.effect(
             [clamped, Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) return
-          yield* library.update(row.workshop_id, {
-            transcode_progress: clamped,
-          })
+          yield* updateAndPublish(
+            jobId,
+            row.workshop_id,
+            "running",
+            { transcode_progress: clamped },
+            { progress: clamped }
+          )
         }),
 
       uploading: (jobId) =>
@@ -274,9 +298,7 @@ export const TranscodeQueueLive = Layer.effect(
             [Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) return false
-          yield* library.update(row.workshop_id, {
-            transcode_status: "uploading",
-          })
+          yield* updateAndPublish(jobId, row.workshop_id, "uploading")
           return true
         }),
 
@@ -294,18 +316,22 @@ export const TranscodeQueueLive = Layer.effect(
             return
           }
 
-          yield* library.update(row.workshop_id, {
-            transcode_status: "completed",
-            transcode_progress: 100,
-            transcode_error: null,
-            transcoded_path: report.output_relative_path,
-            transcoded_resolution: targetResolution,
-            transcoded_codec: targetCodec,
-            transcoded_size: report.output_size,
-          })
-
           yield* logger.info(
             `Transcode complete ${jobId} (${row.workshop_id}) — ${report.output_size} bytes in ${report.duration_ms}ms`
+          )
+          yield* updateAndPublish(
+            jobId,
+            row.workshop_id,
+            "completed",
+            {
+              transcode_progress: 100,
+              transcode_error: null,
+              transcoded_path: report.output_relative_path,
+              transcoded_resolution: targetResolution,
+              transcoded_codec: targetCodec,
+              transcoded_size: report.output_size,
+            },
+            { progress: 100 }
           )
         }),
 
@@ -320,13 +346,17 @@ export const TranscodeQueueLive = Layer.effect(
           )
           if (!row) return
 
-          yield* library.update(row.workshop_id, {
-            transcode_status: "failed",
-            transcode_error: error,
-          })
-
           yield* logger.warn(`Transcode failed ${jobId} (${row.workshop_id}): ${error}`)
+          yield* updateAndPublish(
+            jobId,
+            row.workshop_id,
+            "failed",
+            { transcode_error: error },
+            { error }
+          )
         }),
+        
+      watch: () => Stream.fromPubSub(pubsub),
     }
   })
 )

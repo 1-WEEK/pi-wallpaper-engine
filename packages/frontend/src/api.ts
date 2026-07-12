@@ -239,5 +239,10 @@ export const api = {
     const proto = window.location.protocol === "https:" ? "wss" : "ws"
     return new WebSocket(`${proto}://${window.location.host}/api/player/watch`)
   },
+
+  libraryTranscodeWatchWS: (): WebSocket => {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws"
+    return new WebSocket(`${proto}://${window.location.host}/api/library/transcode/watch`)
+  },
 }
 

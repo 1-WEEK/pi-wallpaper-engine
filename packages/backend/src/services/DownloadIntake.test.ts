@@ -200,6 +200,7 @@ const makeTranscodeQueue = () => {
     uploading: () => Effect.succeed(false),
     complete: () => Effect.void,
     fail: () => Effect.void,
+    watch: () => Stream.empty,
   }
   return { impl, enqueues }
 }

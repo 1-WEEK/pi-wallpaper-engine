@@ -1,10 +1,8 @@
-import { useMemo } from "react"
-import useSWR from "swr"
+import { useMemo, useEffect } from "react"
+import useSWR, { useSWRConfig } from "swr"
 import { api } from "../api.js"
 import { formatBytes } from "../format.js"
-import type { LibraryItem, TranscodeStatus } from "@pwe/shared"
-
-const REFRESH_MS = 2000
+import type { LibraryItem, TranscodeStatus, TranscodeProgressEvent } from "@pwe/shared"
 
 const STATUS_LABEL: Record<TranscodeStatus, string> = {
   skipped: "Skipped",
@@ -17,9 +15,44 @@ const STATUS_LABEL: Record<TranscodeStatus, string> = {
 }
 
 export const Transcode = () => {
-  const { data, error } = useSWR("library-transcode", api.libraryList, {
-    refreshInterval: REFRESH_MS,
-  })
+  const { data, error } = useSWR("library-transcode", api.libraryList)
+  const { mutate } = useSWRConfig()
+
+  useEffect(() => {
+    let ws = api.libraryTranscodeWatchWS()
+    
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data) as TranscodeProgressEvent
+        mutate(
+          "library-transcode",
+          (current?: LibraryItem[]) => {
+            if (!current) return current
+            return current.map(item => {
+              if (item.workshop_id === msg.workshopId) {
+                return {
+                  ...item,
+                  transcode_status: msg.status,
+                  ...(msg.progress !== undefined ? { transcode_progress: msg.progress } : {}),
+                  ...(msg.error !== undefined ? { transcode_error: msg.error } : {}),
+                  ...(msg.status === "completed" ? { transcode_progress: 100 } : {})
+                }
+              }
+              return item
+            })
+          },
+          { revalidate: false }
+        )
+        if (msg.status === "completed" || msg.status === "failed") {
+          mutate("library-transcode") // fully fetch to get output size etc
+        }
+      } catch (err) {
+        console.error("Transcode WS parse error", err)
+      }
+    }
+    
+    return () => ws.close()
+  }, [mutate])
 
   const tasks = useMemo(() => {
     if (!data) return []

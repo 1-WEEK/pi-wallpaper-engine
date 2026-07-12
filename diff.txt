@@ -1,333 +1,318 @@
-diff --git a/packages/frontend/src/App.tsx b/packages/frontend/src/App.tsx
-index 9f23bb3..ec2f387 100644
---- a/packages/frontend/src/App.tsx
-+++ b/packages/frontend/src/App.tsx
-@@ -9,6 +9,7 @@ import { fetchSession, fetchSetupState } from "./auth.js"
- import { appIcons } from "./icons.js"
- import { Browse } from "./pages/Browse.js"
- import { Downloads } from "./pages/Downloads.js"
-+import { Transcode } from "./pages/Transcode.js"
- import { Library } from "./pages/Library.js"
- import { Login } from "./pages/Login.js"
- import { Setup } from "./pages/Setup.js"
-@@ -79,6 +80,9 @@ const Routes = ({
-     <Route path="/downloads">
-       <Downloads />
-     </Route>
-+    <Route path="/transcode">
-+      <Transcode />
-+    </Route>
-     <Route path="/settings">
-       <Settings summary={summary ?? null} onRefresh={onRefresh} />
-     </Route>
-@@ -91,6 +95,7 @@ const Routes = ({
- const pageTitle = (loc: string): string => {
-   if (loc.startsWith("/library")) return "Library"
-   if (loc.startsWith("/downloads")) return "Downloads"
-+  if (loc.startsWith("/transcode")) return "Transcode"
-   if (loc.startsWith("/settings")) return "Settings"
-   return "Browse"
+diff --git a/packages/backend/src/index.ts b/packages/backend/src/index.ts
+index 95d52ba..a288ab2 100644
+--- a/packages/backend/src/index.ts
++++ b/packages/backend/src/index.ts
+@@ -115,7 +115,7 @@ if (auth && config.auth) {
+ 
+ app
+   .use(workshopRoutes(runtime))
+-  .use(libraryRoutes(runtime))
++  .use(libraryRoutes(runtime, auth))
+   .use(playerRoutes(runtime, auth))
+   .use(downloadRoutes(runtime, auth))
+   .use(displayRoutes(runtime))
+diff --git a/packages/backend/src/routes/library.ts b/packages/backend/src/routes/library.ts
+index de9aa8d..ff58bf6 100644
+--- a/packages/backend/src/routes/library.ts
++++ b/packages/backend/src/routes/library.ts
+@@ -1,5 +1,5 @@
+ import { Elysia, t } from "elysia"
+-import { Effect } from "effect"
++import { Effect, Stream } from "effect"
+ import type { DisplayMode, LibraryItem } from "@pwe/shared"
+ import { Config } from "../services/Config.js"
+ import { Db } from "../services/Db.js"
+@@ -8,6 +8,7 @@ import { TranscodeQueue } from "../services/TranscodeQueue.js"
+ import { decideTranscode, type TranscodeSourceSpec } from "../transcode/decide.js"
+ import { httpFromError } from "./httpError.js"
+ import { transcodeMode, type AppContext, type AppRuntime } from "../runtime.js"
++import type { AuthService } from "../services/Auth.js"
+ 
+ // Manual retrigger only makes sense from a terminal state: `failed` (retry)
+ // and `skipped` (items downloaded before a worker existed, or re-evaluate
+@@ -33,7 +34,7 @@ type RetriggerResult =
+   | { readonly kind: "conflict"; readonly status: LibraryItem["transcode_status"] }
+   | { readonly kind: "invalid"; readonly resolution: string }
+ 
+-export const libraryRoutes = (runtime: AppRuntime) => {
++export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = null) => {
+   // See player.ts for the rationale: closes over `runtime` to keep the R
+   // channel inferred, owns only the error path via httpFromError.
+   const runRoute = <A, E extends { readonly _tag: string }>(
+@@ -177,4 +178,56 @@ export const libraryRoutes = (runtime: AppRuntime) => {
+         }),
+       }
+     )
++    .ws("/transcode/watch", {
++      open: async (ws) => {
++        if (auth) {
++          const headers = new Headers()
++          const cookieHeader = (ws.data as { headers?: Record<string, string | undefined> }).headers
++            ?.cookie
++          if (cookieHeader) headers.set("cookie", cookieHeader)
++          const session = await auth.instance.api
++            .getSession({ headers })
++            .catch(() => null)
++          if (!session) {
++            try {
++              ws.send(JSON.stringify({ status: "failed", error: "Authentication required" }))
++            } catch {
++              // ignore
++            }
++            ws.close()
++            return
++          }
++        }
++
++        const stream = await runtime.runPromise(
++          Effect.gen(function* () {
++            const queue = yield* TranscodeQueue
++            return queue.watch()
++          })
++        )
++
++        const fiber = runtime.runFork(
++          stream.pipe(
++            Stream.runForEach((event) =>
++              Effect.sync(() => {
++                try {
++                  ws.send(JSON.stringify(event))
++                } catch {
++                  // ignore send-after-close
++                }
++              })
++            )
++          )
++        )
++        ;(ws.data as Record<string, unknown>)["fiber"] = fiber
++      },
++      close: (ws) => {
++        const fiber = (ws.data as Record<string, unknown>)["fiber"] as
++          | ReturnType<AppRuntime["runFork"]>
++          | undefined
++        if (fiber) {
++          runtime.runFork(fiber.interruptAsFork(fiber.id()))
++        }
++      },
++    })
  }
-@@ -252,6 +257,12 @@ const DesktopShell = ({
-       icon: appIcons.downloads,
-       badge: summary?.status.downloads.active,
-     },
-+    {
-+      href: "/transcode",
-+      active: loc === "/transcode",
-+      label: "Transcode",
-+      icon: appIcons.transcode,
-+    },
-     {
-       href: "/settings",
-       active: loc === "/settings",
-diff --git a/packages/frontend/src/components/mobile/MobileTabBar.tsx b/packages/frontend/src/components/mobile/MobileTabBar.tsx
-index 3bef66d..d3f19a9 100644
---- a/packages/frontend/src/components/mobile/MobileTabBar.tsx
-+++ b/packages/frontend/src/components/mobile/MobileTabBar.tsx
-@@ -39,6 +39,7 @@ export const MobileTabBar = ({ summary, currentLoc, browseHref }: Props) => {
-       badge: dlActive,
-       hot: dlActive > 0,
-     },
-+    { href: "/transcode", label: "Transcode", icon: appIcons.transcode },
-     { href: "/settings", label: "Settings", icon: appIcons.settings },
-   ]
-   return (
-diff --git a/packages/frontend/src/format.ts b/packages/frontend/src/format.ts
-index a796dad..65eb8f9 100644
---- a/packages/frontend/src/format.ts
-+++ b/packages/frontend/src/format.ts
-@@ -17,3 +17,10 @@ export const spaceSavedPercent = (row: LibraryItem): number | null => {
-   if (!source || !optimized || optimized >= source) return null
-   return Math.round(((source - optimized) / source) * 100)
+diff --git a/packages/backend/src/services/DownloadIntake.test.ts b/packages/backend/src/services/DownloadIntake.test.ts
+index d2ea15a..78d96fe 100644
+--- a/packages/backend/src/services/DownloadIntake.test.ts
++++ b/packages/backend/src/services/DownloadIntake.test.ts
+@@ -200,6 +200,7 @@ const makeTranscodeQueue = () => {
+     uploading: () => Effect.succeed(false),
+     complete: () => Effect.void,
+     fail: () => Effect.void,
++    watch: () => Stream.empty,
+   }
+   return { impl, enqueues }
  }
+diff --git a/packages/backend/src/services/TranscodeQueue.ts b/packages/backend/src/services/TranscodeQueue.ts
+index bddf112..35a7d32 100644
+--- a/packages/backend/src/services/TranscodeQueue.ts
++++ b/packages/backend/src/services/TranscodeQueue.ts
+@@ -1,7 +1,8 @@
+ import { Context, Effect, Layer } from "effect"
+ import { ulid } from "ulid"
+-import type { TranscodeJob } from "@pwe/shared"
++import type { TranscodeJob, TranscodeProgressEvent } from "@pwe/shared"
+ import { DbError } from "@pwe/shared"
++import { Stream, PubSub } from "effect"
+ import type { ScreenSpec, TranscodeDecision } from "../transcode/decide.js"
+ import { Config } from "./Config.js"
+ import { Db } from "./Db.js"
+@@ -69,6 +70,11 @@ export interface TranscodeQueueImpl {
+    * Terminal failure. transcode_jobs.status = failed; library.transcode_error = message.
+    */
+   readonly fail: (jobId: string, error: string) => Effect.Effect<void, DbError>
 +
-+export const formatBytes = (bytes: number): string => {
-+  if (bytes < 1024) return `${bytes} B`
-+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
-+}
-diff --git a/packages/frontend/src/icons.tsx b/packages/frontend/src/icons.tsx
-index c79ef1d..b0865d6 100644
---- a/packages/frontend/src/icons.tsx
-+++ b/packages/frontend/src/icons.tsx
-@@ -45,6 +45,15 @@ export const appIcons = {
-       <path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M5.6 18.4 L7.7 16.3 M16.3 7.7 L18.4 5.6" />
-     </AppIcon>
-   ),
-+  transcode: (
-+    <AppIcon>
-+      <rect x="3" y="5" width="18" height="14" rx="2" />
-+      <path d="M8 5 V19 M16 5 V19" />
-+      <path d="M21 9 H16 M21 15 H16 M8 9 H3 M8 15 H3" />
-+      <path d="M10 12 L12 10 L14 12" />
-+      <path d="M12 10 V14" />
-+    </AppIcon>
-+  ),
-   play: (
-     <AppIcon>
-       <path d="M7 5 L19 12 L7 19 Z" />
-diff --git a/packages/frontend/src/pages/Transcode.tsx b/packages/frontend/src/pages/Transcode.tsx
-new file mode 100644
-index 0000000..a5e961f
---- /dev/null
-+++ b/packages/frontend/src/pages/Transcode.tsx
-@@ -0,0 +1,128 @@
-+import { useMemo } from "react"
-+import useSWR from "swr"
-+import { api } from "../api.js"
-+import { formatBytes } from "../format.js"
-+import type { LibraryItem } from "@pwe/shared"
-+
-+const REFRESH_MS = 2000
-+
-+const TRANSCODE_STATES = new Set([
-+  "skipped",
-+  "pending",
-+  "claimed",
-+  "running",
-+  "uploading",
-+  "completed",
-+  "failed",
-+])
-+
-+export const Transcode = () => {
-+  const { data, error } = useSWR("library-transcode", api.libraryList, {
-+    refreshInterval: REFRESH_MS,
-+  })
-+
-+  const tasks = useMemo(() => {
-+    if (!data) return []
-+    return data.filter((item) => item.transcode_status && TRANSCODE_STATES.has(item.transcode_status))
-+  }, [data])
-+
-+  if (error) return <div className="error">{(error as Error).message}</div>
-+
-+  return (
-+    <div className="page">
-+      <header className="page-header">
-+        <div>
-+          <div className="page-kicker mono library-kicker-row">
-+            <span>NAS Transcode Worker</span>
-+          </div>
-+          <h1 className="page-title">Transcode</h1>
-+        </div>
-+        <div className="page-actions">
-+          <div className="summary-stat compact">
-+            <span className="summary-stat-label mono">Total</span>
-+            <strong>{tasks.length}</strong>
-+          </div>
-+        </div>
-+      </header>
-+
-+      {tasks.length === 0 && data && (
-+        <div className="empty-state">No transcode tasks found.</div>
-+      )}
-+
-+      {tasks.length > 0 && (
-+        <ul className="transcode-list">
-+          {tasks.map((task) => (
-+            <TranscodeRow key={task.workshop_id} task={task} />
-+          ))}
-+        </ul>
-+      )}
-+    </div>
-+  )
-+}
-+
-+const TranscodeRow = ({ task }: { task: LibraryItem }) => {
-+  const status = task.transcode_status
-+  const isRunning = status === "running" || status === "uploading"
-+  const isCompleted = status === "completed" || status === "skipped"
-+  const isFailed = status === "failed"
-+
-+  let statusClass = "status-pill-pending"
-+  if (isRunning) statusClass = "status-pill-running"
-+  if (isCompleted) statusClass = "status-pill-completed"
-+  if (isFailed) statusClass = "status-pill-failed"
-+  if (status === "skipped") statusClass = "status-pill-skipped"
-+
-+  const determinate = task.transcode_progress !== null && task.transcode_progress !== undefined
-+
-+  return (
-+    <li className={`transcode-row ${isCompleted ? "finished" : "active"}`}>
-+      <div className="transcode-thumb-wrap">
-+        {task.preview_url ? (
-+          <img className="transcode-thumb" src={task.preview_url} alt={task.title} loading="lazy" />
-+        ) : (
-+          <div className="transcode-thumb transcode-thumb-empty" />
-+        )}
-+      </div>
-+      <div className="transcode-copy">
-+        <div className="transcode-title-row">
-+          <div className="transcode-title">{task.title}</div>
-+          <span className={`status-pill ${statusClass}`}>
-+            {status}
-+          </span>
-+        </div>
-+        <div className="transcode-meta">
-+          <span className="mono">{task.workshop_id}</span>
-+          <span className="mono transcode-codec-info">
-+            {task.source_resolution} • {task.source_codec}
-+            {isCompleted && task.transcoded_codec && (
-+              <> → {task.transcoded_resolution} • {task.transcoded_codec}</>
-+            )}
-+          </span>
-+          <span className="mono transcode-size-info">
-+            {task.source_size ? formatBytes(task.source_size) : "Unknown size"}
-+            {isCompleted && task.transcoded_size && (
-+              <> → {formatBytes(task.transcoded_size)}</>
-+            )}
-+          </span>
-+        </div>
-+        {isRunning && determinate && (
-+          <div
-+            className={`card-progress card-progress-wide`}
-+            role="progressbar"
-+            aria-valuenow={task.transcode_progress ?? 0}
-+            aria-valuemin={0}
-+            aria-valuemax={100}
-+          >
-+            <div
-+              className="card-progress-fill"
-+              style={{ width: `${task.transcode_progress}%` }}
-+            />
-+          </div>
-+        )}
-+        {isFailed && task.transcode_error && (
-+          <div className="transcode-message transcode-message-error">{task.transcode_error}</div>
-+        )}
-+      </div>
-+    </li>
-+  )
-+}
-diff --git a/packages/frontend/src/styles.css b/packages/frontend/src/styles.css
-index a26d589..57caed4 100644
---- a/packages/frontend/src/styles.css
-+++ b/packages/frontend/src/styles.css
-@@ -3019,6 +3019,104 @@ a {
-   padding: 7px 12px;
++  /**
++   * Stream of transcode progress events.
++   */
++  readonly watch: () => Stream.Stream<TranscodeProgressEvent>
  }
  
-+/* ── Transcode ───────────────────────────────────────────────────── */
-+.transcode-list {
-+  display: flex;
-+  flex-direction: column;
-+  gap: 12px;
-+  list-style: none;
-+  margin: 0;
-+  padding: 0;
-+}
+ export class TranscodeQueue extends Context.Tag("TranscodeQueue")<
+@@ -128,6 +134,7 @@ export const TranscodeQueueNoop = Layer.effect(
+         Effect.sync(() => {
+           console.warn(`TranscodeQueueNoop.fail(${jobId}, ${error}) — ignored`)
+         }),
++      watch: () => Stream.empty,
+     }
+   })
+ )
+@@ -148,6 +155,9 @@ export const TranscodeQueueLive = Layer.effect(
+       height: config.screen.height,
+     }
+ 
++    const pubsub = yield* PubSub.unbounded<TranscodeProgressEvent>()
++    const publish = (event: TranscodeProgressEvent) => Effect.runFork(pubsub.publish(event))
 +
-+.transcode-row {
-+  display: flex;
-+  align-items: center;
-+  gap: 20px;
-+  padding: 16px;
-+  border-radius: 12px;
-+  background: var(--ink-1);
-+  border: 1px solid var(--border);
-+  transition: transform 0.2s, background 0.2s;
-+}
+     return {
+       enqueue: (workshopId, decision, sourceRelativePath) =>
+         Effect.gen(function* () {
+@@ -181,6 +191,8 @@ export const TranscodeQueueLive = Layer.effect(
+             targetCodec: decision.target_codec,
+             screen,
+           })
++          
++          publish({ jobId, workshopId, status: "pending" })
+         }),
+ 
+       claim: (worker) =>
+@@ -224,7 +236,13 @@ export const TranscodeQueueLive = Layer.effect(
+             target_codec: config.transcode.target_codec,
+             target_quality: config.transcode.target_quality,
+           }
+-        }),
++        }).pipe(
++          Effect.tap((job) => {
++            if (job) {
++              publish({ jobId: job.id, workshopId: job.workshop_id, status: "claimed" })
++            }
++          })
++        ),
+ 
+       heartbeat: (jobId) =>
+         Effect.gen(function* () {
+@@ -245,6 +263,7 @@ export const TranscodeQueueLive = Layer.effect(
+             yield* library.update(row.workshop_id, {
+               transcode_status: "running",
+             })
++            publish({ jobId, workshopId: row.workshop_id, status: "running" })
+           }
+           return true
+         }),
+@@ -262,6 +281,7 @@ export const TranscodeQueueLive = Layer.effect(
+           yield* library.update(row.workshop_id, {
+             transcode_progress: clamped,
+           })
++          publish({ jobId, workshopId: row.workshop_id, status: "running", progress: clamped })
+         }),
+ 
+       uploading: (jobId) =>
+@@ -277,6 +297,7 @@ export const TranscodeQueueLive = Layer.effect(
+           yield* library.update(row.workshop_id, {
+             transcode_status: "uploading",
+           })
++          publish({ jobId, workshopId: row.workshop_id, status: "uploading" })
+           return true
+         }),
+ 
+@@ -307,6 +328,7 @@ export const TranscodeQueueLive = Layer.effect(
+           yield* logger.info(
+             `Transcode complete ${jobId} (${row.workshop_id}) — ${report.output_size} bytes in ${report.duration_ms}ms`
+           )
++          publish({ jobId, workshopId: row.workshop_id, status: "completed", progress: 100 })
+         }),
+ 
+       fail: (jobId, error) =>
+@@ -326,7 +348,10 @@ export const TranscodeQueueLive = Layer.effect(
+           })
+ 
+           yield* logger.warn(`Transcode failed ${jobId} (${row.workshop_id}): ${error}`)
++          publish({ jobId, workshopId: row.workshop_id, status: "failed", error })
+         }),
++        
++      watch: () => Stream.fromPubSub(pubsub),
+     }
+   })
+ )
+diff --git a/packages/frontend/src/api.ts b/packages/frontend/src/api.ts
+index 75ea83d..cc155ce 100644
+--- a/packages/frontend/src/api.ts
++++ b/packages/frontend/src/api.ts
+@@ -239,5 +239,10 @@ export const api = {
+     const proto = window.location.protocol === "https:" ? "wss" : "ws"
+     return new WebSocket(`${proto}://${window.location.host}/api/player/watch`)
+   },
 +
-+.transcode-row:hover {
-+  background: var(--ink-2);
-+}
++  libraryTranscodeWatchWS: (): WebSocket => {
++    const proto = window.location.protocol === "https:" ? "wss" : "ws"
++    return new WebSocket(`${proto}://${window.location.host}/api/library/transcode/watch`)
++  },
+ }
+ 
+diff --git a/packages/frontend/src/pages/Transcode.tsx b/packages/frontend/src/pages/Transcode.tsx
+index 9597531..784898c 100644
+--- a/packages/frontend/src/pages/Transcode.tsx
++++ b/packages/frontend/src/pages/Transcode.tsx
+@@ -1,10 +1,8 @@
+-import { useMemo } from "react"
+-import useSWR from "swr"
++import { useMemo, useEffect } from "react"
++import useSWR, { useSWRConfig } from "swr"
+ import { api } from "../api.js"
+ import { formatBytes } from "../format.js"
+-import type { LibraryItem, TranscodeStatus } from "@pwe/shared"
+-
+-const REFRESH_MS = 2000
++import type { LibraryItem, TranscodeStatus, TranscodeProgressEvent } from "@pwe/shared"
+ 
+ const STATUS_LABEL: Record<TranscodeStatus, string> = {
+   skipped: "Skipped",
+@@ -17,9 +15,44 @@ const STATUS_LABEL: Record<TranscodeStatus, string> = {
+ }
+ 
+ export const Transcode = () => {
+-  const { data, error } = useSWR("library-transcode", api.libraryList, {
+-    refreshInterval: REFRESH_MS,
+-  })
++  const { data, error } = useSWR("library-transcode", api.libraryList)
++  const { mutate } = useSWRConfig()
 +
-+.transcode-thumb-wrap {
-+  width: 140px;
-+  height: 78px;
-+  border-radius: 8px;
-+  overflow: hidden;
-+  flex-shrink: 0;
-+  background: #000;
-+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-+}
++  useEffect(() => {
++    let ws = api.libraryTranscodeWatchWS()
++    
++    ws.onmessage = (event) => {
++      try {
++        const msg = JSON.parse(event.data) as TranscodeProgressEvent
++        mutate(
++          "library-transcode",
++          (current?: LibraryItem[]) => {
++            if (!current) return current
++            return current.map(item => {
++              if (item.workshop_id === msg.workshopId) {
++                return {
++                  ...item,
++                  transcode_status: msg.status,
++                  ...(msg.progress !== undefined ? { transcode_progress: msg.progress } : {}),
++                  ...(msg.error !== undefined ? { transcode_error: msg.error } : {}),
++                  ...(msg.status === "completed" ? { transcode_progress: 100 } : {})
++                }
++              }
++              return item
++            })
++          },
++          { revalidate: false }
++        )
++        if (msg.status === "completed" || msg.status === "failed") {
++          mutate("library-transcode") // fully fetch to get output size etc
++        }
++      } catch (err) {
++        console.error("Transcode WS parse error", err)
++      }
++    }
++    
++    return () => ws.close()
++  }, [mutate])
+ 
+   const tasks = useMemo(() => {
+     if (!data) return []
+diff --git a/packages/shared/src/schema/WorkerProtocol.ts b/packages/shared/src/schema/WorkerProtocol.ts
+index 971b301..4901919 100644
+--- a/packages/shared/src/schema/WorkerProtocol.ts
++++ b/packages/shared/src/schema/WorkerProtocol.ts
+@@ -44,3 +44,11 @@ export const ProgressReport = Schema.Struct({
+ export const FailReport = Schema.Struct({
+   error: Schema.String,
+ })
 +
-+.transcode-thumb {
-+  width: 100%;
-+  height: 100%;
-+  object-fit: cover;
++export interface TranscodeProgressEvent {
++  readonly jobId: string
++  readonly workshopId: string
++  readonly status: TranscodeJobStatus
++  readonly progress?: number
++  readonly error?: string
 +}
-+
-+.transcode-thumb-empty {
-+  background: linear-gradient(135deg, var(--ink-2), var(--ink-3));
-+}
-+
-+.transcode-copy {
-+  display: flex;
-+  flex-direction: column;
-+  gap: 8px;
-+  flex: 1;
-+  min-width: 0;
-+}
-+
-+.transcode-title-row {
-+  display: flex;
-+  align-items: center;
-+  gap: 12px;
-+}
-+
-+.transcode-title {
-+  font-size: 16px;
-+  font-weight: 600;
-+  letter-spacing: -0.01em;
-+  white-space: nowrap;
-+  overflow: hidden;
-+  text-overflow: ellipsis;
-+  color: var(--paper);
-+}
-+
-+.transcode-meta {
-+  display: flex;
-+  align-items: center;
-+  gap: 12px;
-+  font-size: 12px;
-+  color: var(--paper-faint);
-+  flex-wrap: wrap;
-+}
-+
-+.transcode-codec-info,
-+.transcode-size-info {
-+  background: var(--ink-2);
-+  padding: 3px 8px;
-+  border-radius: 6px;
-+  color: var(--paper-dim);
-+}
-+
-+.transcode-message-error {
-+  margin-top: 4px;
-+  font-size: 12px;
-+  color: var(--danger);
-+  line-height: 1.45;
-+  padding: 8px 12px;
-+  background: var(--danger-bg);
-+  border: 1px solid var(--danger-border);
-+  border-radius: 8px;
-+  word-break: break-word;
-+}
-+
- @media (prefers-reduced-motion: reduce) {
-   *,
-   ::before,
