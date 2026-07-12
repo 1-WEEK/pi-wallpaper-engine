@@ -7,6 +7,10 @@ import { Db } from "./Db.js"
 import { Logger } from "./Logger.js"
 import { Mpv } from "./Mpv.js"
 import { Storage, friendlyStorageError, isPathInsideRoot } from "./Storage.js"
+import {
+  ACTIVE_TRANSCODE_JOB_STATUSES,
+  activeTranscodeStatusesSql,
+} from "./TranscodeJobStatus.js"
 
 export interface MigrationProgress {
   readonly state: "running" | "done" | "failed"
@@ -107,7 +111,8 @@ export const MigrateLive = Layer.effect(
             .queryOne<{ n: number }>(
               `SELECT COUNT(*) AS n
                FROM transcode_jobs
-               WHERE status IN ('claimed','running','uploading')`
+               WHERE ${activeTranscodeStatusesSql()}`,
+              [...ACTIVE_TRANSCODE_JOB_STATUSES]
             )
             .pipe(
               Effect.mapError(

@@ -4,7 +4,7 @@ import { statfs } from "node:fs/promises"
 import { Config } from "../services/Config.js"
 import { Db } from "../services/Db.js"
 import { Display } from "../services/Display.js"
-import { DownloadTasks } from "../services/DownloadTasks.js"
+import { DownloadTasks, isFinishedTask } from "../services/DownloadTasks.js"
 import { Library } from "../services/Library.js"
 import { Mpv } from "../services/Mpv.js"
 import { Playback } from "../services/Playback.js"
@@ -47,9 +47,6 @@ const storageSummary = (path: string) =>
       })
     )
   )
-
-const isFinishedTask = (stage: string, finishedAt: number | null): boolean =>
-  stage === "complete" || stage === "error" || finishedAt !== null
 
 export const systemRoutes = (runtime: AppRuntime) =>
   new Elysia({ prefix: "/api/system" }).get("/summary", ({ set }) =>

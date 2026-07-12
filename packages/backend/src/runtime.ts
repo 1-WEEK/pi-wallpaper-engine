@@ -19,6 +19,7 @@ import { PlayerWatchLive } from "./services/PlayerWatch.js"
 import { SteamCmdLive } from "./services/SteamCmd.js"
 import { SteamWorkshopLive } from "./services/SteamWorkshop.js"
 import { StorageLive } from "./services/Storage.js"
+import { StorageRootSelectionLive } from "./services/StorageRootSelection.js"
 import { TranscodeMonitorLive } from "./services/TranscodeMonitor.js"
 import { TranscodeQueueLive, TranscodeQueueNoop } from "./services/TranscodeQueue.js"
 
@@ -45,6 +46,7 @@ export const transcodeMode = (): "live" | "noop" => {
 export const buildLayer = (configPath: string) => {
   const queueLayer = transcodeMode() === "live" ? TranscodeQueueLive : TranscodeQueueNoop
   const applicationLayer = TranscodeMonitorLive.pipe(
+    Layer.provideMerge(StorageRootSelectionLive),
     Layer.provideMerge(DownloadIntakeLive),
     Layer.provideMerge(queueLayer),
     Layer.provideMerge(PlaybackLive),

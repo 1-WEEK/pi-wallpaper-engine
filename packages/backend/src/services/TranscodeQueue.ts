@@ -7,6 +7,10 @@ import { Config } from "./Config.js"
 import { Db } from "./Db.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
+import {
+  ACTIVE_TRANSCODE_JOB_STATUSES,
+  activeTranscodeStatusesSql,
+} from "./TranscodeJobStatus.js"
 
 export interface CompleteReport {
   readonly output_relative_path: string
@@ -231,9 +235,9 @@ export const TranscodeQueueLive = Layer.effect(
             `UPDATE transcode_jobs
              SET last_heartbeat = ?,
                  status = CASE WHEN status = 'claimed' THEN 'running' ELSE status END
-             WHERE id = ? AND status IN ('claimed','running','uploading')
+             WHERE id = ? AND ${activeTranscodeStatusesSql()}
              RETURNING workshop_id, status`,
-            [Date.now(), jobId]
+            [Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) return false
 
@@ -250,9 +254,9 @@ export const TranscodeQueueLive = Layer.effect(
           const clamped = Math.max(0, Math.min(100, Math.round(percent)))
           const row = yield* db.queryOne<{ workshop_id: string }>(
             `UPDATE transcode_jobs SET progress = ?, last_heartbeat = ?
-             WHERE id = ? AND status IN ('claimed','running','uploading')
+             WHERE id = ? AND ${activeTranscodeStatusesSql()}
              RETURNING workshop_id`,
-            [clamped, Date.now(), jobId]
+            [clamped, Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) return
           yield* library.update(row.workshop_id, {
@@ -265,9 +269,9 @@ export const TranscodeQueueLive = Layer.effect(
           const row = yield* db.queryOne<{ workshop_id: string }>(
             `UPDATE transcode_jobs
              SET status = 'uploading', last_heartbeat = ?
-             WHERE id = ? AND status IN ('claimed','running','uploading')
+             WHERE id = ? AND ${activeTranscodeStatusesSql()}
              RETURNING workshop_id`,
-            [Date.now(), jobId]
+            [Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) return false
           yield* library.update(row.workshop_id, {
@@ -281,9 +285,9 @@ export const TranscodeQueueLive = Layer.effect(
           const row = yield* db.queryOne<{ workshop_id: string }>(
             `UPDATE transcode_jobs
              SET status = 'completed', progress = 100, completed_at = ?, error = NULL
-             WHERE id = ? AND status IN ('claimed','running','uploading')
+             WHERE id = ? AND ${activeTranscodeStatusesSql()}
              RETURNING workshop_id`,
-            [Date.now(), jobId]
+            [Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) {
             yield* logger.warn(`complete(${jobId}) but job missing/stale — ignored`)

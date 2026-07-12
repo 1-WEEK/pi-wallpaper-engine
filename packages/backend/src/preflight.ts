@@ -12,6 +12,7 @@ import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { Config as ConfigSchema } from "@pwe/shared"
 import { resolveStateRoot } from "./statePath.js"
+import { expandHome } from "./paths.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -47,9 +48,6 @@ const fail = (label: string, detail: string, fix: string) =>
   results.push({ kind: "fail", label, detail, fix })
 const warn = (label: string, detail: string) =>
   results.push({ kind: "warn", label, detail })
-
-const expandHome = (p: string): string =>
-  p.startsWith("~/") ? resolve(homedir(), p.slice(2)) : resolve(p)
 
 const args = new Set(process.argv.slice(2))
 const fixDirs = args.has("--fix-dirs")

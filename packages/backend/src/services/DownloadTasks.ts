@@ -41,6 +41,9 @@ const COLUMNS = [
 
 const isTerminalStage = (stage: DownloadStage): boolean => stage === "complete" || stage === "error"
 
+export const isFinishedTask = (stage: DownloadStage | string, finishedAt: number | null): boolean =>
+  stage === "complete" || stage === "error" || finishedAt !== null
+
 export const mergeDownloadTaskRow = (
   row: DownloadTask,
   patch: Partial<Omit<DownloadTask, "workshop_id">>
