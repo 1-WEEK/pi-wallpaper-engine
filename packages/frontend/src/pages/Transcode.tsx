@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from "react"
+import { useMemo, useEffect, useState } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import { api } from "../api.js"
 import { formatBytes } from "../format.js"
@@ -54,10 +54,26 @@ export const Transcode = () => {
     return () => ws.close()
   }, [mutate])
 
+  const [isRetryingAll, setIsRetryingAll] = useState(false)
+
+  const handleRetryAll = async () => {
+    setIsRetryingAll(true)
+    try {
+      await api.libraryTranscodeRetryAll()
+      await mutate("library-transcode")
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsRetryingAll(false)
+    }
+  }
+
   const tasks = useMemo(() => {
     if (!data) return []
     return data.filter((item) => item.transcode_status)
   }, [data])
+
+  const hasFailed = tasks.some(t => t.transcode_status === "failed")
 
   if (error) return <div className="error">{(error as Error).message}</div>
 
@@ -71,6 +87,15 @@ export const Transcode = () => {
           <h1 className="page-title">Transcode</h1>
         </div>
         <div className="page-actions">
+          {hasFailed && (
+            <button
+              className="btn btn-secondary"
+              onClick={handleRetryAll}
+              disabled={isRetryingAll}
+            >
+              {isRetryingAll ? "Retrying..." : "Retry All Failed"}
+            </button>
+          )}
           <div className="summary-stat compact">
             <span className="summary-stat-label mono">Total</span>
             <strong>{tasks.length}</strong>
@@ -94,6 +119,9 @@ export const Transcode = () => {
 }
 
 const TranscodeRow = ({ task }: { task: LibraryItem }) => {
+  const { mutate } = useSWRConfig()
+  const [isRetrying, setIsRetrying] = useState(false)
+
   const status = task.transcode_status
   const isRunning = status === "running" || status === "uploading"
   const isCompleted = status === "completed" || status === "skipped"
@@ -104,6 +132,18 @@ const TranscodeRow = ({ task }: { task: LibraryItem }) => {
   if (isCompleted) statusClass = "status-pill-completed"
   if (isFailed) statusClass = "status-pill-failed"
   if (status === "skipped") statusClass = "status-pill-skipped"
+
+  const handleRetry = async () => {
+    setIsRetrying(true)
+    try {
+      await api.libraryTranscode(task.workshop_id)
+      await mutate("library-transcode")
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsRetrying(false)
+    }
+  }
 
   const determinate = task.transcode_progress !== null && task.transcode_progress !== undefined
 
@@ -154,6 +194,17 @@ const TranscodeRow = ({ task }: { task: LibraryItem }) => {
         )}
         {isFailed && task.transcode_error && (
           <div className="transcode-message transcode-message-error">{task.transcode_error}</div>
+        )}
+      </div>
+      <div className="transcode-actions">
+        {isFailed && (
+          <button
+            className="btn btn-secondary"
+            onClick={handleRetry}
+            disabled={isRetrying}
+          >
+            {isRetrying ? "..." : "Retry"}
+          </button>
         )}
       </div>
     </li>
