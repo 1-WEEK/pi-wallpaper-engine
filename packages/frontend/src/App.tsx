@@ -9,6 +9,7 @@ import { fetchSession, fetchSetupState } from "./auth.js"
 import { appIcons } from "./icons.js"
 import { Browse } from "./pages/Browse.js"
 import { Downloads } from "./pages/Downloads.js"
+import { Transcode } from "./pages/Transcode.js"
 import { Library } from "./pages/Library.js"
 import { Login } from "./pages/Login.js"
 import { Setup } from "./pages/Setup.js"
@@ -79,6 +80,9 @@ const Routes = ({
     <Route path="/downloads">
       <Downloads />
     </Route>
+    <Route path="/transcode">
+      <Transcode />
+    </Route>
     <Route path="/settings">
       <Settings summary={summary ?? null} onRefresh={onRefresh} />
     </Route>
@@ -91,6 +95,7 @@ const Routes = ({
 const pageTitle = (loc: string): string => {
   if (loc.startsWith("/library")) return "Library"
   if (loc.startsWith("/downloads")) return "Downloads"
+  if (loc.startsWith("/transcode")) return "Transcode"
   if (loc.startsWith("/settings")) return "Settings"
   return "Browse"
 }
@@ -251,6 +256,12 @@ const DesktopShell = ({
       label: "Downloads",
       icon: appIcons.downloads,
       badge: summary?.status.downloads.active,
+    },
+    {
+      href: "/transcode",
+      active: loc === "/transcode",
+      label: "Transcode",
+      icon: appIcons.transcode,
     },
     {
       href: "/settings",

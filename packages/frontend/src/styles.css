@@ -3019,6 +3019,104 @@ a {
   padding: 7px 12px;
 }
 
+/* ── Transcode ───────────────────────────────────────────────────── */
+.transcode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.transcode-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--ink-1);
+  border: 1px solid var(--border);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.transcode-row:hover {
+  background: var(--ink-2);
+}
+
+.transcode-thumb-wrap {
+  width: 140px;
+  height: 78px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.transcode-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.transcode-thumb-empty {
+  background: linear-gradient(135deg, var(--ink-2), var(--ink-3));
+}
+
+.transcode-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.transcode-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.transcode-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--paper);
+}
+
+.transcode-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--paper-faint);
+  flex-wrap: wrap;
+}
+
+.transcode-codec-info,
+.transcode-size-info {
+  background: var(--ink-2);
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--paper-dim);
+}
+
+.transcode-message-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--danger);
+  line-height: 1.45;
+  padding: 8px 12px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  word-break: break-word;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,

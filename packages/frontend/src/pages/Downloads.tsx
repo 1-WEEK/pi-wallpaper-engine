@@ -3,6 +3,7 @@ import { isAdultContent } from "@pwe/shared"
 import useSWR from "swr"
 import { api, type DownloadStage, type DownloadTask } from "../api.js"
 import { appIcons } from "../icons.js"
+import { formatBytes } from "../format.js"
 import { useLayout } from "../components/mobile/index.js"
 
 // Active downloads need a snappier refresh than the global SWR default; 1s
@@ -306,11 +307,4 @@ const DownloadRow = ({ task, onDismiss, onCancel }: RowProps) => {
       </div>
     </li>
   )
-}
-
-const formatBytes = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
 }

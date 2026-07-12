@@ -45,6 +45,15 @@ export const appIcons = {
       <path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M5.6 18.4 L7.7 16.3 M16.3 7.7 L18.4 5.6" />
     </AppIcon>
   ),
+  transcode: (
+    <AppIcon>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M8 5 V19 M16 5 V19" />
+      <path d="M21 9 H16 M21 15 H16 M8 9 H3 M8 15 H3" />
+      <path d="M10 12 L12 10 L14 12" />
+      <path d="M12 10 V14" />
+    </AppIcon>
+  ),
   play: (
     <AppIcon>
       <path d="M7 5 L19 12 L7 19 Z" />

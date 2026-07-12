@@ -1,0 +1,333 @@
+diff --git a/packages/frontend/src/App.tsx b/packages/frontend/src/App.tsx
+index 9f23bb3..ec2f387 100644
+--- a/packages/frontend/src/App.tsx
++++ b/packages/frontend/src/App.tsx
+@@ -9,6 +9,7 @@ import { fetchSession, fetchSetupState } from "./auth.js"
+ import { appIcons } from "./icons.js"
+ import { Browse } from "./pages/Browse.js"
+ import { Downloads } from "./pages/Downloads.js"
++import { Transcode } from "./pages/Transcode.js"
+ import { Library } from "./pages/Library.js"
+ import { Login } from "./pages/Login.js"
+ import { Setup } from "./pages/Setup.js"
+@@ -79,6 +80,9 @@ const Routes = ({
+     <Route path="/downloads">
+       <Downloads />
+     </Route>
++    <Route path="/transcode">
++      <Transcode />
++    </Route>
+     <Route path="/settings">
+       <Settings summary={summary ?? null} onRefresh={onRefresh} />
+     </Route>
+@@ -91,6 +95,7 @@ const Routes = ({
+ const pageTitle = (loc: string): string => {
+   if (loc.startsWith("/library")) return "Library"
+   if (loc.startsWith("/downloads")) return "Downloads"
++  if (loc.startsWith("/transcode")) return "Transcode"
+   if (loc.startsWith("/settings")) return "Settings"
+   return "Browse"
+ }
+@@ -252,6 +257,12 @@ const DesktopShell = ({
+       icon: appIcons.downloads,
+       badge: summary?.status.downloads.active,
+     },
++    {
++      href: "/transcode",
++      active: loc === "/transcode",
++      label: "Transcode",
++      icon: appIcons.transcode,
++    },
+     {
+       href: "/settings",
+       active: loc === "/settings",
+diff --git a/packages/frontend/src/components/mobile/MobileTabBar.tsx b/packages/frontend/src/components/mobile/MobileTabBar.tsx
+index 3bef66d..d3f19a9 100644
+--- a/packages/frontend/src/components/mobile/MobileTabBar.tsx
++++ b/packages/frontend/src/components/mobile/MobileTabBar.tsx
+@@ -39,6 +39,7 @@ export const MobileTabBar = ({ summary, currentLoc, browseHref }: Props) => {
+       badge: dlActive,
+       hot: dlActive > 0,
+     },
++    { href: "/transcode", label: "Transcode", icon: appIcons.transcode },
+     { href: "/settings", label: "Settings", icon: appIcons.settings },
+   ]
+   return (
+diff --git a/packages/frontend/src/format.ts b/packages/frontend/src/format.ts
+index a796dad..65eb8f9 100644
+--- a/packages/frontend/src/format.ts
++++ b/packages/frontend/src/format.ts
+@@ -17,3 +17,10 @@ export const spaceSavedPercent = (row: LibraryItem): number | null => {
+   if (!source || !optimized || optimized >= source) return null
+   return Math.round(((source - optimized) / source) * 100)
+ }
++
++export const formatBytes = (bytes: number): string => {
++  if (bytes < 1024) return `${bytes} B`
++  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
++  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
++  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
++}
+diff --git a/packages/frontend/src/icons.tsx b/packages/frontend/src/icons.tsx
+index c79ef1d..b0865d6 100644
+--- a/packages/frontend/src/icons.tsx
++++ b/packages/frontend/src/icons.tsx
+@@ -45,6 +45,15 @@ export const appIcons = {
+       <path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21 M5.6 5.6 L7.7 7.7 M16.3 16.3 L18.4 18.4 M5.6 18.4 L7.7 16.3 M16.3 7.7 L18.4 5.6" />
+     </AppIcon>
+   ),
++  transcode: (
++    <AppIcon>
++      <rect x="3" y="5" width="18" height="14" rx="2" />
++      <path d="M8 5 V19 M16 5 V19" />
++      <path d="M21 9 H16 M21 15 H16 M8 9 H3 M8 15 H3" />
++      <path d="M10 12 L12 10 L14 12" />
++      <path d="M12 10 V14" />
++    </AppIcon>
++  ),
+   play: (
+     <AppIcon>
+       <path d="M7 5 L19 12 L7 19 Z" />
+diff --git a/packages/frontend/src/pages/Transcode.tsx b/packages/frontend/src/pages/Transcode.tsx
+new file mode 100644
+index 0000000..a5e961f
+--- /dev/null
++++ b/packages/frontend/src/pages/Transcode.tsx
+@@ -0,0 +1,128 @@
++import { useMemo } from "react"
++import useSWR from "swr"
++import { api } from "../api.js"
++import { formatBytes } from "../format.js"
++import type { LibraryItem } from "@pwe/shared"
++
++const REFRESH_MS = 2000
++
++const TRANSCODE_STATES = new Set([
++  "skipped",
++  "pending",
++  "claimed",
++  "running",
++  "uploading",
++  "completed",
++  "failed",
++])
++
++export const Transcode = () => {
++  const { data, error } = useSWR("library-transcode", api.libraryList, {
++    refreshInterval: REFRESH_MS,
++  })
++
++  const tasks = useMemo(() => {
++    if (!data) return []
++    return data.filter((item) => item.transcode_status && TRANSCODE_STATES.has(item.transcode_status))
++  }, [data])
++
++  if (error) return <div className="error">{(error as Error).message}</div>
++
++  return (
++    <div className="page">
++      <header className="page-header">
++        <div>
++          <div className="page-kicker mono library-kicker-row">
++            <span>NAS Transcode Worker</span>
++          </div>
++          <h1 className="page-title">Transcode</h1>
++        </div>
++        <div className="page-actions">
++          <div className="summary-stat compact">
++            <span className="summary-stat-label mono">Total</span>
++            <strong>{tasks.length}</strong>
++          </div>
++        </div>
++      </header>
++
++      {tasks.length === 0 && data && (
++        <div className="empty-state">No transcode tasks found.</div>
++      )}
++
++      {tasks.length > 0 && (
++        <ul className="transcode-list">
++          {tasks.map((task) => (
++            <TranscodeRow key={task.workshop_id} task={task} />
++          ))}
++        </ul>
++      )}
++    </div>
++  )
++}
++
++const TranscodeRow = ({ task }: { task: LibraryItem }) => {
++  const status = task.transcode_status
++  const isRunning = status === "running" || status === "uploading"
++  const isCompleted = status === "completed" || status === "skipped"
++  const isFailed = status === "failed"
++
++  let statusClass = "status-pill-pending"
++  if (isRunning) statusClass = "status-pill-running"
++  if (isCompleted) statusClass = "status-pill-completed"
++  if (isFailed) statusClass = "status-pill-failed"
++  if (status === "skipped") statusClass = "status-pill-skipped"
++
++  const determinate = task.transcode_progress !== null && task.transcode_progress !== undefined
++
++  return (
++    <li className={`transcode-row ${isCompleted ? "finished" : "active"}`}>
++      <div className="transcode-thumb-wrap">
++        {task.preview_url ? (
++          <img className="transcode-thumb" src={task.preview_url} alt={task.title} loading="lazy" />
++        ) : (
++          <div className="transcode-thumb transcode-thumb-empty" />
++        )}
++      </div>
++      <div className="transcode-copy">
++        <div className="transcode-title-row">
++          <div className="transcode-title">{task.title}</div>
++          <span className={`status-pill ${statusClass}`}>
++            {status}
++          </span>
++        </div>
++        <div className="transcode-meta">
++          <span className="mono">{task.workshop_id}</span>
++          <span className="mono transcode-codec-info">
++            {task.source_resolution} • {task.source_codec}
++            {isCompleted && task.transcoded_codec && (
++              <> → {task.transcoded_resolution} • {task.transcoded_codec}</>
++            )}
++          </span>
++          <span className="mono transcode-size-info">
++            {task.source_size ? formatBytes(task.source_size) : "Unknown size"}
++            {isCompleted && task.transcoded_size && (
++              <> → {formatBytes(task.transcoded_size)}</>
++            )}
++          </span>
++        </div>
++        {isRunning && determinate && (
++          <div
++            className={`card-progress card-progress-wide`}
++            role="progressbar"
++            aria-valuenow={task.transcode_progress ?? 0}
++            aria-valuemin={0}
++            aria-valuemax={100}
++          >
++            <div
++              className="card-progress-fill"
++              style={{ width: `${task.transcode_progress}%` }}
++            />
++          </div>
++        )}
++        {isFailed && task.transcode_error && (
++          <div className="transcode-message transcode-message-error">{task.transcode_error}</div>
++        )}
++      </div>
++    </li>
++  )
++}
+diff --git a/packages/frontend/src/styles.css b/packages/frontend/src/styles.css
+index a26d589..57caed4 100644
+--- a/packages/frontend/src/styles.css
++++ b/packages/frontend/src/styles.css
+@@ -3019,6 +3019,104 @@ a {
+   padding: 7px 12px;
+ }
+ 
++/* ── Transcode ───────────────────────────────────────────────────── */
++.transcode-list {
++  display: flex;
++  flex-direction: column;
++  gap: 12px;
++  list-style: none;
++  margin: 0;
++  padding: 0;
++}
++
++.transcode-row {
++  display: flex;
++  align-items: center;
++  gap: 20px;
++  padding: 16px;
++  border-radius: 12px;
++  background: var(--ink-1);
++  border: 1px solid var(--border);
++  transition: transform 0.2s, background 0.2s;
++}
++
++.transcode-row:hover {
++  background: var(--ink-2);
++}
++
++.transcode-thumb-wrap {
++  width: 140px;
++  height: 78px;
++  border-radius: 8px;
++  overflow: hidden;
++  flex-shrink: 0;
++  background: #000;
++  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
++}
++
++.transcode-thumb {
++  width: 100%;
++  height: 100%;
++  object-fit: cover;
++}
++
++.transcode-thumb-empty {
++  background: linear-gradient(135deg, var(--ink-2), var(--ink-3));
++}
++
++.transcode-copy {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++  flex: 1;
++  min-width: 0;
++}
++
++.transcode-title-row {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++}
++
++.transcode-title {
++  font-size: 16px;
++  font-weight: 600;
++  letter-spacing: -0.01em;
++  white-space: nowrap;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  color: var(--paper);
++}
++
++.transcode-meta {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++  font-size: 12px;
++  color: var(--paper-faint);
++  flex-wrap: wrap;
++}
++
++.transcode-codec-info,
++.transcode-size-info {
++  background: var(--ink-2);
++  padding: 3px 8px;
++  border-radius: 6px;
++  color: var(--paper-dim);
++}
++
++.transcode-message-error {
++  margin-top: 4px;
++  font-size: 12px;
++  color: var(--danger);
++  line-height: 1.45;
++  padding: 8px 12px;
++  background: var(--danger-bg);
++  border: 1px solid var(--danger-border);
++  border-radius: 8px;
++  word-break: break-word;
++}
++
+ @media (prefers-reduced-motion: reduce) {
+   *,
+   ::before,

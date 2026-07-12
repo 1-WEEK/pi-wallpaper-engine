@@ -39,6 +39,7 @@ export const MobileTabBar = ({ summary, currentLoc, browseHref }: Props) => {
       badge: dlActive,
       hot: dlActive > 0,
     },
+    { href: "/transcode", label: "Transcode", icon: appIcons.transcode },
     { href: "/settings", label: "Settings", icon: appIcons.settings },
   ]
   return (
