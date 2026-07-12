@@ -2,7 +2,14 @@ import { useMemo, useEffect, useState } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import { api } from "../api.js"
 import { formatBytes } from "../format.js"
-import type { LibraryItem, TranscodeStatus, TranscodeProgressEvent } from "@pwe/shared"
+import { isAdultContent, type LibraryItem, type TranscodeStatus, type TranscodeProgressEvent } from "@pwe/shared"
+
+const isAdultRow = (row: LibraryItem): boolean =>
+  isAdultContent({
+    title: row.title,
+    contentRating: row.content_rating,
+    ratingSex: row.rating_sex,
+  })
 
 const STATUS_LABEL: Record<TranscodeStatus, string> = {
   skipped: "Skipped",
@@ -17,6 +24,8 @@ const STATUS_LABEL: Record<TranscodeStatus, string> = {
 export const Transcode = () => {
   const { data, error } = useSWR("library-transcode", api.libraryList)
   const { mutate } = useSWRConfig()
+  const [privacyOpen, setPrivacyOpen] = useState(false)
+  const [showAdult, setShowAdult] = useState(false)
 
   useEffect(() => {
     let ws = api.libraryTranscodeWatchWS()
@@ -68,10 +77,16 @@ export const Transcode = () => {
     }
   }
 
-  const tasks = useMemo(() => {
+  const allTasks = useMemo(() => {
     if (!data) return []
     return data.filter((item) => item.transcode_status)
   }, [data])
+
+  const adultCount = useMemo(() => allTasks.filter(isAdultRow).length, [allTasks])
+  const tasks = useMemo(
+    () => (showAdult ? allTasks : allTasks.filter((row) => !isAdultRow(row))),
+    [allTasks, showAdult]
+  )
 
   const hasFailed = tasks.some(t => t.transcode_status === "failed")
 
@@ -100,8 +115,50 @@ export const Transcode = () => {
             <span className="summary-stat-label mono">Total</span>
             <strong>{tasks.length}</strong>
           </div>
+          <button
+            type="button"
+            className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
+            aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
+            aria-expanded={privacyOpen}
+            onClick={() => setPrivacyOpen((open) => !open)}
+          >
+            ••
+          </button>
         </div>
       </header>
+
+      <div className={`library-privacy-shell ${privacyOpen ? "open" : ""}`}>
+        <div className="library-privacy-panel">
+          <div className="library-privacy-copy">
+            <div className="library-privacy-title mono">safe shelf</div>
+            <div className="library-privacy-note">
+              {adultCount > 0
+                ? showAdult
+                  ? "All transcode tasks are visible in this session."
+                  : `${adultCount} mature task${adultCount === 1 ? "" : "s"} hidden in this session.`
+                : "No mature-marked transcode tasks found."}
+            </div>
+          </div>
+          <div className="segmented segmented-compact library-privacy-toggle">
+            <button
+              type="button"
+              className={`segmented-button ${!showAdult ? "active" : ""}`}
+              aria-pressed={!showAdult}
+              onClick={() => setShowAdult(false)}
+            >
+              Safe
+            </button>
+            <button
+              type="button"
+              className={`segmented-button ${showAdult ? "active" : ""}`}
+              aria-pressed={showAdult}
+              onClick={() => setShowAdult(true)}
+            >
+              All
+            </button>
+          </div>
+        </div>
+      </div>
 
       {tasks.length === 0 && data && (
         <div className="empty-state">No transcode tasks found.</div>
