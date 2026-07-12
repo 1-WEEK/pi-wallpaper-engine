@@ -98,14 +98,14 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
 
       const mirrorProgress = (p: DownloadProgress) => {
         Effect.runFork(publish(p))
-        Effect.runSync(
+        Effect.runFork(
           tasks.upsert(p.workshopId, {
             stage: p.stage,
             message: p.message ?? "",
             percent: p.percent ?? null,
             bytes_done: p.bytes_done ?? null,
             bytes_total: p.bytes_total ?? null,
-          })
+          }).pipe(Effect.ignore)
         )
       }
 
