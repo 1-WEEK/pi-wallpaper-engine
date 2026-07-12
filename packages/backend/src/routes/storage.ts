@@ -55,18 +55,18 @@ const mapDirectoryError = (set: { status?: number | string }, error: unknown) =>
   return mapError(set, error)
 }
 
-const isFinishedTask = (stage: string, finishedAt: number | null): boolean =>
+export const isFinishedTask = (stage: string, finishedAt: number | null): boolean =>
   stage === "complete" || stage === "error" || finishedAt !== null
 
-const expandHome = (path: string): string =>
+export const expandHome = (path: string): string =>
   path.startsWith("~/") ? resolve(homedir(), path.slice(2)) : resolve(path)
 
-const displayPath = (path: string): string =>
+export const displayPath = (path: string): string =>
   path.startsWith(homedir()) ? `~${path.slice(homedir().length)}` : path
 
-const hasControlChars = (value: string): boolean => /[\r\n\0]/.test(value)
+export const hasControlChars = (value: string): boolean => /[\r\n\0]/.test(value)
 
-const safeDirName = (name: string): string | null => {
+export const safeDirName = (name: string): string | null => {
   const trimmed = name.trim()
   if (
     !trimmed ||
@@ -81,7 +81,7 @@ const safeDirName = (name: string): string | null => {
   return trimmed
 }
 
-const uniqueByPath = <T extends { path: string }>(items: T[]): T[] => {
+export const uniqueByPath = <T extends { path: string }>(items: T[]): T[] => {
   const seen = new Set<string>()
   return items.filter((item) => {
     if (seen.has(item.path)) return false
