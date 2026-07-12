@@ -43,7 +43,7 @@ const promiseError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
 
 export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {}) =>
-  Layer.effect(
+  Layer.scoped(
     DownloadReconciler,
     Effect.gen(function* () {
       const db = yield* Db
@@ -201,12 +201,14 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
       yield* reconciler.startup()
 
       if (startSweeper) {
-        yield* Effect.gen(function* () {
-          while (true) {
-            yield* Effect.sleep(`${sweepIntervalMs} millis`)
-            yield* reconciler.reconcileStale()
-          }
-        }).pipe(Effect.fork)
+        yield* Effect.forkScoped(
+          Effect.gen(function* () {
+            while (true) {
+              yield* Effect.sleep(`${sweepIntervalMs} millis`)
+              yield* reconciler.reconcileStale()
+            }
+          })
+        )
       }
 
       return reconciler
