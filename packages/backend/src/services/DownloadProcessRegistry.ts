@@ -29,6 +29,7 @@ export const steamCmdWorkshopCommand = ({
   "+workshop_download_item",
   WE_APPID,
   workshopId,
+  "validate",
   "+quit",
 ]
 
