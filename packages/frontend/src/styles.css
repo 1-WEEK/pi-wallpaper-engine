@@ -36,7 +36,7 @@ body,
 html {
   margin: 0;
   padding: 0;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   background: var(--ink);
   color: var(--paper);
   overflow: hidden;
@@ -70,7 +70,6 @@ a {
 }
 
 .mono {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
 }
 
@@ -342,7 +341,7 @@ a {
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .auth-logo {
@@ -2002,7 +2001,7 @@ a {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--ink);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
 .directory-dialog-header {
@@ -2326,10 +2325,6 @@ a {
   background: var(--ink);
   color: var(--paper);
   overflow: hidden;
-}
-
-.mobile-shell .mono {
-  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
 }
 
 /* Top bar */
