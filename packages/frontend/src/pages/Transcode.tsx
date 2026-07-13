@@ -96,9 +96,6 @@ export const Transcode = () => {
     <div className="page">
       <header className="page-header">
         <div>
-          <div className="page-kicker mono library-kicker-row">
-            <span>NAS Transcode Worker</span>
-          </div>
           <h1 className="page-title">Transcode</h1>
         </div>
         <div className="page-actions">

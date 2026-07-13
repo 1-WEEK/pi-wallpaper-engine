@@ -94,18 +94,6 @@ export const Downloads = () => {
     <div className="page">
       <header className="page-header">
         <div>
-          <div className="page-kicker mono library-kicker-row">
-            <span>Async SteamCMD workflow</span>
-            <button
-              type="button"
-              className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
-              aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
-              aria-expanded={privacyOpen}
-              onClick={() => setPrivacyOpen((open) => !open)}
-            >
-              ••
-            </button>
-          </div>
           <h1 className="page-title">Downloads</h1>
         </div>
         <div className="page-actions">
@@ -117,6 +105,15 @@ export const Downloads = () => {
             <span className="summary-stat-label mono">finished</span>
             <strong>{finished.length}</strong>
           </div>
+          <button
+            type="button"
+            className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
+            aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
+            aria-expanded={privacyOpen}
+            onClick={() => setPrivacyOpen((open) => !open)}
+          >
+            ••
+          </button>
         </div>
       </header>
 

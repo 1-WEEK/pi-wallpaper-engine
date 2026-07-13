@@ -167,15 +167,6 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
               )}
             </div>
           )}
-          <button
-            type="button"
-            className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
-            aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
-            aria-expanded={privacyOpen}
-            onClick={() => setPrivacyOpen((open) => !open)}
-          >
-            ••
-          </button>
           {!mobile && (
             <div className="segmented">
               <button
@@ -194,6 +185,15 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
               </button>
             </div>
           )}
+          <button
+            type="button"
+            className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
+            aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
+            aria-expanded={privacyOpen}
+            onClick={() => setPrivacyOpen((open) => !open)}
+          >
+            ••
+          </button>
         </div>
       </header>
 

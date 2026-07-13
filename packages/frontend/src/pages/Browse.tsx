@@ -222,7 +222,6 @@ export const Browse = () => {
     <div className="page">
       <header className="page-header">
         <div>
-          <div className="page-kicker mono">Steam Workshop video wallpapers</div>
           <h1 className="page-title">Browse</h1>
         </div>
         <div className="page-header-meta mono">
