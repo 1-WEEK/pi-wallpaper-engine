@@ -21,7 +21,7 @@ export class DownloadTasks extends Context.Tag("DownloadTasks")<
 // Finished tasks (complete/error) auto-evict after this window so the list
 // doesn't grow forever during long sessions. The user can also dismiss any
 // task manually via the UI.
-const FINISHED_TTL_MS = 60 * 60 * 1000
+const FINISHED_TTL_MS = 24 * 60 * 60 * 1000
 
 const COLUMNS = [
   "workshop_id",

@@ -83,6 +83,11 @@ export const Downloads = () => {
     mutate()
   }
 
+  const retry = async (id: string) => {
+    await api.download(id).catch(() => {})
+    mutate()
+  }
+
   const dismissAllFinished = async () => {
     await Promise.all(finished.map((t) => api.dismissDownloadTask(t.workshop_id)))
     mutate()
@@ -163,7 +168,7 @@ export const Downloads = () => {
           <h2 className="section-title mono">Active</h2>
           <ul className="download-list">
             {active.map((t) => (
-              <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} onCancel={cancel} />
+              <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} onCancel={cancel} onRetry={retry} />
             ))}
           </ul>
         </section>
@@ -179,7 +184,7 @@ export const Downloads = () => {
           </div>
           <ul className="download-list download-list-finished">
             {finished.map((t) => (
-              <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} onCancel={cancel} />
+              <DownloadRow key={t.workshop_id} task={t} onDismiss={dismiss} onCancel={cancel} onRetry={retry} />
             ))}
           </ul>
         </section>
@@ -192,9 +197,10 @@ interface RowProps {
   task: DownloadTask
   onDismiss: (id: string) => void
   onCancel: (id: string) => void
+  onRetry: (id: string) => void
 }
 
-const DownloadRow = ({ task, onDismiss, onCancel }: RowProps) => {
+const DownloadRow = ({ task, onDismiss, onCancel, onRetry }: RowProps) => {
   const { mobile } = useLayout()
   const stageClass =
     task.stage === "error" ? "dl-stage-error" : task.stage === "complete" ? "dl-stage-ok" : ""
@@ -235,6 +241,15 @@ const DownloadRow = ({ task, onDismiss, onCancel }: RowProps) => {
           <span className="mono" style={{ fontSize: 11, color: "var(--paper-faint)" }}>
             {elapsed}
           </span>
+          {task.stage === "error" && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => onRetry(task.workshop_id)}
+            >
+              Retry
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-secondary"
@@ -293,9 +308,16 @@ const DownloadRow = ({ task, onDismiss, onCancel }: RowProps) => {
       </div>
       <div className="download-actions">
         {isFinished(task) ? (
-          <button type="button" className="btn btn-secondary" onClick={() => onDismiss(task.workshop_id)}>
-            Dismiss
-          </button>
+          <>
+            {task.stage === "error" && (
+              <button type="button" className="btn btn-secondary" onClick={() => onRetry(task.workshop_id)}>
+                Retry
+              </button>
+            )}
+            <button type="button" className="btn btn-secondary" onClick={() => onDismiss(task.workshop_id)}>
+              Dismiss
+            </button>
+          </>
         ) : (
           <button type="button" className="btn btn-secondary" onClick={() => onCancel(task.workshop_id)}>
             Cancel
