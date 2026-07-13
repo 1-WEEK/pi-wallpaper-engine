@@ -202,7 +202,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           const download = yield* steam.download(workshopId, mirrorProgress).pipe(
             Effect.retry({
               times: 2,
-              while: (e) => e._tag === "SteamCmdError" && e.kind === "Timeout"
+              while: (e) => e._tag === "SteamCmdError" && (e.kind === "Timeout" || e.message.includes("failed (Failure)"))
             })
           )
           yield* logger.info(`[trace] SteamCMD finished: ${download.localPath}`)
