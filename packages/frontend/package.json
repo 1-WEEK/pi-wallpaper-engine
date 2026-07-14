@@ -10,19 +10,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-auth/passkey": "^1.6.11",
+    "@better-auth/passkey": "^1.6.23",
     "@pwe/shared": "workspace:*",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "better-auth": "^1.6.11",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "swr": "^2.4.1",
-    "wouter": "^3.9.0"
+    "@radix-ui/react-dialog": "^1.1.19",
+    "better-auth": "^1.6.23",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "swr": "^2.4.2",
+    "wouter": "^3.10.0"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^6.0.0",
-    "vite": "^8.0.0"
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "vite": "^8.1.4"
   }
 }
