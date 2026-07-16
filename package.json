@@ -31,7 +31,7 @@
     "@types/bun": "latest",
     "playwright": "^1.61.1",
     "simple-git-hooks": "^2.13.1",
-    "typescript": "^6.0.3"
+    "typescript": "7.0.2"
   },
   "engines": {
     "bun": ">=1.2.0"
