@@ -8,8 +8,7 @@ import type { PlayerStatus, SystemSummary } from "@pwe/shared"
 import { fetchSession, fetchSetupState } from "./auth.js"
 import { appIcons } from "./icons.js"
 import { Browse } from "./pages/Browse.js"
-import { Downloads } from "./pages/Downloads.js"
-import { Transcode } from "./pages/Transcode.js"
+import { Activity } from "./pages/Activity.js"
 import { Library } from "./pages/Library.js"
 import { Login } from "./pages/Login.js"
 import { Setup } from "./pages/Setup.js"
@@ -23,6 +22,7 @@ import {
   useContainerWidth,
   useLayout,
 } from "./components/mobile/index.js"
+import { getActiveTaskCount } from "./activeTaskCount.js"
 
 const formatStorageUsage = (
   usedBytes: number | null | undefined,
@@ -78,10 +78,10 @@ const Routes = ({
       />
     </Route>
     <Route path="/downloads">
-      <Downloads />
+      <Activity />
     </Route>
     <Route path="/transcode">
-      <Transcode />
+      <Redirect to="/downloads" />
     </Route>
     <Route path="/settings">
       <Settings summary={summary ?? null} onRefresh={onRefresh} />
@@ -94,8 +94,8 @@ const Routes = ({
 
 const pageTitle = (loc: string): string => {
   if (loc.startsWith("/library")) return "Library"
-  if (loc.startsWith("/downloads")) return "Downloads"
-  if (loc.startsWith("/transcode")) return "Transcode"
+  if (loc.startsWith("/downloads")) return "Activity"
+  if (loc.startsWith("/transcode")) return "Activity"
   if (loc.startsWith("/settings")) return "Settings"
   return "Browse"
 }
@@ -253,15 +253,9 @@ const DesktopShell = ({
     {
       href: "/downloads",
       active: loc === "/downloads",
-      label: "Downloads",
-      icon: appIcons.downloads,
-      badge: summary?.status.downloads.active,
-    },
-    {
-      href: "/transcode",
-      active: loc === "/transcode",
-      label: "Transcode",
-      icon: appIcons.transcode,
+      label: "Activity",
+      icon: appIcons.activity,
+      badge: getActiveTaskCount(summary),
     },
     {
       href: "/settings",

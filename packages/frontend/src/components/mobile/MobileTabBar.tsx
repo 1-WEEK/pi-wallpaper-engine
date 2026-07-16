@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { Link } from "wouter"
 import type { SystemSummary } from "../../api.js"
 import { appIcons } from "../../icons.js"
+import { getActiveTaskCount } from "../../activeTaskCount.js"
 
 interface TabItem {
   href: string
@@ -23,7 +24,7 @@ const matches = (loc: string, href: string): boolean => {
 }
 
 export const MobileTabBar = ({ summary, currentLoc, browseHref }: Props) => {
-  const dlActive = summary?.status.downloads.active ?? 0
+  const totalActive = getActiveTaskCount(summary)
   const items: TabItem[] = [
     { href: browseHref, label: "Browse", icon: appIcons.browse },
     {
@@ -34,12 +35,11 @@ export const MobileTabBar = ({ summary, currentLoc, browseHref }: Props) => {
     },
     {
       href: "/downloads",
-      label: "Downloads",
-      icon: appIcons.downloads,
-      badge: dlActive,
-      hot: dlActive > 0,
+      label: "Activity",
+      icon: appIcons.activity,
+      badge: totalActive,
+      hot: totalActive > 0,
     },
-    { href: "/transcode", label: "Transcode", icon: appIcons.transcode },
     { href: "/settings", label: "Settings", icon: appIcons.settings },
   ]
   return (

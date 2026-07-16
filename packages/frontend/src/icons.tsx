@@ -23,6 +23,11 @@ const AppIcon = ({
 )
 
 export const appIcons = {
+  activity: (
+    <AppIcon>
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </AppIcon>
+  ),
   browse: (
     <AppIcon>
       <circle cx="11" cy="11" r="6" />
