@@ -72,9 +72,14 @@ export const Activity = () => {
   const dlFetcher = ([_, offset, limit]: readonly [string, number, number]) => api.downloadTasks({ offset, limit })
 
   const { data: dData, error: dError, mutate: dMutate, size: dSize, setSize: setDSize } = useSWRInfinite(getDlKey, dlFetcher, {
-    refreshInterval: REFRESH_MS,
     revalidateIfStale: true,
   })
+
+  const { data: activePageData, error: activeError, mutate: activeMutate } = useSWR(
+    "active-download-tasks",
+    () => api.downloadTasks({ offset: 0, limit: 50 }),
+    { refreshInterval: REFRESH_MS }
+  )
 
   const { data: tData, error: tError, mutate: tMutate } = useSWR("library-transcode", api.libraryList)
   
@@ -132,7 +137,14 @@ export const Activity = () => {
     return () => ws.close()
   }, [tMutate, shouldConnectWS])
 
-  const dlTasks = dData ? dData.flatMap(page => page.items) : []
+  const dlTasks = useMemo(() => {
+    const history = dData ? dData.flatMap(page => page.items) : []
+    const recent = activePageData?.items || []
+    const map = new Map<string, DownloadTask>()
+    for (const t of history) map.set(t.task_id, t)
+    for (const t of recent) map.set(t.task_id, t)
+    return Array.from(map.values()).sort((a, b) => b.started_at - a.started_at)
+  }, [dData, activePageData])
   const hasMoreDl = dData && dData[dData.length - 1]?.items.length === 50
   const tcTasks = (tData ?? []).filter(t => t.transcode_status && t.transcode_status !== "skipped" && t.transcode_status !== "completed")
 
@@ -173,29 +185,28 @@ export const Activity = () => {
   const dismissDl = async (id: string) => {
     await api.dismissDownloadTask(id)
     dMutate()
+    activeMutate()
   }
 
   const cancelDl = async (id: string) => {
     await api.cancelDownload(id).catch(() => {})
     dMutate()
+    activeMutate()
   }
 
   const retryDl = async (id: string) => {
     await api.download(id).catch(() => {})
     dMutate()
+    activeMutate()
   }
 
-  const dismissAllCompletedDl = async () => {
-    await api.dismissAllDownloadTasks("complete")
+  const dismissAll = async (stage: DownloadStage) => {
+    await api.dismissAllDownloadTasks(stage)
     dMutate()
+    activeMutate()
   }
 
-  const dismissAllFailedDl = async () => {
-    await api.dismissAllDownloadTasks("error")
-    dMutate()
-  }
-
-  const combinedError = dError || tError
+  const combinedError = dError || activeError || tError
 
   if (combinedError) return <div className="error">{(combinedError as Error).message}</div>
 
@@ -289,12 +300,12 @@ export const Activity = () => {
             <h2 className="section-title mono">Finished Downloads</h2>
             <div>
               {finishedDl.some(t => t.stage === "complete") && (
-                <button type="button" className="btn btn-secondary" onClick={dismissAllCompletedDl} aria-label="Clear all completed" style={{ marginRight: 8 }}>
+                <button type="button" className="btn btn-secondary" onClick={() => dismissAll("complete")} aria-label="Clear all completed" style={{ marginRight: 8 }}>
                   Clear Completed
                 </button>
               )}
               {finishedDl.some(t => t.stage === "error") && (
-                <button type="button" className="btn btn-secondary" onClick={dismissAllFailedDl} aria-label="Clear all failed">
+                <button type="button" className="btn btn-secondary" onClick={() => dismissAll("error")} aria-label="Clear all failed">
                   Clear Failed
                 </button>
               )}
