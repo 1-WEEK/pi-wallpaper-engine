@@ -10,6 +10,11 @@ export interface MigrationProgress {
   error: string | null
 }
 
+export interface PaginatedTasks {
+  readonly items: DownloadTask[]
+  readonly total: number
+}
+
 export interface StorageStatus {
   available: boolean
   data_root: string
@@ -121,9 +126,17 @@ export const api = {
       json<{ ok: boolean; workshopId: string }>
     ),
 
-  downloadTasks: () => fetchWithTimeout(`/api/download/tasks`).then(json<DownloadTask[]>),
-  dismissDownloadTask: (id: string) =>
-    fetchWithTimeout(`/api/download/tasks/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  downloadTasks: (opts: { offset?: number; limit?: number } = {}) => {
+    const params = new URLSearchParams()
+    if (opts.offset !== undefined) params.set("offset", opts.offset.toString())
+    if (opts.limit !== undefined) params.set("limit", opts.limit.toString())
+    const q = params.toString()
+    return fetchWithTimeout(`/api/download/tasks${q ? `?${q}` : ""}`).then(json<PaginatedTasks>)
+  },
+  dismissDownloadTask: (taskId: string) =>
+    fetchWithTimeout(`/api/download/tasks/${taskId}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  dismissAllDownloadTasks: (stage: DownloadStage) =>
+    fetchWithTimeout(`/api/download/tasks?status=${stage}`, { method: "DELETE" }).then(json<{ ok: true }>),
   cancelDownload: (id: string) =>
     fetchWithTimeout(`/api/download/${id}/cancel`, { method: "POST" }).then(
       json<{ ok: boolean; workshopId?: string; status?: string; error?: string }>

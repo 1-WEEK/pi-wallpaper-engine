@@ -1,4 +1,4 @@
-import { Elysia } from "elysia"
+import { Elysia, t } from "elysia"
 import { Effect, Stream } from "effect"
 import { DownloadIntake, type DownloadCancelResult, type DownloadStartResult } from "../services/DownloadIntake.js"
 import { DownloadTasks } from "../services/DownloadTasks.js"
@@ -89,20 +89,50 @@ export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = n
       }
     })
 
-    .get("/tasks", () =>
-      runtime.runPromise(
-        Effect.gen(function* () {
-          const tasks = yield* DownloadTasks
-          return yield* tasks.list()
-        })
-      )
+    .get(
+      "/tasks",
+      ({ query }) =>
+        runtime.runPromise(
+          Effect.gen(function* () {
+            const tasks = yield* DownloadTasks
+            return yield* tasks.list({
+              offset: query.offset ? parseInt(query.offset) : undefined,
+              limit: query.limit ? parseInt(query.limit) : undefined,
+            })
+          })
+        ),
+      {
+        query: t.Optional(
+          t.Object({
+            offset: t.Optional(t.String()),
+            limit: t.Optional(t.String()),
+          })
+        ),
+      }
     )
 
-    .delete("/tasks/:workshopId", ({ params }) =>
+    .delete(
+      "/tasks",
+      ({ query }) =>
+        runtime.runPromise(
+          Effect.gen(function* () {
+            const tasks = yield* DownloadTasks
+            yield* tasks.dismissAll(query.status)
+            return { ok: true }
+          })
+        ),
+      {
+        query: t.Object({
+          status: t.Union([t.Literal("complete"), t.Literal("error")]),
+        }),
+      }
+    )
+
+    .delete("/tasks/:taskId", ({ params }) =>
       runtime.runPromise(
         Effect.gen(function* () {
           const tasks = yield* DownloadTasks
-          yield* tasks.dismiss(params.workshopId)
+          yield* tasks.dismiss(params.taskId)
           return { ok: true }
         })
       )

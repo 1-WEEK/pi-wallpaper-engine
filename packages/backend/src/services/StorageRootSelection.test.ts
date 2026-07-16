@@ -41,10 +41,8 @@ const makeConfig = (defaultRoot: string): RuntimeConfig => ({
   server: { host: "0.0.0.0", port: 8080 },
 })
 
-const makeDownloadTask = (
-  workshopId: string,
-  patch: Partial<DownloadTask> = {}
-): DownloadTask => ({
+const baseTask = (workshopId: string, patch: Partial<DownloadTask> = {}): DownloadTask => ({
+  task_id: workshopId,
   workshop_id: workshopId,
   title: workshopId,
   preview_url: "",
@@ -96,6 +94,7 @@ const makeHarness = (
   const rootBase = tempDir("pwe-storage-root-selection-")
   const defaultRoot = opts.defaultRoot ?? join(rootBase, "default-root")
   const currentRoot = opts.currentRoot ?? join(rootBase, "current-root")
+  const activeDownloads = opts.tasks ?? []
   mkdirSync(defaultRoot, { recursive: true })
   mkdirSync(currentRoot, { recursive: true })
 
@@ -121,10 +120,12 @@ const makeHarness = (
   }
 
   const tasksImpl: DownloadTasksImpl = {
-    list: () => Effect.succeed(opts.tasks ?? []),
+    list: () => Effect.succeed({ items: activeDownloads as any, total: activeDownloads.length }),
     get: () => Effect.succeed(null),
+    getActiveByWorkshopId: () => Effect.succeed(null),
     upsert: () => Effect.void,
     dismiss: () => Effect.void,
+    dismissAll: () => Effect.void,
   }
 
   const libraryImpl: LibraryImpl = {
@@ -281,7 +282,7 @@ describe("StorageRootSelection", () => {
 
   test("planSwitch rejects active downloads before switching roots", async () => {
     const harness = makeHarness({
-      tasks: [makeDownloadTask("abc", { stage: "downloading", finished_at: null })],
+      tasks: [baseTask("abc", { stage: "downloading", finished_at: null })],
     })
     const target = join(harness.rootBase, "busy-download-target")
     mkdirSync(target, { recursive: true })

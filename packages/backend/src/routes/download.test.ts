@@ -6,10 +6,12 @@ import { DownloadTasks, type DownloadTasksImpl } from "../services/DownloadTasks
 import { downloadRoutes } from "./download.js"
 
 const makeTasks = (): DownloadTasksImpl => ({
-  list: () => Effect.succeed([]),
+  list: () => Effect.succeed({ items: [] as any, total: 0 }),
   get: () => Effect.succeed(null),
+  getActiveByWorkshopId: () => Effect.succeed(null),
   upsert: () => Effect.void,
   dismiss: () => Effect.void,
+  dismissAll: () => Effect.void,
 })
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))

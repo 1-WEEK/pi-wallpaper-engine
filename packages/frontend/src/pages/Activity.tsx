@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { isAdultContent, type LibraryItem, type TranscodeProgressEvent } from "@pwe/shared"
 import useSWR, { useSWRConfig } from "swr"
-import { api, type DownloadStage, type DownloadTask } from "../api.js"
+import useSWRInfinite from "swr/infinite"
+import { api, type DownloadStage, type DownloadTask, type PaginatedTasks } from "../api.js"
 import { appIcons } from "../icons.js"
 import { formatBytes } from "../format.js"
 import { useLayout } from "../components/mobile/index.js"
@@ -64,10 +65,15 @@ export const Activity = () => {
   const [privacyOpen, setPrivacyOpen] = useState(false)
   const [showAdult, setShowAdult] = useState(false)
 
-  const { data: dData, error: dError, mutate: dMutate } = useSWR("download-tasks", api.downloadTasks, {
+  const getDlKey = (pageIndex: number, previousPageData: PaginatedTasks | null) => {
+    if (previousPageData && !previousPageData.items.length) return null
+    return ["download-tasks", pageIndex * 50, 50] as const
+  }
+  const dlFetcher = ([_, offset, limit]: readonly [string, number, number]) => api.downloadTasks({ offset, limit })
+
+  const { data: dData, error: dError, mutate: dMutate, size: dSize, setSize: setDSize } = useSWRInfinite(getDlKey, dlFetcher, {
     refreshInterval: REFRESH_MS,
     revalidateIfStale: true,
-    dedupingInterval: 0,
   })
 
   const { data: tData, error: tError, mutate: tMutate } = useSWR("library-transcode", api.libraryList)
@@ -126,7 +132,8 @@ export const Activity = () => {
     return () => ws.close()
   }, [tMutate, shouldConnectWS])
 
-  const dlTasks = dData ?? []
+  const dlTasks = dData ? dData.flatMap(page => page.items) : []
+  const hasMoreDl = dData && dData[dData.length - 1]?.items.length === 50
   const tcTasks = (tData ?? []).filter(t => t.transcode_status && t.transcode_status !== "skipped" && t.transcode_status !== "completed")
 
   const adultDlCount = useMemo(() => dlTasks.filter(isAdultDl).length, [dlTasks])
@@ -178,8 +185,13 @@ export const Activity = () => {
     dMutate()
   }
 
-  const dismissAllFinishedDl = async () => {
-    await Promise.all(finishedDl.map((t) => api.dismissDownloadTask(t.workshop_id)))
+  const dismissAllCompletedDl = async () => {
+    await api.dismissAllDownloadTasks("complete")
+    dMutate()
+  }
+
+  const dismissAllFailedDl = async () => {
+    await api.dismissAllDownloadTasks("error")
     dMutate()
   }
 
@@ -262,7 +274,7 @@ export const Activity = () => {
           <h2 className="section-title mono">Active</h2>
           <ul className="task-list">
             {activeDl.map((t) => (
-              <DownloadRow key={`dl-${t.workshop_id}`} task={t} onDismiss={dismissDl} onCancel={cancelDl} onRetry={retryDl} />
+              <DownloadRow key={`dl-${t.task_id}`} task={t} onDismiss={dismissDl} onCancel={cancelDl} onRetry={retryDl} />
             ))}
             {activeTc.map((t) => (
               <TranscodeRow key={`tc-${t.workshop_id}`} task={t} />
@@ -275,15 +287,29 @@ export const Activity = () => {
         <section className="task-section">
           <div className="task-section-header">
             <h2 className="section-title mono">Finished Downloads</h2>
-            <button type="button" className="btn btn-secondary" onClick={dismissAllFinishedDl} aria-label="Clear all finished downloads">
-              {appIcons.close}
-            </button>
+            <div>
+              {finishedDl.some(t => t.stage === "complete") && (
+                <button type="button" className="btn btn-secondary" onClick={dismissAllCompletedDl} aria-label="Clear all completed" style={{ marginRight: 8 }}>
+                  Clear Completed
+                </button>
+              )}
+              {finishedDl.some(t => t.stage === "error") && (
+                <button type="button" className="btn btn-secondary" onClick={dismissAllFailedDl} aria-label="Clear all failed">
+                  Clear Failed
+                </button>
+              )}
+            </div>
           </div>
           <ul className="task-list">
             {finishedDl.map((t) => (
-              <DownloadRow key={`dl-${t.workshop_id}`} task={t} onDismiss={dismissDl} onCancel={cancelDl} onRetry={retryDl} />
+              <DownloadRow key={`dl-${t.task_id}`} task={t} onDismiss={dismissDl} onCancel={cancelDl} onRetry={retryDl} />
             ))}
           </ul>
+          {hasMoreDl && (
+            <div style={{ marginTop: 16, textAlign: "center" }}>
+              <button className="btn btn-secondary" onClick={() => setDSize(dSize + 1)}>Load More</button>
+            </div>
+          )}
         </section>
       )}
 
@@ -371,7 +397,7 @@ const DownloadRow = ({ task, onDismiss, onCancel, onRetry }: DlRowProps) => {
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={() => onDismiss(task.workshop_id)}
+            onClick={() => onDismiss(task.task_id)}
           >
             Dismiss
           </button>
@@ -432,7 +458,7 @@ const DownloadRow = ({ task, onDismiss, onCancel, onRetry }: DlRowProps) => {
                 Retry
               </button>
             )}
-            <button type="button" className="btn btn-secondary" onClick={() => onDismiss(task.workshop_id)}>
+            <button type="button" className="btn btn-secondary" onClick={() => onDismiss(task.task_id)}>
               Dismiss
             </button>
           </>

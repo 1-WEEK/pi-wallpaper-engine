@@ -135,7 +135,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
 
           const sleepStatus = yield* playbackService.sleepStatus()
 
-          const activeDownloads = taskRows.filter(
+          const activeDownloads = taskRows.items.filter(
             (task) => !isFinishedTask(task.stage, task.finished_at)
           ).length
 
@@ -169,7 +169,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
               },
               downloads: {
                 active: activeDownloads,
-                finished: taskRows.length - activeDownloads,
+                finished: taskRows.total - activeDownloads,
               },
               sleep: sleepStatus,
               transcode,

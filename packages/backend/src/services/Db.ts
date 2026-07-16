@@ -26,7 +26,7 @@ const ensureLibraryColumns = (db: Database) => {
 }
 
 const ensureDownloadTaskColumns = (db: Database) => {
-  const columns = (db.query(`PRAGMA table_info(download_tasks)`).all() as Array<{ name: string }>).map(
+  let columns = (db.query(`PRAGMA table_info(download_tasks)`).all() as Array<{ name: string }>).map(
     (row) => row.name
   )
 
@@ -38,6 +38,47 @@ const ensureDownloadTaskColumns = (db: Database) => {
   }
   if (!columns.includes("adult_hint")) {
     db.exec(`ALTER TABLE download_tasks ADD COLUMN adult_hint INTEGER NOT NULL DEFAULT 0`)
+  }
+
+  columns = (db.query(`PRAGMA table_info(download_tasks)`).all() as Array<{ name: string }>).map(
+    (row) => row.name
+  )
+
+  if (!columns.includes("task_id")) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE download_tasks_new (
+          task_id     TEXT PRIMARY KEY,
+          workshop_id TEXT NOT NULL,
+          title       TEXT NOT NULL,
+          preview_url TEXT NOT NULL DEFAULT '',
+          content_rating TEXT,
+          rating_sex  TEXT,
+          adult_hint  INTEGER NOT NULL DEFAULT 0,
+          stage       TEXT NOT NULL,
+          message     TEXT NOT NULL DEFAULT '',
+          started_at  INTEGER NOT NULL,
+          finished_at INTEGER,
+          percent     REAL,
+          bytes_done  INTEGER,
+          bytes_total INTEGER
+        )
+      `)
+      db.exec(`
+        INSERT INTO download_tasks_new (
+          task_id, workshop_id, title, preview_url, content_rating, rating_sex, adult_hint,
+          stage, message, started_at, finished_at, percent, bytes_done, bytes_total
+        )
+        SELECT 
+          lower(hex(randomblob(16))), workshop_id, title, preview_url, content_rating, rating_sex, adult_hint,
+          stage, message, started_at, finished_at, percent, bytes_done, bytes_total
+        FROM download_tasks
+      `)
+      db.exec(`DROP TABLE download_tasks`)
+      db.exec(`ALTER TABLE download_tasks_new RENAME TO download_tasks`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_download_tasks_started_at ON download_tasks(started_at DESC)`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_download_tasks_workshop_id ON download_tasks(workshop_id)`)
+    })()
   }
 }
 

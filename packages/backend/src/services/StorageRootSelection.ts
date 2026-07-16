@@ -278,7 +278,7 @@ export const StorageRootSelectionLive = Layer.effect(
           const targetChanged = target.path !== status.data_root
           if (!targetChanged) return { action: "noop", target } satisfies SwitchPlan
 
-          const activeDownloads = (yield* downloadTasks.list()).filter(
+          const activeDownloads = (yield* downloadTasks.list()).items.filter(
             (task) => !isFinishedTask(task.stage, task.finished_at)
           )
           if (activeDownloads.length > 0) {

@@ -27,6 +27,7 @@ import { Logger, type LoggerImpl } from "./Logger.js"
 import { Storage, type StorageImpl } from "./Storage.js"
 
 const baseTask = (patch: Partial<DownloadTask> = {}): DownloadTask => ({
+  task_id: "123",
   workshop_id: "123",
   title: "Test",
   preview_url: "",
@@ -84,7 +85,8 @@ const libraryRow = (workshopId: string): LibraryItem => ({
 
 const DOWNLOAD_TASKS_DDL = `
   CREATE TABLE IF NOT EXISTS download_tasks (
-    workshop_id TEXT PRIMARY KEY,
+    task_id     TEXT PRIMARY KEY,
+    workshop_id TEXT NOT NULL,
     title       TEXT NOT NULL,
     preview_url TEXT NOT NULL DEFAULT '',
     content_rating TEXT,
@@ -297,10 +299,10 @@ describe("DownloadTasksLive store", () => {
     db.db
       .prepare(
         `INSERT INTO download_tasks (
-          workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, '', 0, ?, ?, ?, NULL)`
+          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, NULL)`
       )
-      .run("123", "Task 123", "downloading", "Connecting...", 10)
+      .run("123", "123", "Task 123", "downloading", "Connecting...", 10)
 
     const runtime = ManagedRuntime.make(
       DownloadTasksLive.pipe(
@@ -331,10 +333,10 @@ describe("DownloadReconciler startup", () => {
     db.db
       .prepare(
         `INSERT INTO download_tasks (
-          workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, '', 0, ?, ?, ?, NULL)`
+          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, NULL)`
       )
-      .run("123", "Task 123", "downloading", "Connecting...", 10)
+      .run("123", "123", "Task 123", "downloading", "Connecting...", 10)
 
     const runtime = makeReconcilerRuntime({ db, logger, registry })
     runtimes.push(runtime as ManagedRuntime.ManagedRuntime<unknown, never>)
@@ -365,10 +367,10 @@ describe("DownloadReconciler startup", () => {
     db.db
       .prepare(
         `INSERT INTO download_tasks (
-          workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, '', 0, ?, ?, ?, NULL)`
+          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, NULL)`
       )
-      .run("123", "Task 123", "downloading", "Connecting...", 10)
+      .run("123", "123", "Task 123", "downloading", "Connecting...", 10)
 
     const runtime = makeReconcilerRuntime({
       db,
@@ -399,10 +401,10 @@ describe("DownloadReconciler startup", () => {
     db.db
       .prepare(
         `INSERT INTO download_tasks (
-          workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, '', 0, ?, ?, ?, ?)`
+          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, ?)`
       )
-      .run("123", "Task 123", "finalizing", "Validating files...", 10, 20)
+      .run("123", "123", "Task 123", "finalizing", "Validating files...", 10, 20)
 
     const runtime = makeReconcilerRuntime({
       db,
@@ -451,10 +453,10 @@ describe("DownloadReconciler stale task sweep", () => {
     db.db
       .prepare(
         `INSERT INTO download_tasks (
-          workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, '', 0, ?, ?, ?, NULL)`
+          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, NULL)`
       )
-      .run("123", "Task 123", "downloading", "Connecting...", 10)
+      .run("123", "123", "Task 123", "downloading", "Connecting...", 10)
 
     await runtime.runPromise(
       Effect.gen(function* () {

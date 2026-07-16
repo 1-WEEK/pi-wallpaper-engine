@@ -43,7 +43,8 @@ CREATE INDEX IF NOT EXISTS idx_transcode_jobs_status ON transcode_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_transcode_jobs_workshop_id ON transcode_jobs(workshop_id);
 
 CREATE TABLE IF NOT EXISTS download_tasks (
-  workshop_id TEXT PRIMARY KEY,
+  task_id     TEXT PRIMARY KEY,
+  workshop_id TEXT NOT NULL,
   title       TEXT NOT NULL,
   preview_url TEXT NOT NULL DEFAULT '',
   content_rating TEXT,

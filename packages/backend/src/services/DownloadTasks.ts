@@ -3,14 +3,21 @@ import { Db } from "./Db.js"
 import { Logger } from "./Logger.js"
 import type { DownloadStage, DownloadTask } from "@pwe/shared"
 
+export interface PaginatedTasks {
+  readonly items: ReadonlyArray<DownloadTask>
+  readonly total: number
+}
+
 export interface DownloadTasksImpl {
-  readonly list: () => Effect.Effect<ReadonlyArray<DownloadTask>>
-  readonly get: (workshopId: string) => Effect.Effect<DownloadTask | null>
+  readonly list: (opts?: { offset?: number; limit?: number }) => Effect.Effect<PaginatedTasks>
+  readonly getActiveByWorkshopId: (workshopId: string) => Effect.Effect<DownloadTask | null>
+  readonly get: (taskId: string) => Effect.Effect<DownloadTask | null>
   readonly upsert: (
-    workshopId: string,
-    patch: Partial<Omit<DownloadTask, "workshop_id">>
+    taskId: string,
+    patch: Partial<Omit<DownloadTask, "task_id">>
   ) => Effect.Effect<void>
-  readonly dismiss: (workshopId: string) => Effect.Effect<void>
+  readonly dismiss: (taskId: string) => Effect.Effect<void>
+  readonly dismissAll: (stage: DownloadStage) => Effect.Effect<void>
 }
 
 export class DownloadTasks extends Context.Tag("DownloadTasks")<
@@ -18,12 +25,10 @@ export class DownloadTasks extends Context.Tag("DownloadTasks")<
   DownloadTasksImpl
 >() {}
 
-// Finished tasks (complete/error) auto-evict after this window so the list
-// doesn't grow forever during long sessions. The user can also dismiss any
-// task manually via the UI.
-const FINISHED_TTL_MS = 24 * 60 * 60 * 1000
+
 
 const COLUMNS = [
+  "task_id",
   "workshop_id",
   "title",
   "preview_url",
@@ -46,7 +51,7 @@ export const isFinishedTask = (stage: DownloadStage | string, finishedAt: number
 
 export const mergeDownloadTaskRow = (
   row: DownloadTask,
-  patch: Partial<Omit<DownloadTask, "workshop_id">>
+  patch: Partial<Omit<DownloadTask, "task_id">>
 ): DownloadTask => {
   const restarting = patch.finished_at === null
   const nextStage = patch.stage ?? row.stage
@@ -64,52 +69,68 @@ export const DownloadTasksLive = Layer.effect(
     const db = yield* Db
     const logger = yield* Logger
 
-    const sweep = () =>
-      db.exec(`DELETE FROM download_tasks WHERE finished_at IS NOT NULL AND finished_at < ?`, [
-        Date.now() - FINISHED_TTL_MS,
-      ])
-
     return {
-      list: () =>
+      list: (opts) =>
         Effect.gen(function* () {
-          yield* sweep()
-          return yield* db.query<DownloadTask>(
-            `SELECT * FROM download_tasks ORDER BY started_at DESC`
+          const limit = opts?.limit ?? 50
+          const offset = opts?.offset ?? 0
+          
+          const totalRow = yield* db.queryOne<{ count: number }>(`SELECT count(*) as count FROM download_tasks`)
+          const items = yield* db.query<DownloadTask>(
+            `SELECT * FROM download_tasks ORDER BY started_at DESC LIMIT ? OFFSET ?`,
+            [limit, offset]
           )
+          
+          return { items, total: totalRow?.count ?? 0 }
         }).pipe(
           Effect.catchAll((e) =>
             Effect.gen(function* () {
               yield* logger.error(`Failed to list download tasks: ${e.message}`)
-              return []
+              return { items: [], total: 0 }
             })
           )
         ),
 
-      get: (workshopId) =>
+      get: (taskId) =>
         db
-          .queryOne<DownloadTask>(`SELECT * FROM download_tasks WHERE workshop_id = ?`, [
-            workshopId,
+          .queryOne<DownloadTask>(`SELECT * FROM download_tasks WHERE task_id = ?`, [
+            taskId,
           ])
           .pipe(
             Effect.catchAll((e) =>
               Effect.gen(function* () {
-                yield* logger.error(`Failed to get download task ${workshopId}: ${e.message}`)
+                yield* logger.error(`Failed to get download task ${taskId}: ${e.message}`)
                 return null
               })
             )
           ),
 
-      upsert: (workshopId, patch) =>
+      getActiveByWorkshopId: (workshopId) =>
+        db
+          .queryOne<DownloadTask>(`SELECT * FROM download_tasks WHERE workshop_id = ? AND finished_at IS NULL ORDER BY started_at DESC LIMIT 1`, [
+            workshopId,
+          ])
+          .pipe(
+            Effect.catchAll((e) =>
+              Effect.gen(function* () {
+                yield* logger.error(`Failed to get active task for ${workshopId}: ${e.message}`)
+                return null
+              })
+            )
+          ),
+
+      upsert: (taskId, patch) =>
         Effect.gen(function* () {
           let row = yield* db.queryOne<DownloadTask>(
-            `SELECT * FROM download_tasks WHERE workshop_id = ?`,
-            [workshopId]
+            `SELECT * FROM download_tasks WHERE task_id = ?`,
+            [taskId]
           )
           
           if (!row) {
             row = {
-              workshop_id: workshopId,
-              title: workshopId,
+              task_id: taskId,
+              workshop_id: patch.workshop_id ?? taskId,
+              title: patch.title ?? patch.workshop_id ?? taskId,
               preview_url: "",
               content_rating: null,
               rating_sex: null,
@@ -135,14 +156,21 @@ export const DownloadTasksLive = Layer.effect(
           )
         }).pipe(
           Effect.catchAll((e) =>
-            logger.error(`Failed to upsert download task ${workshopId}: ${e.message}`)
+            logger.error(`Failed to upsert download task ${taskId}: ${e.message}`)
           )
         ),
 
-      dismiss: (workshopId) =>
-        db.exec(`DELETE FROM download_tasks WHERE workshop_id = ?`, [workshopId]).pipe(
+      dismiss: (taskId) =>
+        db.exec(`DELETE FROM download_tasks WHERE task_id = ?`, [taskId]).pipe(
           Effect.catchAll((e) =>
-            logger.error(`Failed to dismiss download task ${workshopId}: ${e.message}`)
+            logger.error(`Failed to dismiss download task ${taskId}: ${e.message}`)
+          )
+        ),
+
+      dismissAll: (stage) =>
+        db.exec(`DELETE FROM download_tasks WHERE stage = ?`, [stage]).pipe(
+          Effect.catchAll((e) =>
+            logger.error(`Failed to dismiss all ${stage} tasks: ${e.message}`)
           )
         ),
     }

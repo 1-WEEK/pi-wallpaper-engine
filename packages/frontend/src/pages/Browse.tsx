@@ -158,9 +158,9 @@ export const Browse = () => {
     refreshInterval: 5000,
     revalidateIfStale: true,
   })
-  const { data: downloadTasks = [], mutate: mutateDownloadTasks } = useSWR(
+  const { data: downloadTasksData, mutate: mutateDownloadTasks } = useSWR(
     "download-tasks",
-    api.downloadTasks,
+    () => api.downloadTasks(),
     {
       refreshInterval: 1000,
       revalidateIfStale: true,
@@ -173,8 +173,8 @@ export const Browse = () => {
     [libraryRows]
   )
   const downloadTasksById = useMemo(
-    () => new Map(downloadTasks.map((task) => [task.workshop_id, task])),
-    [downloadTasks]
+    () => new Map((downloadTasksData?.items ?? []).map((task) => [task.workshop_id, task])),
+    [downloadTasksData]
   )
 
   const pages = data ?? []

@@ -14,6 +14,7 @@ export type DownloadStage = typeof DownloadStage.Type
 // A download task tracked in-memory by the backend's DownloadTasks service,
 // surfaced via REST and consumed by the frontend's download / browse UIs.
 export const DownloadTask = Schema.Struct({
+  task_id: Schema.String,
   workshop_id: Schema.String,
   title: Schema.String,
   preview_url: Schema.String,
