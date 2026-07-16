@@ -111,7 +111,7 @@ When a task requires understanding code, architecture, data flow, call chains, o
 
 ### Issue tracker
 
-Issues live in GitHub Issues at `1-WEEK/pi-wallpaper-engine` (use the `gh` CLI). External PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+Issues and specs live as local markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
