@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { Db } from "./Db.js"
 import { Logger } from "./Logger.js"
-import { isTerminalTaskStage, type TaskStage, type ActivityTask } from "@pwe/shared"
+import { ActivityTask, isTerminalTaskStage, type TaskStage } from "@pwe/shared"
 
 export interface PaginatedTasks {
   readonly items: ReadonlyArray<ActivityTask>
@@ -30,23 +30,9 @@ export class Tasks extends Context.Tag("Tasks")<
   TasksImpl
 >() {}
 
-const COLUMNS = [
-  "task_id",
-  "task_type",
-  "workshop_id",
-  "title",
-  "preview_url",
-  "content_rating",
-  "rating_sex",
-  "adult_hint",
-  "stage",
-  "message",
-  "started_at",
-  "finished_at",
-  "percent",
-  "bytes_done",
-  "bytes_total",
-] as const
+// Derived from the schema so a new ActivityTask field fails loudly at the
+// SQL layer (unknown column) instead of being silently dropped on write.
+const COLUMNS = Object.keys(ActivityTask.fields) as Array<keyof ActivityTask>
 
 const isTerminalStage = (stage: TaskStage): boolean => isTerminalTaskStage(stage)
 
@@ -175,7 +161,7 @@ export const TasksLive = Layer.effect(
           const merged = mergeTaskRow(row, cleanPatch)
 
           const placeholders = COLUMNS.map(() => "?").join(",")
-          const values = COLUMNS.map((c) => (merged as unknown as Record<string, unknown>)[c] ?? null)
+          const values = COLUMNS.map((c) => merged[c] ?? null)
           
           yield* db.exec(
             `INSERT OR REPLACE INTO tasks (${COLUMNS.join(",")}) VALUES (${placeholders})`,

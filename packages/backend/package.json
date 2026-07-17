@@ -18,7 +18,6 @@
     "@pwe/shared": "workspace:*",
     "better-auth": "^1.6.23",
     "effect": "^3.22.0",
-    "elysia": "^1.4.29",
-    "ulid": "^2.4.0"
+    "elysia": "^1.4.29"
   }
 }

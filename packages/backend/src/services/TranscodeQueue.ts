@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { ulid } from "ulid"
+import { randomUUID } from "node:crypto"
 import type { TaskStage, TranscodeJob, TranscodeJobStatus, TranscodeProgressEvent } from "@pwe/shared"
 import { DbError } from "@pwe/shared"
 import { Stream, PubSub } from "effect"
@@ -221,7 +221,9 @@ export const TranscodeQueueLive = Layer.effect(
             return
           }
 
-          const jobId = ulid()
+          // UUID, same format as download task ids — the job id doubles as
+          // the task_id of the history row.
+          const jobId = randomUUID()
           const outputRelativePath = `${config.paths.optimized_dir}/${workshopId}.mp4`
 
           yield* db.exec(
