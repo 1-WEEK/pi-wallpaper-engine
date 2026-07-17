@@ -54,7 +54,7 @@ const ShellNavLink = ({
       <span className="sidebar-link-icon">{icon}</span>
       <span className="sidebar-link-label">{label}</span>
       {badge !== undefined && badge > 0 && (
-        <span className={`sidebar-badge ${href === "/downloads" ? "hot" : ""}`}>{badge}</span>
+        <span className={`sidebar-badge ${href === "/activity" ? "hot" : ""}`}>{badge}</span>
       )}
     </Link>
   )
@@ -77,11 +77,14 @@ const Routes = ({
         onSystemRefresh={onRefresh}
       />
     </Route>
-    <Route path="/downloads">
+    <Route path="/activity">
       <Activity />
     </Route>
+    <Route path="/downloads">
+      <Redirect to="/activity" />
+    </Route>
     <Route path="/transcode">
-      <Redirect to="/downloads" />
+      <Redirect to="/activity" />
     </Route>
     <Route path="/settings">
       <Settings summary={summary ?? null} onRefresh={onRefresh} />
@@ -94,8 +97,7 @@ const Routes = ({
 
 const pageTitle = (loc: string): string => {
   if (loc.startsWith("/library")) return "Library"
-  if (loc.startsWith("/downloads")) return "Activity"
-  if (loc.startsWith("/transcode")) return "Activity"
+  if (loc.startsWith("/activity")) return "Activity"
   if (loc.startsWith("/settings")) return "Settings"
   return "Browse"
 }
@@ -251,8 +253,8 @@ const DesktopShell = ({
       badge: summary?.status.library.total,
     },
     {
-      href: "/downloads",
-      active: loc === "/downloads",
+      href: "/activity",
+      active: loc === "/activity",
       label: "Activity",
       icon: appIcons.activity,
       badge: getActiveTaskCount(summary),

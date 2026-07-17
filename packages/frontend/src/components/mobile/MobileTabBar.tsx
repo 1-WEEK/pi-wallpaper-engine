@@ -34,7 +34,7 @@ export const MobileTabBar = ({ summary, currentLoc, browseHref }: Props) => {
       badge: summary?.status.library.total,
     },
     {
-      href: "/downloads",
+      href: "/activity",
       label: "Activity",
       icon: appIcons.activity,
       badge: totalActive,
