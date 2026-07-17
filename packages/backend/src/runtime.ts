@@ -5,7 +5,7 @@ import { DisplayLive } from "./services/Display.js"
 import { DownloadIntakeLive } from "./services/DownloadIntake.js"
 import { DownloadProcessRegistryLive } from "./services/DownloadProcessRegistry.js"
 import { DownloadReconcilerLive } from "./services/DownloadReconciler.js"
-import { DownloadTasksLive } from "./services/DownloadTasks.js"
+import { TasksLive } from "./services/Tasks.js"
 import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
 import { MigrateLive } from "./services/Migrate.js"
@@ -56,7 +56,7 @@ export const buildLayer = (configPath: string) => {
     Layer.provideMerge(PlayerStateLive),
     Layer.provideMerge(PlaybackPrefsLive),
     Layer.provideMerge(DownloadReconcilerLive),
-    Layer.provideMerge(DownloadTasksLive)
+    Layer.provideMerge(TasksLive)
   )
 
   return applicationLayer.pipe(

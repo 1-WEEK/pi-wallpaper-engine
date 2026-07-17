@@ -4,7 +4,7 @@ import { statfs } from "node:fs/promises"
 import { Config } from "../services/Config.js"
 import { Db } from "../services/Db.js"
 import { Display } from "../services/Display.js"
-import { DownloadTasks, isFinishedTask } from "../services/DownloadTasks.js"
+import { Tasks } from "../services/Tasks.js"
 import { Library } from "../services/Library.js"
 import { Mpv } from "../services/Mpv.js"
 import { Playback } from "../services/Playback.js"
@@ -56,18 +56,21 @@ export const systemRoutes = (runtime: AppRuntime) =>
           const config = yield* Config
           const db = yield* Db
           const display = yield* Display
-          const tasks = yield* DownloadTasks
+          const tasks = yield* Tasks
           const library = yield* Library
           const mpv = yield* Mpv
           const storageService = yield* Storage
           const prefs = yield* PlaybackPrefs
           const playbackService = yield* Playback
 
-          const [player, libraryRows, taskRows, displayStatus, storageStatus, transcodeCounts] =
+          const [player, libraryRows, allDlTasks, activeDlTasks, displayStatus, storageStatus, transcodeCounts] =
             yield* Effect.all([
               mpv.status(),
               library.list(),
-              tasks.list(),
+              // Counts come from .total, not .items — the row page is capped
+              // at `limit` and would undercount active/finished downloads.
+              tasks.list({ type: "download", limit: 1 }),
+              tasks.list({ type: "download", active: true, limit: 1 }),
               display.status().pipe(
                 Effect.map((status) => ({
                   configured: config.display !== undefined,
@@ -135,10 +138,6 @@ export const systemRoutes = (runtime: AppRuntime) =>
 
           const sleepStatus = yield* playbackService.sleepStatus()
 
-          const activeDownloads = taskRows.items.filter(
-            (task) => !isFinishedTask(task.stage, task.finished_at)
-          ).length
-
           return {
             config: {
               steam: {
@@ -168,8 +167,8 @@ export const systemRoutes = (runtime: AppRuntime) =>
                 total: libraryRows.length,
               },
               downloads: {
-                active: activeDownloads,
-                finished: taskRows.total - activeDownloads,
+                active: activeDlTasks.total,
+                finished: allDlTasks.total - activeDlTasks.total,
               },
               sleep: sleepStatus,
               transcode,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isFinishedTask } from "./DownloadTasks.js"
+import { isFinishedTask } from "./Tasks.js"
 
 describe("isFinishedTask", () => {
   test("complete stage with null finishedAt is finished", () => {

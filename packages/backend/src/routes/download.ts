@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia"
 import { Effect, Stream } from "effect"
 import { DownloadIntake, type DownloadCancelResult, type DownloadStartResult } from "../services/DownloadIntake.js"
-import { DownloadTasks } from "../services/DownloadTasks.js"
+import { Tasks } from "../services/Tasks.js"
 import { httpFromError } from "./httpError.js"
 import type { AppRuntime } from "../runtime.js"
 import type { AuthService } from "../services/Auth.js"
@@ -94,10 +94,16 @@ export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = n
       ({ query }) =>
         runtime.runPromise(
           Effect.gen(function* () {
-            const tasks = yield* DownloadTasks
+            const tasks = yield* Tasks
+            const toInt = (value: string | undefined): number | undefined => {
+              if (value === undefined) return undefined
+              const n = Number.parseInt(value, 10)
+              return Number.isFinite(n) ? n : undefined
+            }
             return yield* tasks.list({
-              offset: query.offset ? parseInt(query.offset) : undefined,
-              limit: query.limit ? parseInt(query.limit) : undefined,
+              offset: toInt(query.offset),
+              limit: toInt(query.limit),
+              active: query.active === "1" ? true : undefined,
             })
           })
         ),
@@ -106,6 +112,7 @@ export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = n
           t.Object({
             offset: t.Optional(t.String()),
             limit: t.Optional(t.String()),
+            active: t.Optional(t.String()),
           })
         ),
       }
@@ -116,14 +123,14 @@ export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = n
       ({ query }) =>
         runtime.runPromise(
           Effect.gen(function* () {
-            const tasks = yield* DownloadTasks
-            yield* tasks.dismissAll(query.status)
+            const tasks = yield* Tasks
+            yield* tasks.dismissAll(query.stage)
             return { ok: true }
           })
         ),
       {
         query: t.Object({
-          status: t.Union([t.Literal("complete"), t.Literal("error")]),
+          stage: t.Union([t.Literal("complete"), t.Literal("error")]),
         }),
       }
     )
@@ -131,7 +138,7 @@ export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = n
     .delete("/tasks/:taskId", ({ params }) =>
       runtime.runPromise(
         Effect.gen(function* () {
-          const tasks = yield* DownloadTasks
+          const tasks = yield* Tasks
           yield* tasks.dismiss(params.taskId)
           return { ok: true }
         })

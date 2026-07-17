@@ -4,7 +4,7 @@ import { Database } from "bun:sqlite"
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DbError, LibraryNotFoundError, type DownloadTask, type LibraryItem } from "@pwe/shared"
+import { DbError, LibraryNotFoundError, type ActivityTask, type LibraryItem } from "@pwe/shared"
 import { Config, type RuntimeConfig } from "./Config.js"
 import { Db, type DbImpl } from "./Db.js"
 import {
@@ -12,10 +12,10 @@ import {
   type DownloadProcessRegistryImpl,
 } from "./DownloadProcessRegistry.js"
 import {
-  DownloadTasks,
-  DownloadTasksLive,
-  mergeDownloadTaskRow,
-} from "./DownloadTasks.js"
+  Tasks,
+  TasksLive,
+  mergeTaskRow,
+} from "./Tasks.js"
 import {
   DownloadReconciler,
   makeDownloadReconcilerLive,
@@ -26,8 +26,9 @@ import { Library, type LibraryImpl } from "./Library.js"
 import { Logger, type LoggerImpl } from "./Logger.js"
 import { Storage, type StorageImpl } from "./Storage.js"
 
-const baseTask = (patch: Partial<DownloadTask> = {}): DownloadTask => ({
+const baseTask = (patch: Partial<ActivityTask> = {}): ActivityTask => ({
   task_id: "123",
+  task_type: "download",
   workshop_id: "123",
   title: "Test",
   preview_url: "",
@@ -84,8 +85,9 @@ const libraryRow = (workshopId: string): LibraryItem => ({
 })
 
 const DOWNLOAD_TASKS_DDL = `
-  CREATE TABLE IF NOT EXISTS download_tasks (
+  CREATE TABLE IF NOT EXISTS tasks (
     task_id     TEXT PRIMARY KEY,
+    task_type   TEXT NOT NULL,
     workshop_id TEXT NOT NULL,
     title       TEXT NOT NULL,
     preview_url TEXT NOT NULL DEFAULT '',
@@ -220,7 +222,7 @@ const makeReconcilerRuntime = (
 ) =>
   ManagedRuntime.make(
     makeDownloadReconcilerLive({ startSweeper: false, ...opts }).pipe(
-      Layer.provideMerge(DownloadTasksLive),
+      Layer.provideMerge(TasksLive),
       Layer.provideMerge(layers.db.layer),
       Layer.provideMerge(layers.logger.layer),
       Layer.provideMerge(layers.library ?? makeLibraryLayer()),
@@ -239,7 +241,7 @@ afterEach(async () => {
   tempDirs = []
 })
 
-describe("mergeDownloadTaskRow", () => {
+describe("mergeActivityTaskRow", () => {
   test("ignores late progress updates after terminal error", () => {
     const task = baseTask({
       stage: "error",
@@ -247,7 +249,7 @@ describe("mergeDownloadTaskRow", () => {
       finished_at: 10,
     })
 
-    const merged = mergeDownloadTaskRow(task, {
+    const merged = mergeTaskRow(task, {
       stage: "downloading",
       message: "Connecting…",
       percent: 12,
@@ -263,7 +265,7 @@ describe("mergeDownloadTaskRow", () => {
       finished_at: 10,
     })
 
-    const merged = mergeDownloadTaskRow(task, {
+    const merged = mergeTaskRow(task, {
       stage: "finalizing",
       message: "Validating files…",
     })
@@ -278,7 +280,7 @@ describe("mergeDownloadTaskRow", () => {
       finished_at: 10,
     })
 
-    const merged = mergeDownloadTaskRow(task, {
+    const merged = mergeTaskRow(task, {
       stage: "starting",
       message: "Queued",
       started_at: 20,
@@ -292,20 +294,20 @@ describe("mergeDownloadTaskRow", () => {
   })
 })
 
-describe("DownloadTasksLive store", () => {
+describe("TasksLive store", () => {
   test("does not reconcile unfinished tasks on construction", async () => {
     const db = makeDbLayer()
     const logger = makeLoggerLayer()
     db.db
       .prepare(
-        `INSERT INTO download_tasks (
-          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, NULL)`
+        `INSERT INTO tasks (
+          task_id, task_type, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, 'download', ?, ?, '', 0, ?, ?, ?, NULL)`
       )
       .run("123", "123", "Task 123", "downloading", "Connecting...", 10)
 
     const runtime = ManagedRuntime.make(
-      DownloadTasksLive.pipe(
+      TasksLive.pipe(
         Layer.provideMerge(db.layer),
         Layer.provideMerge(logger.layer)
       )
@@ -314,7 +316,7 @@ describe("DownloadTasksLive store", () => {
 
     const task = await runtime.runPromise(
       Effect.gen(function* () {
-        const tasks = yield* DownloadTasks
+        const tasks = yield* Tasks
         return yield* tasks.get("123")
       })
     )
@@ -332,9 +334,9 @@ describe("DownloadReconciler startup", () => {
     const registry = makeProcessRegistryLayer()
     db.db
       .prepare(
-        `INSERT INTO download_tasks (
-          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, NULL)`
+        `INSERT INTO tasks (
+          task_id, task_type, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, 'download', ?, ?, '', 0, ?, ?, ?, NULL)`
       )
       .run("123", "123", "Task 123", "downloading", "Connecting...", 10)
 
@@ -343,7 +345,7 @@ describe("DownloadReconciler startup", () => {
 
     const task = await runtime.runPromise(
       Effect.gen(function* () {
-        const tasks = yield* DownloadTasks
+        const tasks = yield* Tasks
         return yield* tasks.get("123")
       })
     )
@@ -366,9 +368,9 @@ describe("DownloadReconciler startup", () => {
     const sourceDir = makeSourceDir(mediaRoot, "123")
     db.db
       .prepare(
-        `INSERT INTO download_tasks (
-          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, NULL)`
+        `INSERT INTO tasks (
+          task_id, task_type, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, 'download', ?, ?, '', 0, ?, ?, ?, NULL)`
       )
       .run("123", "123", "Task 123", "downloading", "Connecting...", 10)
 
@@ -383,7 +385,7 @@ describe("DownloadReconciler startup", () => {
 
     const task = await runtime.runPromise(
       Effect.gen(function* () {
-        const tasks = yield* DownloadTasks
+        const tasks = yield* Tasks
         return yield* tasks.get("123")
       })
     )
@@ -400,9 +402,9 @@ describe("DownloadReconciler startup", () => {
     const registry = makeProcessRegistryLayer()
     db.db
       .prepare(
-        `INSERT INTO download_tasks (
-          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, ?)`
+        `INSERT INTO tasks (
+          task_id, task_type, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, 'download', ?, ?, '', 0, ?, ?, ?, ?)`
       )
       .run("123", "123", "Task 123", "finalizing", "Validating files...", 10, 20)
 
@@ -416,7 +418,7 @@ describe("DownloadReconciler startup", () => {
 
     const task = await runtime.runPromise(
       Effect.gen(function* () {
-        const tasks = yield* DownloadTasks
+        const tasks = yield* Tasks
         return yield* tasks.get("123")
       })
     )
@@ -452,9 +454,9 @@ describe("DownloadReconciler stale task sweep", () => {
 
     db.db
       .prepare(
-        `INSERT INTO download_tasks (
-          task_id, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
-        ) VALUES (?, ?, ?, '', 0, ?, ?, ?, NULL)`
+        `INSERT INTO tasks (
+          task_id, task_type, workshop_id, title, preview_url, adult_hint, stage, message, started_at, finished_at
+        ) VALUES (?, 'download', ?, ?, '', 0, ?, ?, ?, NULL)`
       )
       .run("123", "123", "Task 123", "downloading", "Connecting...", 10)
 
@@ -467,7 +469,7 @@ describe("DownloadReconciler stale task sweep", () => {
 
     const task = await runtime.runPromise(
       Effect.gen(function* () {
-        const tasks = yield* DownloadTasks
+        const tasks = yield* Tasks
         return yield* tasks.get("123")
       })
     )

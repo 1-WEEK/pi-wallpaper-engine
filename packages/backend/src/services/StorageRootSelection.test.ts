@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Layer, ManagedRuntime } from "effect"
-import type { DownloadTask, LibraryItem } from "@pwe/shared"
+import type { ActivityTask, LibraryItem } from "@pwe/shared"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Config, type RuntimeConfig } from "./Config.js"
 import { Db, type DbImpl } from "./Db.js"
-import { DownloadTasks, type DownloadTasksImpl } from "./DownloadTasks.js"
+import { Tasks, type TasksImpl } from "./Tasks.js"
 import { Library, type LibraryImpl } from "./Library.js"
 import { Storage, type StorageImpl } from "./Storage.js"
 import {
@@ -41,8 +41,9 @@ const makeConfig = (defaultRoot: string): RuntimeConfig => ({
   server: { host: "0.0.0.0", port: 8080 },
 })
 
-const baseTask = (workshopId: string, patch: Partial<DownloadTask> = {}): DownloadTask => ({
+const baseTask = (workshopId: string, patch: Partial<ActivityTask> = {}): ActivityTask => ({
   task_id: workshopId,
+  task_type: "download",
   workshop_id: workshopId,
   title: workshopId,
   preview_url: "",
@@ -86,7 +87,7 @@ const makeHarness = (
   opts: {
     currentRoot?: string
     defaultRoot?: string
-    tasks?: ReadonlyArray<DownloadTask>
+    tasks?: ReadonlyArray<ActivityTask>
     libraryRows?: ReadonlyArray<LibraryItem>
     activeTranscodes?: number
   } = {}
@@ -119,7 +120,7 @@ const makeHarness = (
       }),
   }
 
-  const tasksImpl: DownloadTasksImpl = {
+  const tasksImpl: TasksImpl = {
     list: () => Effect.succeed({ items: activeDownloads as any, total: activeDownloads.length }),
     get: () => Effect.succeed(null),
     getActiveByWorkshopId: () => Effect.succeed(null),
@@ -148,7 +149,7 @@ const makeHarness = (
     StorageRootSelectionLive.pipe(
       Layer.provideMerge(Layer.succeed(Config, makeConfig(defaultRoot))),
       Layer.provideMerge(Layer.succeed(Storage, storageImpl)),
-      Layer.provideMerge(Layer.succeed(DownloadTasks, tasksImpl)),
+      Layer.provideMerge(Layer.succeed(Tasks, tasksImpl)),
       Layer.provideMerge(Layer.succeed(Library, libraryImpl)),
       Layer.provideMerge(Layer.succeed(Db, dbImpl))
     )

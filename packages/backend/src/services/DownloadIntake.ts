@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto"
 import {
   FfprobeError,
   hasAdultTitleHint,
-  type DownloadStage,
+  type TaskStage,
   type VideoProbe,
 } from "@pwe/shared"
 import { decideTranscode } from "../transcode/decide.js"
@@ -13,7 +13,7 @@ import { ffprobe } from "../transcode/ffprobe.js"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
 import { DownloadProcessRegistry } from "./DownloadProcessRegistry.js"
-import { DownloadTasks } from "./DownloadTasks.js"
+import { Tasks } from "./Tasks.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
 import { Migrate } from "./Migrate.js"
@@ -30,7 +30,7 @@ export type DownloadProgressEvent =
 
 export type DownloadStartResult =
   | { readonly _tag: "Started"; readonly workshopId: string }
-  | { readonly _tag: "AlreadyRunning"; readonly workshopId: string; readonly stage: DownloadStage }
+  | { readonly _tag: "AlreadyRunning"; readonly workshopId: string; readonly stage: TaskStage }
   | { readonly _tag: "StorageUnavailable"; readonly workshopId: string; readonly message: string }
   | { readonly _tag: "MigrationRunning"; readonly workshopId: string; readonly message: string }
 
@@ -56,6 +56,13 @@ export interface DownloadIntakeDeps {
 
 interface CancelledDownload {
   readonly _tag: "Cancelled"
+}
+
+// The workshop id and its task row id travel together through the whole
+// download workflow (spec 05's data clump).
+interface DownloadJob {
+  readonly workshopId: string
+  readonly taskId: string
 }
 
 export const downloadFailureMessage = (err: unknown): string => {
@@ -87,12 +94,12 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
       const lib = yield* Library
       const queue = yield* TranscodeQueue
       const logger = yield* Logger
-      const tasks = yield* DownloadTasks
+      const tasks = yield* Tasks
       const storage = yield* Storage
       const migrate = yield* Migrate
       const processRegistry = yield* DownloadProcessRegistry
       const pubsub = yield* PubSub.unbounded<DownloadProgressEvent>()
-      const inflight = new Map<string, { fiber: Fiber.RuntimeFiber<unknown, unknown>; taskId: string }>()
+      const inflight = new Map<string, Fiber.RuntimeFiber<unknown, unknown>>()
       const probeVideo = deps.probeVideo ?? ffprobe
 
       const publish = (event: DownloadProgressEvent) => pubsub.publish(event)
@@ -145,7 +152,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           )
         })
 
-      const handleFailure = (job: { workshopId: string; taskId: string }, err: unknown) =>
+      const handleFailure = (job: DownloadJob, err: unknown) =>
         Effect.gen(function* () {
           const { workshopId, taskId } = job
           const tag = (err as { _tag?: string })._tag
@@ -162,7 +169,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           )
         )
 
-      const runWorkflow = (job: { workshopId: string; taskId: string }) =>
+      const runWorkflow = (job: DownloadJob) =>
         Effect.gen(function* () {
           const { workshopId, taskId } = job
           const dataRoot = yield* storage.mediaRoot()
@@ -325,7 +332,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
 
           const fiber = yield* Effect.forkDaemon(workflow)
           yield* Effect.sync(() => {
-            inflight.set(workshopId, { fiber, taskId })
+            inflight.set(workshopId, fiber)
             fiber.addObserver(() => {
               inflight.delete(workshopId)
             })
@@ -336,10 +343,10 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
 
       const cancel = (workshopId: string): Effect.Effect<DownloadCancelResult> =>
         Effect.gen(function* () {
-          const active = inflight.get(workshopId)
-          if (active) {
+          const fiber = inflight.get(workshopId)
+          if (fiber) {
             yield* processRegistry.stop(workshopId)
-            yield* Fiber.interrupt(active.fiber).pipe(Effect.forkDaemon)
+            yield* Fiber.interrupt(fiber).pipe(Effect.forkDaemon)
             return { _tag: "Cancelling", workshopId }
           }
 

@@ -1,34 +1,14 @@
-import { useEffect, useMemo, useState } from "react"
-import { isAdultContent, type LibraryItem, type TranscodeProgressEvent } from "@pwe/shared"
-import useSWR, { useSWRConfig } from "swr"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { isAdultContent } from "@pwe/shared"
+import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
-import { api, type DownloadStage, type DownloadTask, type PaginatedTasks } from "../api.js"
-import { appIcons } from "../icons.js"
+import { api, type ActivityTask, type PaginatedTasks } from "../api.js"
 import { formatBytes } from "../format.js"
+import { isTaskFailed, isTaskFinished, taskStageLabel } from "../taskDisplay.js"
 import { useLayout } from "../components/mobile/index.js"
 
-// Active downloads need a snappier refresh than the global SWR default; 1s
-// matches the cadence SteamCMD emits stdout lines.
 const REFRESH_MS = 1000
-
-const dlStageLabel: Record<DownloadStage, string> = {
-  starting: "Starting",
-  downloading: "Downloading",
-  finalizing: "Finalizing",
-  done: "SteamCMD done",
-  complete: "Complete",
-  error: "Failed",
-}
-
-const transcodeStatusLabel: Record<string, string> = {
-  skipped: "Skipped",
-  pending: "Queued",
-  claimed: "Queued",
-  running: "Running",
-  uploading: "Uploading",
-  completed: "Completed",
-  failed: "Failed",
-}
+const PAGE_SIZE = 50
 
 const formatElapsed = (totalSeconds: number): string => {
   const s = Math.max(0, Math.floor(totalSeconds))
@@ -43,22 +23,12 @@ const formatElapsed = (totalSeconds: number): string => {
   return `${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`
 }
 
-const isDlFinished = (t: DownloadTask) =>
-  t.stage === "complete" || t.stage === "error" || t.finished_at !== null
-
-const isAdultDl = (task: DownloadTask): boolean =>
+const isAdultTask = (task: ActivityTask): boolean =>
   isAdultContent({
     title: task.title,
     contentRating: task.content_rating,
     ratingSex: task.rating_sex,
     adultHint: task.adult_hint,
-  })
-
-const isAdultTc = (row: LibraryItem): boolean =>
-  isAdultContent({
-    title: row.title,
-    contentRating: row.content_rating,
-    ratingSex: row.rating_sex,
   })
 
 export const Activity = () => {
@@ -67,150 +37,100 @@ export const Activity = () => {
 
   const getDlKey = (pageIndex: number, previousPageData: PaginatedTasks | null) => {
     if (previousPageData && !previousPageData.items.length) return null
-    return ["download-tasks", pageIndex * 50, 50] as const
+    return ["tasks", pageIndex * PAGE_SIZE, PAGE_SIZE] as const
   }
-  const dlFetcher = ([_, offset, limit]: readonly [string, number, number]) => api.downloadTasks({ offset, limit })
+  const fetcher = ([_, offset, limit]: readonly [string, number, number]) => api.tasks({ offset, limit })
 
-  const { data: dData, error: dError, mutate: dMutate, size: dSize, setSize: setDSize } = useSWRInfinite(getDlKey, dlFetcher, {
+  const { data: dData, error: dError, mutate: dMutate, size: dSize, setSize: setDSize } = useSWRInfinite(getDlKey, fetcher, {
     revalidateIfStale: true,
   })
 
+  // Only the active set polls continuously; history pages are fetched on
+  // demand so finished rows never shift under the user.
   const { data: activePageData, error: activeError, mutate: activeMutate } = useSWR(
-    "active-download-tasks",
-    () => api.downloadTasks({ offset: 0, limit: 50 }),
+    "active-tasks",
+    () => api.tasks({ active: true, limit: PAGE_SIZE }),
     { refreshInterval: REFRESH_MS }
   )
 
-  const { data: tData, error: tError, mutate: tMutate } = useSWR("library-transcode", api.libraryList)
-  
-  const { data: summary } = useSWR("system-summary", api.systemSummary)
+  // When a task leaves the active set it just reached a terminal stage (or
+  // was dismissed) — revalidate the static history pages once to pick it up.
+  const prevActiveIds = useRef<ReadonlySet<string>>(new Set())
+  useEffect(() => {
+    const ids = new Set((activePageData?.items ?? []).map((t) => t.task_id))
+    const prev = prevActiveIds.current
+    prevActiveIds.current = ids
+    if ([...prev].some((id) => !ids.has(id))) dMutate()
+  }, [activePageData, dMutate])
 
-  // Drive the per-row elapsed clock independently of SWR fetches so active
-  // rows tick smoothly between fetches.
   const [, setTick] = useState(0)
   useEffect(() => {
     const h = setInterval(() => setTick((n) => n + 1), 1000)
     return () => clearInterval(h)
   }, [])
 
-  // Transcode WebSocket connection
-  const shouldConnectWS = useMemo(() => {
-    if (!summary?.status.transcode) return false
-    const tc = summary.status.transcode
-    const nonSkippedCount = tc.pending + tc.claimed + tc.running + tc.uploading + tc.completed + tc.failed
-    return nonSkippedCount > 0
-  }, [summary])
-
-  useEffect(() => {
-    if (!shouldConnectWS) return
-    let ws = api.libraryTranscodeWatchWS()
-    
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as TranscodeProgressEvent
-        tMutate(
-          (current?: LibraryItem[]) => {
-            if (!current) return current
-            return current.map(item => {
-              if (item.workshop_id === msg.workshopId) {
-                return {
-                  ...item,
-                  transcode_status: msg.status,
-                  ...(msg.progress !== undefined ? { transcode_progress: msg.progress } : {}),
-                  ...(msg.error !== undefined ? { transcode_error: msg.error } : {}),
-                  ...(msg.status === "completed" ? { transcode_progress: 100 } : {})
-                }
-              }
-              return item
-            })
-          },
-          { revalidate: false }
-        )
-        if (msg.status === "completed" || msg.status === "failed") {
-          tMutate() // fully fetch to get output size etc
-        }
-      } catch (err) {
-        console.error("Transcode WS parse error", err)
-      }
-    }
-    
-    return () => ws.close()
-  }, [tMutate, shouldConnectWS])
-
-  const dlTasks = useMemo(() => {
+  const allTasks = useMemo(() => {
     const history = dData ? dData.flatMap(page => page.items) : []
-    const recent = activePageData?.items || []
-    const map = new Map<string, DownloadTask>()
+    const active = activePageData?.items || []
+    const map = new Map<string, ActivityTask>()
     for (const t of history) map.set(t.task_id, t)
-    for (const t of recent) map.set(t.task_id, t)
+    // The active overlay wins: it carries the freshest state for its ids.
+    for (const t of active) map.set(t.task_id, t)
     return Array.from(map.values()).sort((a, b) => b.started_at - a.started_at)
   }, [dData, activePageData])
-  const hasMoreDl = dData && dData[dData.length - 1]?.items.length === 50
-  const tcTasks = (tData ?? []).filter(t => t.transcode_status && t.transcode_status !== "skipped" && t.transcode_status !== "completed")
 
-  const adultDlCount = useMemo(() => dlTasks.filter(isAdultDl).length, [dlTasks])
-  const adultTcCount = useMemo(() => tcTasks.filter(isAdultTc).length, [tcTasks])
-  const adultCount = adultDlCount + adultTcCount
+  const hasMoreDl = dData && dData[dData.length - 1]?.items.length === PAGE_SIZE
 
-  const visibleDlTasks = useMemo(
-    () => (showAdult ? dlTasks : dlTasks.filter((t) => !isAdultDl(t))),
-    [dlTasks, showAdult]
-  )
-  const visibleTcTasks = useMemo(
-    () => (showAdult ? tcTasks : tcTasks.filter((t) => !isAdultTc(t))),
-    [tcTasks, showAdult]
+  const adultCount = useMemo(() => allTasks.filter(isAdultTask).length, [allTasks])
+
+  const visibleTasks = useMemo(
+    () => (showAdult ? allTasks : allTasks.filter((t) => !isAdultTask(t))),
+    [allTasks, showAdult]
   )
 
-  const activeDl = visibleDlTasks.filter((t) => !isDlFinished(t))
-  const finishedDl = visibleDlTasks.filter(isDlFinished)
+  const activeDl = visibleTasks.filter((t) => t.task_type === "download" && !isTaskFinished(t))
+  const finishedDl = visibleTasks.filter((t) => t.task_type === "download" && isTaskFinished(t))
 
-  const activeTc = visibleTcTasks.filter(t => t.transcode_status === "running" || t.transcode_status === "uploading" || t.transcode_status === "claimed")
-  const queuedTc = visibleTcTasks.filter(t => t.transcode_status === "pending" || t.transcode_status === "failed")
+  const activeTc = visibleTasks.filter((t) => t.task_type === "transcode" && !isTaskFinished(t))
+  const finishedTc = visibleTasks.filter((t) => t.task_type === "transcode" && isTaskFinished(t))
 
-  const hasFailedTc = queuedTc.some(t => t.transcode_status === "failed")
-  const [isRetryingAll, setIsRetryingAll] = useState(false)
-
-  const handleRetryAllTc = async () => {
-    setIsRetryingAll(true)
-    try {
-      await api.libraryTranscodeRetryAll()
-      await tMutate()
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setIsRetryingAll(false)
-    }
-  }
-
-  const dismissDl = async (id: string) => {
-    await api.dismissDownloadTask(id)
+  const dismissTask = async (id: string) => {
+    await api.dismissTask(id)
     dMutate()
     activeMutate()
   }
 
-  const cancelDl = async (id: string) => {
+  const cancelTask = async (id: string) => {
     await api.cancelDownload(id).catch(() => {})
     dMutate()
     activeMutate()
   }
 
-  const retryDl = async (id: string) => {
-    await api.download(id).catch(() => {})
+  const retryTask = async (task: ActivityTask) => {
+    if (task.task_type === "download") {
+      await api.download(task.workshop_id).catch(() => {})
+    } else {
+      await api.libraryTranscode(task.workshop_id).catch(() => {})
+    }
     dMutate()
     activeMutate()
   }
 
-  const dismissAll = async (stage: DownloadStage) => {
-    await api.dismissAllDownloadTasks(stage)
+  const dismissAll = async (stage: "complete" | "error") => {
+    await api.dismissAllTasks(stage)
     dMutate()
     activeMutate()
   }
 
-  const combinedError = dError || activeError || tError
+  const handleRetryAllTc = async () => {
+    await api.libraryTranscodeRetryAll().catch(() => {})
+    dMutate()
+    activeMutate()
+  }
+
+  const combinedError = dError || activeError
 
   if (combinedError) return <div className="error">{(combinedError as Error).message}</div>
-
-  const isLiveMode = shouldConnectWS
 
   return (
     <div className="page">
@@ -225,7 +145,7 @@ export const Activity = () => {
           </div>
           <div className="summary-stat compact">
             <span className="summary-stat-label mono">finished</span>
-            <strong>{finishedDl.length}</strong>
+            <strong>{finishedDl.length + finishedTc.length}</strong>
           </div>
           <button
             type="button"
@@ -272,9 +192,9 @@ export const Activity = () => {
         </div>
       </div>
 
-      {visibleDlTasks.length === 0 && visibleTcTasks.length === 0 && (
+      {visibleTasks.length === 0 && (
         <div className="empty-state">
-          {dlTasks.length + tcTasks.length > 0 && !showAdult && adultCount > 0
+          {allTasks.length > 0 && !showAdult && adultCount > 0
             ? "Tasks are hidden in safe mode. Open the secret filter to reveal them."
             : "No active tasks. Pick a wallpaper in Browse."}
         </div>
@@ -284,36 +204,40 @@ export const Activity = () => {
         <section className="task-section">
           <h2 className="section-title mono">Active</h2>
           <ul className="task-list">
-            {activeDl.map((t) => (
-              <DownloadRow key={`dl-${t.task_id}`} task={t} onDismiss={dismissDl} onCancel={cancelDl} onRetry={retryDl} />
-            ))}
-            {activeTc.map((t) => (
-              <TranscodeRow key={`tc-${t.workshop_id}`} task={t} />
+            {[...activeDl, ...activeTc].sort((a, b) => b.started_at - a.started_at).map((t) => (
+              <TaskRow key={t.task_id} task={t} onDismiss={dismissTask} onCancel={cancelTask} onRetry={retryTask} />
             ))}
           </ul>
         </section>
       )}
 
-      {finishedDl.length > 0 && (
+      {(finishedDl.length > 0 || finishedTc.length > 0) && (
         <section className="task-section">
           <div className="task-section-header">
-            <h2 className="section-title mono">Finished Downloads</h2>
+            <h2 className="section-title mono">Finished</h2>
             <div>
-              {finishedDl.some(t => t.stage === "complete") && (
+              {visibleTasks.some((t) => t.stage === "complete") && (
                 <button type="button" className="btn btn-secondary" onClick={() => dismissAll("complete")} aria-label="Clear all completed" style={{ marginRight: 8 }}>
                   Clear Completed
                 </button>
               )}
-              {finishedDl.some(t => t.stage === "error") && (
-                <button type="button" className="btn btn-secondary" onClick={() => dismissAll("error")} aria-label="Clear all failed">
-                  Clear Failed
-                </button>
+              {visibleTasks.some(isTaskFailed) && (
+                <>
+                  {finishedTc.some(isTaskFailed) && (
+                    <button type="button" className="btn btn-secondary" onClick={handleRetryAllTc} aria-label="Retry all failed transcodes" style={{ marginRight: 8 }}>
+                      Retry All Transcodes
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-secondary" onClick={() => dismissAll("error")} aria-label="Clear all failed">
+                    Clear Failed
+                  </button>
+                </>
               )}
             </div>
           </div>
           <ul className="task-list">
-            {finishedDl.map((t) => (
-              <DownloadRow key={`dl-${t.task_id}`} task={t} onDismiss={dismissDl} onCancel={cancelDl} onRetry={retryDl} />
+            {[...finishedDl, ...finishedTc].sort((a, b) => b.started_at - a.started_at).map((t) => (
+              <TaskRow key={t.task_id} task={t} onDismiss={dismissTask} onCancel={cancelTask} onRetry={retryTask} />
             ))}
           </ul>
           {hasMoreDl && (
@@ -323,53 +247,33 @@ export const Activity = () => {
           )}
         </section>
       )}
-
-      {queuedTc.length > 0 && (
-        <section className="task-section">
-          <div className="task-section-header">
-            <h2 className="section-title mono">Transcode Queue</h2>
-            {hasFailedTc && (
-              <button
-                className="btn btn-secondary"
-                onClick={handleRetryAllTc}
-                disabled={isRetryingAll}
-              >
-                {isRetryingAll ? "Retrying..." : "Retry All Failed"}
-              </button>
-            )}
-          </div>
-          <ul className="task-list">
-            {queuedTc.map((t) => (
-              <TranscodeRow key={`tc-${t.workshop_id}`} task={t} />
-            ))}
-          </ul>
-        </section>
-      )}
     </div>
   )
 }
 
-interface DlRowProps {
-  task: DownloadTask
+interface TaskRowProps {
+  task: ActivityTask
   onDismiss: (id: string) => void
   onCancel: (id: string) => void
-  onRetry: (id: string) => void
+  onRetry: (task: ActivityTask) => void
 }
 
-const DownloadRow = ({ task, onDismiss, onCancel, onRetry }: DlRowProps) => {
+const TaskRow = ({ task, onDismiss, onCancel, onRetry }: TaskRowProps) => {
   const { mobile } = useLayout()
-  const stageClass =
-    task.stage === "error" ? "dl-stage-error" : task.stage === "complete" ? "dl-stage-ok" : ""
+  const failed = isTaskFailed(task)
+  const stageClass = failed ? "dl-stage-error" : task.stage === "complete" ? "dl-stage-ok" : ""
 
   const elapsedMs = (task.finished_at ?? Date.now()) - task.started_at
   const elapsed = formatElapsed(elapsedMs / 1000)
 
-  const showBar = !isDlFinished(task)
+  const showBar = !isTaskFinished(task)
   const determinate = task.percent !== null && task.percent !== undefined
   const percentClamped =
     determinate && task.percent !== null ? Math.max(0, Math.min(100, task.percent)) : 0
 
-  if (mobile && isDlFinished(task)) {
+  const stageLabel = taskStageLabel(task)
+
+  if (mobile && isTaskFinished(task)) {
     return (
       <li className="task-row-mobile">
         <div className="task-row-mobile-head">
@@ -385,22 +289,24 @@ const DownloadRow = ({ task, onDismiss, onCancel, onRetry }: DlRowProps) => {
           )}
           <div className="task-row-mobile-copy">
             <div className="task-row-mobile-title">{task.title}</div>
-            <div className="task-row-mobile-id mono">{task.workshop_id}</div>
+            <div className="task-row-mobile-id mono">
+              {task.task_type === "transcode" ? "TRANSCODE" : "DOWNLOAD"} • {task.workshop_id}
+            </div>
           </div>
         </div>
-        {task.stage === "error" && task.message && (
+        {failed && task.message && (
           <div className="task-row-mobile-error mono">{task.message}</div>
         )}
         <div className="task-row-mobile-foot">
-          <span className={`status-pill ${stageClass}`}>{dlStageLabel[task.stage]}</span>
+          <span className={`status-pill ${stageClass}`}>{stageLabel}</span>
           <span className="mono" style={{ fontSize: 11, color: "var(--paper-faint)" }}>
             {elapsed}
           </span>
-          {task.stage === "error" && (
+          {failed && (
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => onRetry(task.workshop_id)}
+              onClick={() => onRetry(task)}
             >
               Retry
             </button>
@@ -430,10 +336,11 @@ const DownloadRow = ({ task, onDismiss, onCancel, onRetry }: DlRowProps) => {
         <div className="task-title-row">
           <div className="task-title">{task.title}</div>
           <span className={`status-pill ${stageClass}`}>
-            {dlStageLabel[task.stage]}
+            {stageLabel}
           </span>
         </div>
         <div className="task-meta">
+          <span className="mono task-info-pill">{task.task_type === "transcode" ? "TRANSCODE" : "DOWNLOAD"}</span>
           <span className="mono">{task.workshop_id}</span>
           {determinate && <span className="task-pct mono">{percentClamped.toFixed(1)}%</span>}
           {task.bytes_total !== null && task.bytes_total !== undefined && task.bytes_total > 0 && (
@@ -457,15 +364,15 @@ const DownloadRow = ({ task, onDismiss, onCancel, onRetry }: DlRowProps) => {
             />
           </div>
         )}
-        {task.stage === "error" && task.message && (
+        {failed && task.message && (
           <div className="task-message task-message-error">{task.message}</div>
         )}
       </div>
       <div className="task-actions">
-        {isDlFinished(task) ? (
+        {isTaskFinished(task) ? (
           <>
-            {task.stage === "error" && (
-              <button type="button" className="btn btn-secondary" onClick={() => onRetry(task.workshop_id)} style={{ marginRight: 8 }}>
+            {failed && (
+              <button type="button" className="btn btn-secondary" onClick={() => onRetry(task)} style={{ marginRight: 8 }}>
                 Retry
               </button>
             )}
@@ -473,95 +380,11 @@ const DownloadRow = ({ task, onDismiss, onCancel, onRetry }: DlRowProps) => {
               Dismiss
             </button>
           </>
-        ) : (
+        ) : task.task_type === "download" ? (
           <button type="button" className="btn btn-secondary" onClick={() => onCancel(task.workshop_id)}>
             Cancel
           </button>
-        )}
-      </div>
-    </li>
-  )
-}
-
-const TranscodeRow = ({ task }: { task: LibraryItem }) => {
-  const { mutate } = useSWRConfig()
-  const [isRetrying, setIsRetrying] = useState(false)
-
-  const status = task.transcode_status
-  const isRunning = status === "running" || status === "uploading"
-  const isFailed = status === "failed"
-
-  let statusClass = "status-pill-pending"
-  if (isRunning) statusClass = "status-pill-running"
-  if (isFailed) statusClass = "status-pill-failed"
-
-  const handleRetry = async () => {
-    setIsRetrying(true)
-    try {
-      await api.libraryTranscode(task.workshop_id)
-      await mutate("library-transcode")
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setIsRetrying(false)
-    }
-  }
-
-  const determinate = task.transcode_progress !== null && task.transcode_progress !== undefined
-
-  return (
-    <li className="task-row">
-      <div className="task-thumb-wrap">
-        {task.preview_url ? (
-          <img className="task-thumb" src={task.preview_url} alt={task.title} loading="lazy" />
-        ) : (
-          <div className="task-thumb task-thumb-empty" />
-        )}
-      </div>
-      <div className="task-copy">
-        <div className="task-title-row">
-          <div className="task-title">{task.title}</div>
-          <span className={`status-pill ${statusClass}`}>
-            {transcodeStatusLabel[status]}
-          </span>
-        </div>
-        <div className="task-meta">
-          <span className="mono">{task.workshop_id}</span>
-          <span className="mono task-info-pill">
-            {task.source_resolution} • {task.source_codec}
-          </span>
-          <span className="mono task-info-pill">
-            {task.source_size ? formatBytes(task.source_size) : "Unknown size"}
-          </span>
-        </div>
-        {isRunning && determinate && (
-          <div
-            className={`card-progress card-progress-wide`}
-            role="progressbar"
-            aria-valuenow={task.transcode_progress ?? 0}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className="card-progress-fill"
-              style={{ width: `${task.transcode_progress}%` }}
-            />
-          </div>
-        )}
-        {isFailed && task.transcode_error && (
-          <div className="task-message task-message-error">{task.transcode_error}</div>
-        )}
-      </div>
-      <div className="task-actions">
-        {isFailed && (
-          <button
-            className="btn btn-secondary"
-            onClick={handleRetry}
-            disabled={isRetrying}
-          >
-            {isRetrying ? "..." : "Retry"}
-          </button>
-        )}
+        ) : null}
       </div>
     </li>
   )

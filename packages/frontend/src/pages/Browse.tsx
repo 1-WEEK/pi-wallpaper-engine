@@ -3,7 +3,7 @@ import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
 import { useLocation, useSearch } from "wouter"
 import type { WorkshopItem } from "@pwe/shared"
-import { api, type WorkshopSearchResult } from "../api.js"
+import { api, type ActivityTask, type WorkshopSearchResult } from "../api.js"
 import { WallpaperCard } from "../components/WallpaperCard.js"
 import { appIcons } from "../icons.js"
 import { useLayout } from "../components/mobile/index.js"
@@ -160,7 +160,7 @@ export const Browse = () => {
   })
   const { data: downloadTasksData, mutate: mutateDownloadTasks } = useSWR(
     "download-tasks",
-    () => api.downloadTasks(),
+    () => api.tasks({ active: true }),
     {
       refreshInterval: 1000,
       revalidateIfStale: true,
@@ -173,7 +173,12 @@ export const Browse = () => {
     [libraryRows]
   )
   const downloadTasksById = useMemo(
-    () => new Map((downloadTasksData?.items ?? []).map((task) => [task.workshop_id, task])),
+    () =>
+      new Map(
+        (downloadTasksData?.items ?? [])
+          .filter((task) => task.task_type === "download")
+          .map((task) => [task.workshop_id, task])
+      ),
     [downloadTasksData]
   )
 
@@ -530,7 +535,7 @@ const CardDetailBody = ({
 }: {
   item: WorkshopItem
   isInLibrary: boolean
-  downloadTask?: import("../api.js").DownloadTask
+  downloadTask?: ActivityTask
   onClose: () => void
   onDownloadQueued: () => void
 }) => {

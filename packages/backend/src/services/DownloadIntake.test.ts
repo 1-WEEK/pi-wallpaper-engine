@@ -7,7 +7,7 @@ import {
   SteamCmdError,
   StorageError,
   WorkshopApiError,
-  type DownloadTask,
+  type ActivityTask,
   type LibraryItem,
   type VideoProbe,
   type WorkshopItem,
@@ -27,7 +27,7 @@ import {
   makeDownloadIntakeLive,
   type DownloadIntakeImpl,
 } from "./DownloadIntake.js"
-import { DownloadTasks, type DownloadTasksImpl } from "./DownloadTasks.js"
+import { Tasks, type TasksImpl } from "./Tasks.js"
 import { Library, type LibraryImpl } from "./Library.js"
 import { Logger, type LoggerImpl } from "./Logger.js"
 import { Migrate, type MigrateImpl } from "./Migrate.js"
@@ -65,8 +65,9 @@ const waitFor = async <T>(probe: () => T | null | undefined | false): Promise<T>
   throw new Error("Timed out waiting for condition")
 }
 
-const baseTask = (taskId: string, workshopId: string, patch: Partial<DownloadTask> = {}): DownloadTask => ({
+const baseTask = (taskId: string, workshopId: string, patch: Partial<ActivityTask> = {}): ActivityTask => ({
   task_id: taskId,
+  task_type: "download",
   workshop_id: workshopId,
   title: workshopId,
   preview_url: "",
@@ -136,11 +137,11 @@ const createWallpaper = (
 }
 
 const makeTasks = () => {
-  const rows = new Map<string, DownloadTask>()
-  const patches: Array<{ taskId: string; patch: Partial<Omit<DownloadTask, "task_id">> }> =
+  const rows = new Map<string, ActivityTask>()
+  const patches: Array<{ taskId: string; patch: Partial<Omit<ActivityTask, "task_id">> }> =
     []
 
-  const impl: DownloadTasksImpl = {
+  const impl: TasksImpl = {
     list: () => Effect.sync(() => ({ items: [...rows.values()] as any, total: rows.size })),
     get: (taskId) => Effect.sync(() => rows.get(taskId) ?? null),
     getActiveByWorkshopId: (workshopId) =>
@@ -155,7 +156,7 @@ const makeTasks = () => {
       Effect.sync(() => {
         patches.push({ taskId, patch })
         const current = rows.get(taskId) ?? baseTask(taskId, patch.workshop_id ?? taskId)
-        rows.set(taskId, { ...current, ...patch } as DownloadTask)
+        rows.set(taskId, { ...current, ...patch } as ActivityTask)
       }),
     dismiss: (taskId) =>
       Effect.sync(() => {
@@ -345,7 +346,7 @@ const makeHarness = (
     Layer.provideMerge(Layer.succeed(Library, library.impl)),
     Layer.provideMerge(Layer.succeed(TranscodeQueue, transcode.impl)),
     Layer.provideMerge(Layer.succeed(Logger, makeLogger())),
-    Layer.provideMerge(Layer.succeed(DownloadTasks, tasks.impl)),
+    Layer.provideMerge(Layer.succeed(Tasks, tasks.impl)),
     Layer.provideMerge(Layer.succeed(Storage, storageImpl)),
     Layer.provideMerge(Layer.succeed(Migrate, migrateImpl))
   )

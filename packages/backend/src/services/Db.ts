@@ -25,30 +25,90 @@ const ensureLibraryColumns = (db: Database) => {
   }
 }
 
-const ensureDownloadTaskColumns = (db: Database) => {
-  let columns = (db.query(`PRAGMA table_info(download_tasks)`).all() as Array<{ name: string }>).map(
-    (row) => row.name
-  )
+const tableExists = (db: Database, name: string): boolean =>
+  db.query(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name) !== null
 
-  if (!columns.includes("content_rating")) {
+const columnNames = (db: Database, table: string): string[] =>
+  (db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((row) => row.name)
+
+// RFC 4122 v4 UUID built in SQL, so migrated rows get the same format as the
+// runtime's randomUUID() — not the bare 32-hex of hex(randomblob(16)).
+const UUID_V4_SQL = `lower(
+  substr(hex(randomblob(4)), 1, 8) || '-' ||
+  substr(hex(randomblob(2)), 1, 4) || '-4' ||
+  substr(hex(randomblob(2)), 2, 3) || '-' ||
+  substr('89ab', 1 + abs(random()) % 4, 1) || substr(hex(randomblob(2)), 2, 3) || '-' ||
+  substr(hex(randomblob(6)), 1, 12)
+)`
+
+/**
+ * Pre-init migration: pre-`tasks` releases stored history in `download_tasks`.
+ * Must run BEFORE 001_init.sql — the init script creates an empty `tasks`
+ * table, and once it exists the legacy rows would be stranded. Renames when
+ * `tasks` is absent; merges when an earlier boot already created it.
+ */
+export const migrateLegacyDownloadTasks = (db: Database): void => {
+  if (!tableExists(db, "download_tasks")) return
+
+  if (!tableExists(db, "tasks")) {
+    db.exec(`ALTER TABLE download_tasks RENAME TO tasks`)
+    return
+  }
+
+  const legacyColumns = columnNames(db, "download_tasks")
+  if (!legacyColumns.includes("content_rating")) {
     db.exec(`ALTER TABLE download_tasks ADD COLUMN content_rating TEXT`)
   }
-  if (!columns.includes("rating_sex")) {
+  if (!legacyColumns.includes("rating_sex")) {
     db.exec(`ALTER TABLE download_tasks ADD COLUMN rating_sex TEXT`)
   }
-  if (!columns.includes("adult_hint")) {
+  if (!legacyColumns.includes("adult_hint")) {
     db.exec(`ALTER TABLE download_tasks ADD COLUMN adult_hint INTEGER NOT NULL DEFAULT 0`)
   }
+  if (!legacyColumns.includes("task_id")) {
+    db.exec(`ALTER TABLE download_tasks ADD COLUMN task_id TEXT`)
+    db.exec(`UPDATE download_tasks SET task_id = ${UUID_V4_SQL} WHERE task_id IS NULL`)
+  }
 
-  columns = (db.query(`PRAGMA table_info(download_tasks)`).all() as Array<{ name: string }>).map(
-    (row) => row.name
-  )
+  db.exec(`
+    INSERT OR IGNORE INTO tasks (
+      task_id, task_type, workshop_id, title, preview_url, content_rating, rating_sex, adult_hint,
+      stage, message, started_at, finished_at, percent, bytes_done, bytes_total
+    )
+    SELECT
+      task_id, 'download', workshop_id, title, preview_url, content_rating, rating_sex, adult_hint,
+      stage, message, started_at, finished_at, percent, bytes_done, bytes_total
+    FROM download_tasks
+  `)
+  db.exec(`DROP TABLE download_tasks`)
+}
+
+export const ensureTaskColumns = (db: Database): void => {
+  let columns = columnNames(db, "tasks")
+
+  if (!columns.includes("content_rating")) {
+    db.exec(`ALTER TABLE tasks ADD COLUMN content_rating TEXT`)
+  }
+  if (!columns.includes("rating_sex")) {
+    db.exec(`ALTER TABLE tasks ADD COLUMN rating_sex TEXT`)
+  }
+  if (!columns.includes("adult_hint")) {
+    db.exec(`ALTER TABLE tasks ADD COLUMN adult_hint INTEGER NOT NULL DEFAULT 0`)
+  }
+  if (!columns.includes("task_type")) {
+    db.exec(`ALTER TABLE tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'download'`)
+  }
+
+  columns = columnNames(db, "tasks")
 
   if (!columns.includes("task_id")) {
+    // Renamed legacy table (workshop_id was the primary key). Rebuild with a
+    // real UUID key so repeat downloads of one item are distinct entries.
     db.transaction(() => {
       db.exec(`
-        CREATE TABLE download_tasks_new (
+        CREATE TABLE tasks_new (
           task_id     TEXT PRIMARY KEY,
+          task_type   TEXT NOT NULL DEFAULT 'download',
           workshop_id TEXT NOT NULL,
           title       TEXT NOT NULL,
           preview_url TEXT NOT NULL DEFAULT '',
@@ -65,20 +125,23 @@ const ensureDownloadTaskColumns = (db: Database) => {
         )
       `)
       db.exec(`
-        INSERT INTO download_tasks_new (
-          task_id, workshop_id, title, preview_url, content_rating, rating_sex, adult_hint,
+        INSERT INTO tasks_new (
+          task_id, task_type, workshop_id, title, preview_url, content_rating, rating_sex, adult_hint,
           stage, message, started_at, finished_at, percent, bytes_done, bytes_total
         )
-        SELECT 
-          lower(hex(randomblob(16))), workshop_id, title, preview_url, content_rating, rating_sex, adult_hint,
+        SELECT
+          ${UUID_V4_SQL}, task_type, workshop_id, title, preview_url, content_rating, rating_sex, adult_hint,
           stage, message, started_at, finished_at, percent, bytes_done, bytes_total
-        FROM download_tasks
+        FROM tasks
       `)
-      db.exec(`DROP TABLE download_tasks`)
-      db.exec(`ALTER TABLE download_tasks_new RENAME TO download_tasks`)
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_download_tasks_started_at ON download_tasks(started_at DESC)`)
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_download_tasks_workshop_id ON download_tasks(workshop_id)`)
+      db.exec(`DROP TABLE tasks`)
+      db.exec(`ALTER TABLE tasks_new RENAME TO tasks`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_started_at ON tasks(started_at DESC)`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_workshop_id ON tasks(workshop_id)`)
     })()
+  } else {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_started_at ON tasks(started_at DESC)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_workshop_id ON tasks(workshop_id)`)
   }
 }
 
@@ -149,9 +212,10 @@ export const DbLive = Layer.scoped(
     )
 
     yield* tryDb<void>("migrate")(() => {
+      migrateLegacyDownloadTasks(sqlite)
       sqlite.exec(migrationSql)
       ensureLibraryColumns(sqlite)
-      ensureDownloadTaskColumns(sqlite)
+      ensureTaskColumns(sqlite)
     })
 
     return {

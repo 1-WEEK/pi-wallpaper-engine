@@ -7,7 +7,7 @@ import { DbError, MigrateError, StorageError } from "@pwe/shared"
 import { expandHome } from "../paths.js"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
-import { DownloadTasks, isFinishedTask } from "./DownloadTasks.js"
+import { Tasks } from "./Tasks.js"
 import { Library } from "./Library.js"
 import { Storage, isPathInsideRoot, normalizeCustomRootPath } from "./Storage.js"
 import {
@@ -99,7 +99,7 @@ export const StorageRootSelectionLive = Layer.effect(
   Effect.gen(function* () {
     const config = yield* Config
     const db = yield* Db
-    const downloadTasks = yield* DownloadTasks
+    const downloadTasks = yield* Tasks
     const library = yield* Library
     const storage = yield* Storage
 
@@ -278,10 +278,10 @@ export const StorageRootSelectionLive = Layer.effect(
           const targetChanged = target.path !== status.data_root
           if (!targetChanged) return { action: "noop", target } satisfies SwitchPlan
 
-          const activeDownloads = (yield* downloadTasks.list()).items.filter(
-            (task) => !isFinishedTask(task.stage, task.finished_at)
-          )
-          if (activeDownloads.length > 0) {
+          // Count via .total — .items is capped by the list limit and would
+          // miss an active download older than the newest page.
+          const activeDownloads = (yield* downloadTasks.list({ type: "download", active: true, limit: 1 })).total
+          if (activeDownloads > 0) {
             return yield* Effect.fail(
               new MigrateError({
                 kind: "Busy",

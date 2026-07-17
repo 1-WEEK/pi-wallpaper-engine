@@ -1,5 +1,5 @@
-import type { DisplayMode, DownloadStage, DownloadTask, LibraryItem, PlayMode, PlayerStatus, SystemSummary, WorkshopItem } from "@pwe/shared"
-export type { DownloadStage, DownloadTask, PlayerStatus, SystemSummary }
+import type { DisplayMode, TaskStage, ActivityTask, LibraryItem, PlayMode, PlayerStatus, SystemSummary, WorkshopItem } from "@pwe/shared"
+export type { TaskStage, ActivityTask, PlayerStatus, SystemSummary }
 import type { WorkshopSort } from "./workshopTags.js"
 
 
@@ -11,7 +11,7 @@ export interface MigrationProgress {
 }
 
 export interface PaginatedTasks {
-  readonly items: DownloadTask[]
+  readonly items: ActivityTask[]
   readonly total: number
 }
 
@@ -126,17 +126,18 @@ export const api = {
       json<{ ok: boolean; workshopId: string }>
     ),
 
-  downloadTasks: (opts: { offset?: number; limit?: number } = {}) => {
+  tasks: (opts: { offset?: number; limit?: number; active?: boolean } = {}) => {
     const params = new URLSearchParams()
     if (opts.offset !== undefined) params.set("offset", opts.offset.toString())
     if (opts.limit !== undefined) params.set("limit", opts.limit.toString())
+    if (opts.active) params.set("active", "1")
     const q = params.toString()
     return fetchWithTimeout(`/api/download/tasks${q ? `?${q}` : ""}`).then(json<PaginatedTasks>)
   },
-  dismissDownloadTask: (taskId: string) =>
+  dismissTask: (taskId: string) =>
     fetchWithTimeout(`/api/download/tasks/${taskId}`, { method: "DELETE" }).then(json<{ ok: true }>),
-  dismissAllDownloadTasks: (stage: DownloadStage) =>
-    fetchWithTimeout(`/api/download/tasks?status=${stage}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  dismissAllTasks: (stage: "complete" | "error") =>
+    fetchWithTimeout(`/api/download/tasks?stage=${stage}`, { method: "DELETE" }).then(json<{ ok: true }>),
   cancelDownload: (id: string) =>
     fetchWithTimeout(`/api/download/${id}/cancel`, { method: "POST" }).then(
       json<{ ok: boolean; workshopId?: string; status?: string; error?: string }>

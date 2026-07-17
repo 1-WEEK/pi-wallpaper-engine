@@ -8,6 +8,7 @@ import { Db, type DbImpl } from "../services/Db.js"
 import { Library, type LibraryImpl } from "../services/Library.js"
 import { Logger, type LoggerImpl } from "../services/Logger.js"
 import { TranscodeQueueLive } from "../services/TranscodeQueue.js"
+import { TasksLive } from "../services/Tasks.js"
 import { libraryRoutes } from "./library.js"
 
 // The manual-retrigger routes gate on the same env switch as the worker
@@ -137,6 +138,7 @@ const makeStack = (
   }
 
   const layer = TranscodeQueueLive.pipe(
+    Layer.provideMerge(TasksLive),
     Layer.provideMerge(Layer.succeed(Library, libImpl)),
     Layer.provideMerge(Layer.succeed(Logger, logImpl)),
     Layer.provideMerge(Layer.succeed(Db, dbImpl)),

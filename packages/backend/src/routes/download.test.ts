@@ -2,10 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Layer, ManagedRuntime, PubSub, Stream } from "effect"
 import { Elysia } from "elysia"
 import { DownloadIntake, type DownloadIntakeImpl, type DownloadProgressEvent } from "../services/DownloadIntake.js"
-import { DownloadTasks, type DownloadTasksImpl } from "../services/DownloadTasks.js"
+import { Tasks, type TasksImpl } from "../services/Tasks.js"
 import { downloadRoutes } from "./download.js"
 
-const makeTasks = (): DownloadTasksImpl => ({
+const makeTasks = (): TasksImpl => ({
   list: () => Effect.succeed({ items: [] as any, total: 0 }),
   get: () => Effect.succeed(null),
   getActiveByWorkshopId: () => Effect.succeed(null),
@@ -33,7 +33,7 @@ const withTimeout = async <T>(promise: Promise<T>, ms: number): Promise<T> => {
 const makeRuntime = (intake: DownloadIntakeImpl) =>
   ManagedRuntime.make(
     Layer.succeed(DownloadIntake, intake).pipe(
-      Layer.provideMerge(Layer.succeed(DownloadTasks, makeTasks()))
+      Layer.provideMerge(Layer.succeed(Tasks, makeTasks()))
     )
   )
 

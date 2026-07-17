@@ -13,6 +13,7 @@ import { Logger, type LoggerImpl } from "../services/Logger.js"
 import { Migrate, type MigrateImpl } from "../services/Migrate.js"
 import { Storage, type StorageImpl } from "../services/Storage.js"
 import { TranscodeQueue, TranscodeQueueLive } from "../services/TranscodeQueue.js"
+import { TasksLive } from "../services/Tasks.js"
 import { transcodeRoutes } from "./transcode.js"
 
 const ENV = "PWE_WORKER_API_KEY"
@@ -159,6 +160,7 @@ const makeStack = (opts: { migrationRunning?: boolean } = {}) => {
   // keeps them visible in the runtime's context
   // instead of being fully consumed by TranscodeQueueLive.
   const layer = TranscodeQueueLive.pipe(
+    Layer.provideMerge(TasksLive),
     Layer.provideMerge(Layer.succeed(Library, libImpl)),
     Layer.provideMerge(Layer.succeed(Logger, logImpl)),
     Layer.provideMerge(Layer.succeed(Storage, storageImpl)),
