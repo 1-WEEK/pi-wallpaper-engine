@@ -69,6 +69,20 @@ export const Activity = () => {
     return () => clearInterval(h)
   }, [])
 
+  // iOS Safari aborts in-flight fetches when the page is backgrounded, and
+  // SWR's resume-time focus revalidation can dedupe into that dying request,
+  // leaving the history hook stuck on an AbortError. mutate() bypasses
+  // deduping, so force a clean revalidation when we return to the foreground.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return
+      dMutate()
+      activeMutate()
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => document.removeEventListener("visibilitychange", onVisible)
+  }, [dMutate, activeMutate])
+
   const allTasks = useMemo(() => {
     const history = dData ? dData.flatMap(page => page.items) : []
     const active = activePageData?.items || []
@@ -129,8 +143,13 @@ export const Activity = () => {
   }
 
   const combinedError = dError || activeError
+  const hasAnyData = dData !== undefined || activePageData !== undefined
 
-  if (combinedError) return <div className="error">{(combinedError as Error).message}</div>
+  // A transient fetch failure (Safari aborting requests on background, a
+  // dropped poll) must not blow away an already-rendered list — keep showing
+  // cached data and let the next successful revalidation catch us up.
+  if (combinedError && !hasAnyData)
+    return <div className="error">{(combinedError as Error).message}</div>
 
   return (
     <div className="page">
