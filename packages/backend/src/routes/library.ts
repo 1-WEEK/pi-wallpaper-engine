@@ -1,9 +1,11 @@
 import { Elysia, t } from "elysia"
 import { Effect, Stream } from "effect"
+import { resolve, sep } from "node:path"
 import type { DisplayMode, LibraryItem } from "@pwe/shared"
 import { Config } from "../services/Config.js"
 import { Db } from "../services/Db.js"
 import { Library } from "../services/Library.js"
+import { Storage } from "../services/Storage.js"
 import { TranscodeQueue } from "../services/TranscodeQueue.js"
 import { decideTranscode, type TranscodeSourceSpec } from "../transcode/decide.js"
 import { httpFromError } from "./httpError.js"
@@ -96,6 +98,86 @@ export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = nu
         })
       )
     )
+    .get("/:workshopId/stream", async ({ params, request }) => {
+      const located = await runtime
+        .runPromise(
+          Effect.gen(function* () {
+            const lib = yield* Library
+            const storage = yield* Storage
+            const config = yield* Config
+            const row = yield* lib.get(params.workshopId)
+            const root = yield* storage.mediaRoot()
+            return { row, root, optimizedDir: config.paths.optimized_dir }
+          }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        )
+        .catch(() => null)
+
+      const notFound = () =>
+        new Response(JSON.stringify({ error: "No streamable optimized file." }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        })
+
+      if (!located) return notFound()
+      const { row, root, optimizedDir } = located
+      if (row.transcode_status !== "completed" || !row.transcoded_path) return notFound()
+
+      // Only files under optimized/ are streamable, and a hostile
+      // transcoded_path ("../../etc/...") must never escape it.
+      const optimizedRoot = resolve(root, optimizedDir)
+      const abs = resolve(root, row.transcoded_path)
+      if (abs !== optimizedRoot && !abs.startsWith(optimizedRoot + sep)) return notFound()
+
+      const file = Bun.file(abs)
+      if (!(await file.exists())) return notFound()
+      const size = file.size
+
+      const rangeHeader = request.headers.get("range")
+      if (!rangeHeader) {
+        return new Response(file, {
+          status: 200,
+          headers: {
+            "content-type": "video/mp4",
+            "accept-ranges": "bytes",
+            "content-length": String(size),
+          },
+        })
+      }
+
+      const unsatisfiable = () =>
+        new Response(null, {
+          status: 416,
+          headers: { "content-range": `bytes */${size}` },
+        })
+
+      // bytes=start-end | bytes=start- | bytes=-suffix (single range only —
+      // browsers never ask for multipart ranges when scrubbing video).
+      const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim())
+      if (!match || (match[1] === "" && match[2] === "")) return unsatisfiable()
+
+      let start: number
+      let end: number
+      if (match[1] === "") {
+        const suffix = Number(match[2])
+        if (suffix === 0) return unsatisfiable()
+        start = Math.max(0, size - suffix)
+        end = size - 1
+      } else {
+        start = Number(match[1])
+        end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1)
+      }
+      if (start >= size || end < start) return unsatisfiable()
+
+      return new Response(file.slice(start, end + 1), {
+        status: 206,
+        headers: {
+          "content-type": "video/mp4",
+          "accept-ranges": "bytes",
+          "content-length": String(end - start + 1),
+          "content-range": `bytes ${start}-${end}/${size}`,
+        },
+      })
+    })
     .delete("/:workshopId", ({ params, set }) =>
       runRoute(
         set,
