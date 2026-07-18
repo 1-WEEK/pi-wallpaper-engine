@@ -1,5 +1,29 @@
-import type { SystemSummary, WorkshopSearchResult } from "@pwe/shared"
+import type { LibraryItem, SystemSummary, WorkshopSearchResult } from "@pwe/shared"
 import type { WorkshopItem } from "@pwe/shared"
+
+export const mockLibraryItem = (overrides: Partial<LibraryItem> = {}): LibraryItem => ({
+  workshop_id: "1693728660",
+  title: "Neon City",
+  author: "TestAuthor",
+  preview_url: "",
+  content_rating: "Everyone",
+  rating_sex: null,
+  source_path: "source/1693728660/wallpaper.mp4",
+  source_resolution: "3840x2160",
+  source_codec: "h264",
+  source_size: 500_000_000,
+  downloaded_at: 1_700_000_000_000,
+  transcode_status: "completed",
+  transcode_progress: 100,
+  transcode_error: null,
+  transcoded_path: "optimized/1693728660.mp4",
+  transcoded_resolution: "1920x1080",
+  transcoded_codec: "hevc",
+  transcoded_size: 100_000_000,
+  display_mode: "fill",
+  last_played_at: null,
+  ...overrides,
+})
 
 export const mockWorkshopItems = (n: number): WorkshopItem[] =>
   Array.from({ length: n }, (_, i) => ({

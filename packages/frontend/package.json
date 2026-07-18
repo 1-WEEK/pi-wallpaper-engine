@@ -14,6 +14,7 @@
     "@pwe/shared": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.19",
     "better-auth": "^1.6.23",
+    "plyr": "^3.8.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "swr": "^2.4.2",

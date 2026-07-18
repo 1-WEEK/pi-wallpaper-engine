@@ -5,6 +5,7 @@ import { api } from "../api.js"
 import { spaceSavedPercent } from "../format.js"
 import { appIcons } from "../icons.js"
 import { useLayout } from "../components/mobile/index.js"
+import { VideoPreview } from "../components/VideoPreview.js"
 
 interface Props {
   nowPlayingId: string | null
@@ -40,6 +41,8 @@ const showsTranscodeBadge = (status: LibraryItem["transcode_status"]): boolean =
 const canRetranscode = (status: LibraryItem["transcode_status"]): boolean =>
   status === "failed" || status === "skipped"
 
+const canPreview = (row: LibraryItem): boolean => row.transcode_status === "completed"
+
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const { mobile } = useLayout()
   const [view, setView] = useState<"grid" | "list">("grid")
@@ -47,6 +50,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const [showAdult, setShowAdult] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [previewItem, setPreviewItem] = useState<LibraryItem | null>(null)
 
   useEffect(() => {
     if (mobile && view !== "grid") setView("grid")
@@ -288,6 +292,16 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     <span className="library-card-play-icon">{appIcons.play}</span>
                     Play
                   </button>
+                  {canPreview(row) && (
+                    <button
+                      type="button"
+                      className="btn library-card-preview"
+                      onClick={() => setPreviewItem(row)}
+                      aria-label="Preview this wallpaper in the browser"
+                    >
+                      {mobile ? "▶" : "Preview"}
+                    </button>
+                  )}
                   {canRetranscode(row.transcode_status) && (
                     <button
                       type="button"
@@ -350,6 +364,16 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                   </div>
                 </div>
 
+                {canPreview(row) && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setPreviewItem(row)}
+                    aria-label="Preview this wallpaper in the browser"
+                  >
+                    Preview
+                  </button>
+                )}
                 {canRetranscode(row.transcode_status) && (
                   <button
                     type="button"
@@ -374,6 +398,8 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
           })}
         </ul>
       )}
+
+      {previewItem && <VideoPreview item={previewItem} onClose={() => setPreviewItem(null)} />}
     </div>
   )
 }
