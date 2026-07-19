@@ -32,6 +32,22 @@ export interface MpvImpl {
 
 export class Mpv extends Context.Tag("Mpv")<Mpv, MpvImpl>() {}
 
+// The compositor owns the fullscreen state and may strip it at runtime
+// (observed on labwc: after a display power cycle mpv can end up windowed
+// with a titlebar, and --fullscreen alone never restores it). We observe the
+// property and re-assert whenever mpv reports it flipped off.
+export const FULLSCREEN_OBSERVE_ID = 1
+
+export const shouldReassertFullscreen = (msg: unknown): boolean => {
+  if (typeof msg !== "object" || msg === null) return false
+  const event = msg as Record<string, unknown>
+  return (
+    event.event === "property-change" &&
+    event.name === "fullscreen" &&
+    event.data === false
+  )
+}
+
 const SOCKET_CONNECT_RETRIES = 30
 const SOCKET_CONNECT_DELAY_MS = 200
 
@@ -143,7 +159,7 @@ export const MpvLive = Layer.scoped(
     })
 
     let buffer = ""
-    const handleData = async (chunk: string) => {
+    const handleData = async (socket: UnixSocket, chunk: string) => {
       buffer += chunk
       const lines = buffer.split("\n")
       buffer = lines.pop() ?? ""
@@ -172,6 +188,11 @@ export const MpvLive = Layer.scoped(
                 await Effect.runPromise(Deferred.succeed(pending.deferred, msg.data ?? null))
               }
             }
+          } else if (shouldReassertFullscreen(msg)) {
+            // Write on the socket directly: the corrective command must not
+            // depend on the command queue, which is wired up after this handler.
+            socket.write(JSON.stringify({ command: ["set_property", "fullscreen", true] }) + "\n")
+            await Effect.runPromise(logger.warn("mpv lost fullscreen; re-asserting"))
           }
         } catch {
           // ignore malformed
@@ -182,8 +203,8 @@ export const MpvLive = Layer.scoped(
     const realSocket = yield* Effect.tryPromise({
       try: () =>
         connectSocket(config.mpv.ipc_socket, {
-          data(_s, data) {
-            void handleData(data.toString("utf-8"))
+          data(s, data) {
+            void handleData(s, data.toString("utf-8"))
           },
           error(_s, err) {
             void Effect.runPromise(logger.error(`mpv IPC socket error: ${err.message}`))
@@ -241,6 +262,10 @@ export const MpvLive = Layer.scoped(
           })
         )
       })
+
+    yield* send(["observe_property", FULLSCREEN_OBSERVE_ID, "fullscreen"]).pipe(
+      Effect.catchAll((e) => logger.warn(`Could not observe mpv fullscreen: ${e.reason}`))
+    )
 
     return {
       play: (workshopId, path) =>
