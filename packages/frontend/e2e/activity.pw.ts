@@ -5,7 +5,10 @@ import { mockSystemSummary } from "./fixtures.js"
 const summary = mockSystemSummary()
 
 /** Boot the minimal mocks needed to render the app shell on the Activity page. */
-const mockShellEndpoints = async (page: import("playwright").Page) => {
+const mockShellEndpoints = async (
+  page: import("playwright").Page,
+  { mockTasks = true }: { mockTasks?: boolean } = {}
+) => {
   await page.route("**/api/auth/setup-state", (r) =>
     r.fulfill({
       status: 200,
@@ -16,9 +19,11 @@ const mockShellEndpoints = async (page: import("playwright").Page) => {
   await page.route("**/api/system/summary", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(summary) })
   )
-  await page.route("**/api/download/tasks**", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], total: 0 }) })
-  )
+  if (mockTasks) {
+    await page.route("**/api/download/tasks**", (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], total: 0 }) })
+    )
+  }
 }
 
 test.describe("Activity routing", () => {
@@ -62,6 +67,33 @@ const mockTask = (overrides: Partial<ActivityTask> = {}): ActivityTask => ({
   bytes_done: null,
   bytes_total: null,
   ...overrides,
+})
+
+test("active summary uses the unpaginated total", async ({ page }) => {
+  await mockShellEndpoints(page, { mockTasks: false })
+
+  const activeItems = Array.from({ length: 50 }, (_, index) =>
+    mockTask({
+      task_id: `task-${index}`,
+      workshop_id: String(1_000_000 + index),
+      title: `Wallpaper ${index}`,
+      content_rating: index < 8 ? "Mature" : "Everyone",
+    })
+  )
+  await page.route("**/api/download/tasks**", (route) => {
+    const active = new URL(route.request().url()).searchParams.get("active") === "1"
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(active ? { items: activeItems, total: 65 } : { items: [], total: 0 }),
+    })
+  })
+
+  await page.goto("/activity")
+
+  const activeSummary = page.locator(".summary-stat.compact", { hasText: "active" })
+  await expect(activeSummary.locator("strong")).toHaveText("65")
+  await expect(page.locator(".task-list > li")).toHaveCount(42)
 })
 
 test.describe("Activity resilience to aborted fetches", () => {

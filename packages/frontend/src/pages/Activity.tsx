@@ -160,7 +160,7 @@ export const Activity = () => {
         <div className="page-actions">
           <div className="summary-stat compact">
             <span className="summary-stat-label mono">active</span>
-            <strong>{activeDl.length + activeTc.length}</strong>
+            <strong>{activePageData?.total ?? activeDl.length + activeTc.length}</strong>
           </div>
           <div className="summary-stat compact">
             <span className="summary-stat-label mono">finished</span>
