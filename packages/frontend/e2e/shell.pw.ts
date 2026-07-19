@@ -1,23 +1,14 @@
 import { expect, test } from "playwright/test"
 import type { Page } from "playwright"
 import { mockSystemSummary } from "./fixtures.js"
+import { mockAuthDisabled, mockLibraryList, mockSummary } from "./helpers.js"
 
 const mockAllEndpoints = async (page: Page) => {
-  await page.route("**/api/auth/setup-state", (r) =>
-    r.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ enabled: false, setup_complete: true }),
-    })
-  )
+  await mockAuthDisabled(page)
   const summary = mockSystemSummary()
   summary.status.library.total = 7
-  await page.route("**/api/system/summary", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(summary) })
-  )
-  await page.route("**/api/library", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" })
-  )
+  await mockSummary(page, summary)
+  await mockLibraryList(page, [])
   await page.route("**/api/storage", (r) =>
     r.fulfill({
       status: 200,

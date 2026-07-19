@@ -1,27 +1,11 @@
 import { expect, test } from "playwright/test"
 import type { Page } from "playwright"
 import type { LibraryItem } from "@pwe/shared"
-import { mockLibraryItem, mockSystemSummary } from "./fixtures.js"
+import { mockLibraryItem } from "./fixtures.js"
+import { mockAuthDisabled, mockLibraryList, mockSummary } from "./helpers.js"
 
-const mockAllEndpoints = async (page: Page, items: LibraryItem[]) => {
-  await page.route("**/api/auth/setup-state", (r) =>
-    r.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ enabled: false, setup_complete: true }),
-    })
-  )
-  await page.route("**/api/system/summary", (r) =>
-    r.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(mockSystemSummary()),
-    })
-  )
-  await page.route("**/api/library", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(items) })
-  )
-}
+const mockAllEndpoints = (page: Page, items: LibraryItem[]) =>
+  Promise.all([mockAuthDisabled(page), mockSummary(page), mockLibraryList(page, items)])
 
 test.describe("Library page", () => {
   test("renders cards with badges matching transcode state", async ({ page }) => {

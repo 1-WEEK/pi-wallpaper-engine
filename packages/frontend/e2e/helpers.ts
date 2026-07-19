@@ -46,13 +46,25 @@ export const mockWorkshopSearch = (
   })
 }
 
+/** Auth disabled: the AuthGate resolves straight to the app shell.
+ *  Await this (and the mocks below) before page.goto — an unregistered route
+ *  lets the request through to the dev proxy, which hangs without a backend. */
+export const mockAuthDisabled = (page: Page): Promise<void> =>
+  page.route("**/api/auth/setup-state", (r) => {
+    void r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ enabled: false, setup_complete: true }),
+    })
+  })
+
 /** Quick helper to mock the system summary endpoint. */
 export const mockSummary = (
   page: Page,
   summary?: SystemSummary
-) => {
+): Promise<void> => {
   const body = summary ?? mockSystemSummary()
-  void page.route("**/api/system/summary", (r) => {
+  return page.route("**/api/system/summary", (r) => {
     void r.fulfill({
       status: 200,
       contentType: "application/json",
@@ -62,15 +74,14 @@ export const mockSummary = (
 }
 
 /** Quick helper to mock the library list endpoint. */
-export const mockLibraryList = (page: Page, items: unknown[]) => {
-  void page.route("**/api/library", (r) => {
+export const mockLibraryList = (page: Page, items: unknown[]): Promise<void> =>
+  page.route("**/api/library", (r) => {
     void r.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(items),
     })
   })
-}
 
 /** Quick helper to mock the download tasks endpoint. */
 export const mockDownloadTasks = (page: Page, tasks: unknown[]) => {

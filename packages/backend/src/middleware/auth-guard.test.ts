@@ -39,6 +39,16 @@ describe("sessionGuard", () => {
     expect(res.status).toBe(200)
   })
 
+  test("returns 401 on the library stream route when unauthenticated", async () => {
+    // BL-17 requires the media stream to sit behind the session wall like any
+    // other /api route — pin that here since the route itself never re-checks.
+    const app = new Elysia()
+      .use(sessionGuard(mockAuth(false)))
+      .get("/api/library/:workshopId/stream", () => ({ ok: true }))
+    const res = await app.handle(new Request("http://localhost/api/library/123/stream"))
+    expect(res.status).toBe(401)
+  })
+
   test("passes through on /api/auth/*", async () => {
     const app = new Elysia()
       .use(sessionGuard(mockAuth(false)))

@@ -2,6 +2,7 @@ import { expect, test } from "playwright/test"
 import type { Page } from "playwright"
 import type { SystemSummary } from "@pwe/shared"
 import { mockSystemSummary } from "./fixtures.js"
+import { mockAuthDisabled, mockLibraryList } from "./helpers.js"
 
 const playingSummary = (): SystemSummary => {
   const summary = mockSystemSummary()
@@ -18,22 +19,14 @@ const playingSummary = (): SystemSummary => {
 
 /** Summary is served from a mutable ref so actions can change what the next poll sees. */
 const mockAllEndpoints = async (page: Page, summaryRef: { value: SystemSummary }) => {
-  await page.route("**/api/auth/setup-state", (r) =>
-    r.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ enabled: false, setup_complete: true }),
-    })
-  )
+  await mockAuthDisabled(page)
+  await mockLibraryList(page, [])
   await page.route("**/api/system/summary", (r) =>
     r.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(summaryRef.value),
     })
-  )
-  await page.route("**/api/library", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" })
   )
   await page.route("**/api/workshop/search*", (r) =>
     r.fulfill({
