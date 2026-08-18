@@ -21,8 +21,8 @@ docker run -d --name "$NAME" \
   -e PWE_BACKEND_URL="http://127.0.0.1:1" \
   -e PWE_WORKER_API_KEY="smoke" \
   -e PWE_WORKER_NAME="smoke" \
+  -e PWE_WORKER_REQUIRE_HW="false" \
   "$IMAGE" >/dev/null
-
 # Markers, shallow → deep. Reaching CLAIM proves the most: every import
 # resolved, config loaded, and the ffmpeg encoder probe ran to completion.
 BOOT="▶ pwe-worker"

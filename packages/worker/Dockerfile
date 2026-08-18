@@ -12,7 +12,7 @@
 # that — the runtime image carries no node_modules and runs no `bun install`.
 
 # ── stage 1: bundle the worker into one self-contained file ────────────────
-FROM oven/bun:1.3-debian AS builder
+FROM oven/bun:1.3.14-debian AS builder
 
 WORKDIR /app
 
@@ -32,18 +32,25 @@ RUN bun build packages/worker/src/index.ts \
       --sourcemap=linked
 
 # ── stage 2: minimal runtime — ffmpeg + Intel media driver + the bundle ────
-FROM oven/bun:1.3-slim AS runtime
+FROM oven/bun:1.3.14-slim AS runtime
 
-# `intel-media-va-driver-non-free` ships the modern iHD driver used by Tiger
-# Lake and later Intel iGPUs. Add `i965-va-driver` for very old chips. That
-# driver lives in Debian's `non-free` component, which the base image's deb822
-# sources only enable `main` for — turn it on before installing.
+ARG TARGETARCH
+
+# On Debian 13 (Trixie), FFmpeg 7.x/9.x uses oneVPL (`libvpl2`) for Intel QSV.
+# `libmfx-gen1.2` provides the oneVPL Intel GPU user-space runtime driver
+# (`libmfx-gen.so.1.2`). `intel-media-va-driver-non-free` ships the iHD VA-API
+# driver for Gen8+ Intel iGPUs. These packages are amd64-specific (Intel hardware);
+# on arm64 (Apple Silicon / ARM NAS) the worker falls back to libx265 software encoding.
 RUN sed -i 's/^Components: main$/Components: main non-free non-free-firmware/' \
        /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
+  && EXTRA_PKGS="" \
+  && if [ "$TARGETARCH" = "amd64" ] || [ -z "$TARGETARCH" ]; then \
+       dpkg --print-architecture | grep -q amd64 && EXTRA_PKGS="intel-media-va-driver-non-free libmfx-gen1.2" || true; \
+     fi \
   && apt-get install -y --no-install-recommends \
        ffmpeg \
-       intel-media-va-driver-non-free \
+       $EXTRA_PKGS \
        ca-certificates \
        tini \
   && rm -rf /var/lib/apt/lists/*
