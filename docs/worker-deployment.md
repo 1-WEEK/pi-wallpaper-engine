@@ -142,10 +142,11 @@ PWE_BACKEND_URL=http://pi.local:8080
 
 # Worker 在领取任务时上报自己的名字，方便日志辨认
 PWE_WORKER_NAME=nas-01
-
 # 容器内的临时工作目录，默认即可
 PWE_WORK_DIR=/tmp/pwe-worker
-```
+
+# 硬件编码强制开关（默认: true）。若未探测到 QSV 硬件加速则直接报错退出，防止 CPU 满载
+PWE_WORKER_REQUIRE_HW=true
 
 如果你的镜像在本地 tar 里，那 `PWE_WORKER_IMAGE` 就写 `release.sh` 打印出来的那个完整标签。
 
@@ -166,9 +167,7 @@ docker logs pwe-worker | head -20
 ```
 
 这说明 Worker 已经连上 Pi，并且成功探测到 QSV 硬件编码。
-
-如果日志停在 `encoder: x265 - hevc_qsv device probe failed (...)`，说明 QSV 没透传进容器，但 Worker 会退回到 libx265 软件编码，仍然能工作，只是慢一点。需要硬件加速的话，继续看下一节。
-
+如果日志提示 `Fatal: Hardware encoding is mandatory, but QSV detection failed`，说明 QSV 硬件设备未成功透传进容器或驱动缺失。Worker 默认强制要求硬件编码并快速失败退出，防止占用 NAS 大量 CPU 资源。排查请看下一节。
 ## 检查 QSV 硬件加速
 
 QSV 依赖 `docker-compose.yml` 里的设备映射：
@@ -189,11 +188,10 @@ ls -l /dev/dri
 如果主机有设备但容器里探测失败，检查：
 
 1. `docker-compose.yml` 是否正确挂载了 `/dev/dri`。
-2. NAS 上是否安装了 `intel-media-va-driver-non-free` 或 `i965-va-driver`。Dockerfile 已经打包了 `intel-media-va-driver-non-free`，理论上不需要在宿主机额外安装，但某些老 CPU 可能需要 `i965-va-driver`。
-3. 容器内执行 `vainfo` 看看 VA-API 是否识别到设备。
+2. **oneVPL 驱动运行时**：新版 FFmpeg（7.x / 9.x）使用 oneVPL 架构。Worker 镜像已内置 `libmfx-gen1.2`（Intel GPU oneVPL 运行时）与 `intel-media-va-driver-non-free`（iHD 驱动）。如果 NAS 属于较老的第 6 代 Skylake 以前架构，可能需要挂载支持旧硬件的 VA-API 驱动。
+3. 确认 NAS 运行用户或 Docker 容器具有访问 `/dev/dri/renderD128` 的权限（例如在 Linux 宿主机上加入 `render` 或 `video` 用户组）。
 
 只要 NAS 是 x86 架构且 Docker 能正常访问 `/dev/dri`，`hevc_qsv` 通常可以直接启用。
-
 ## 常见问题
 
 **Q: Worker 日志显示 401/403，然后退出。**  
