@@ -92,7 +92,7 @@ export const detectEncoder = async (
 
   // ~1 frame at 24fps from a 64x64 lavfi source. Encoded into a null muxer so
   // nothing is written. If /dev/dri/renderD128 is missing or not accessible,
-  // ffmpeg exits non-zero with "Cannot load libmfx" / similar.
+  // ffmpeg exits non-zero with "No MFX/oneVPL runtime found" / similar.
   const probe = await runOnce(
     ffmpeg,
     [
@@ -151,13 +151,19 @@ export const buildFfmpegArgs = (
   const q = job.target_quality
 
   if (encoder === "qsv") {
-    // QSV path: hardware scaler + hardware HEVC encode. `mode=hq` favors
-    // quality over throughput; the Pi screen is small so the speed tax is
-    // immaterial.
+    // QSV path: hardware device initialization + VPP hardware scaler +
+    // hardware HEVC encode. `mode=hq` favors quality over throughput;
+    // the Pi screen is small so the speed tax is immaterial.
+    // In FFmpeg 7+ (oneVPL), scale_qsv expects hardware frames, so we
+    // initialize the device context and upload frames to QSV surfaces.
     return [
       ...common,
+      "-init_hw_device",
+      "qsv=hw",
+      "-filter_hw_device",
+      "hw",
       "-vf",
-      `scale_qsv=w=${w}:h=${h}:mode=hq`,
+      `hwupload=extra_hw_frames=64,format=qsv,scale_qsv=w=${w}:h=${h}:mode=hq`,
       "-c:v",
       "hevc_qsv",
       "-global_quality",

@@ -26,13 +26,17 @@ describe("buildJobPaths", () => {
 describe("buildFfmpegArgs", () => {
   const paths = buildJobPaths("/tmp/pwe/J1/source", "/tmp/pwe/J1/output.mp4")
 
-  test("QSV path uses hevc_qsv + scale_qsv + global_quality", () => {
+  test("QSV path uses hevc_qsv + scale_qsv + global_quality with hardware device init", () => {
     const args = buildFfmpegArgs(job, paths, "qsv")
+    expect(args).toContain("-init_hw_device")
+    expect(args).toContain("-filter_hw_device")
     expect(args).toContain("-c:v")
     expect(args).toContain("hevc_qsv")
     const vfIndex = args.indexOf("-vf")
     expect(vfIndex).toBeGreaterThan(-1)
-    expect(args[vfIndex + 1]).toBe("scale_qsv=w=1200:h=1080:mode=hq")
+    expect(args[vfIndex + 1]).toBe(
+      "hwupload=extra_hw_frames=64,format=qsv,scale_qsv=w=1200:h=1080:mode=hq"
+    )
     expect(args).toContain("-global_quality")
     expect(args[args.indexOf("-global_quality") + 1]).toBe("23")
     // Writes to .partial, not final.

@@ -8,6 +8,7 @@ interface RuntimeConfig {
   readonly apiKey: string
   readonly workerName: string
   readonly workDir: string
+  readonly requireHardware: boolean
 }
 
 const requireEnv = (name: string): string => {
@@ -24,6 +25,7 @@ const loadConfig = (): RuntimeConfig => ({
   apiKey: requireEnv("PWE_WORKER_API_KEY"),
   workerName: process.env["PWE_WORKER_NAME"] ?? "worker",
   workDir: process.env["PWE_WORK_DIR"] ?? "/tmp/pwe-worker",
+  requireHardware: process.env["PWE_WORKER_REQUIRE_HW"] !== "false",
 })
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -54,6 +56,15 @@ const main = async () => {
   const encoderChoice = await detectEncoder()
   console.log(`  encoder: ${encoderChoice.kind} — ${encoderChoice.reason}`)
 
+  if (config.requireHardware && encoderChoice.kind !== "qsv") {
+    console.error(
+      `✗ Fatal: Hardware encoding is mandatory, but QSV detection failed: ${encoderChoice.reason}`
+    )
+    console.error(
+      `  Ensure Intel iGPU /dev/dri is mapped to container and oneVPL runtime (libmfx-gen1.2) is loaded.`
+    )
+    process.exit(2)
+  }
   while (running) {
     let job: Awaited<ReturnType<typeof client.claim>> = null
     try {
