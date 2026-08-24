@@ -11,6 +11,10 @@ import { Db } from "../services/Db.js"
 import { Library } from "../services/Library.js"
 import { Migrate } from "../services/Migrate.js"
 import { Storage, isPathInsideRoot } from "../services/Storage.js"
+import {
+  ACTIVE_TRANSCODE_JOB_STATUSES,
+  activeTranscodeStatusesSql,
+} from "../services/TranscodeJobStatus.js"
 import { TranscodeQueue } from "../services/TranscodeQueue.js"
 import { workerGuard } from "../middleware/workerGuard.js"
 import type { AppRuntime } from "../runtime.js"
@@ -64,8 +68,8 @@ const jobRow = (jobId: string) =>
     const row = yield* db.queryOne<{ workshop_id: string }>(
       `SELECT workshop_id
        FROM transcode_jobs
-       WHERE id = ? AND status IN ('claimed','running','uploading')`,
-      [jobId]
+       WHERE id = ? AND ${activeTranscodeStatusesSql()}`,
+      [jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
     )
     if (!row) {
       return yield* failFile(404, "Job not found or no longer owned by worker.")

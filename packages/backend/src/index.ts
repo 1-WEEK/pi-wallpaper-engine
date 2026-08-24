@@ -18,6 +18,7 @@ import { createAuth, type AuthService } from "./services/Auth.js"
 import { originGuard } from "./middleware/originGuard.js"
 import { sessionGuard } from "./middleware/sessionGuard.js"
 import { authRateLimit } from "./middleware/authRateLimit.js"
+import { stopServer } from "./shutdown.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -114,7 +115,7 @@ if (auth && config.auth) {
 
 app
   .use(workshopRoutes(runtime))
-  .use(libraryRoutes(runtime))
+  .use(libraryRoutes(runtime, auth))
   .use(playerRoutes(runtime, auth))
   .use(downloadRoutes(runtime, auth))
   .use(displayRoutes(runtime))
@@ -159,7 +160,7 @@ if (auth) {
 
 const shutdown = async (signal: string) => {
   console.log(`\n${signal} received, shutting down...`)
-  await server.stop()
+  await stopServer(server)
   if (auth) auth.dispose()
   await runtime.dispose()
   process.exit(0)

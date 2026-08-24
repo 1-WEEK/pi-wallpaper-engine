@@ -1,5 +1,5 @@
-import type { DisplayMode, DownloadStage, DownloadTask, LibraryItem, PlayMode, PlayerStatus, SystemSummary, WorkshopItem } from "@pwe/shared"
-export type { DownloadStage, DownloadTask, PlayerStatus, SystemSummary }
+import type { DisplayMode, TaskStage, ActivityTask, LibraryItem, PlayMode, PlayerStatus, SystemSummary, WorkshopItem } from "@pwe/shared"
+export type { TaskStage, ActivityTask, PlayerStatus, SystemSummary }
 import type { WorkshopSort } from "./workshopTags.js"
 
 
@@ -8,6 +8,11 @@ export interface MigrationProgress {
   moved_bytes: number
   total_bytes: number
   error: string | null
+}
+
+export interface PaginatedTasks {
+  readonly items: ActivityTask[]
+  readonly total: number
 }
 
 export interface StorageStatus {
@@ -121,9 +126,18 @@ export const api = {
       json<{ ok: boolean; workshopId: string }>
     ),
 
-  downloadTasks: () => fetchWithTimeout(`/api/download/tasks`).then(json<DownloadTask[]>),
-  dismissDownloadTask: (id: string) =>
-    fetchWithTimeout(`/api/download/tasks/${id}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  tasks: (opts: { offset?: number; limit?: number; active?: boolean } = {}) => {
+    const params = new URLSearchParams()
+    if (opts.offset !== undefined) params.set("offset", opts.offset.toString())
+    if (opts.limit !== undefined) params.set("limit", opts.limit.toString())
+    if (opts.active) params.set("active", "1")
+    const q = params.toString()
+    return fetchWithTimeout(`/api/download/tasks${q ? `?${q}` : ""}`).then(json<PaginatedTasks>)
+  },
+  dismissTask: (taskId: string) =>
+    fetchWithTimeout(`/api/download/tasks/${taskId}`, { method: "DELETE" }).then(json<{ ok: true }>),
+  dismissAllTasks: (stage: "complete" | "error") =>
+    fetchWithTimeout(`/api/download/tasks?stage=${stage}`, { method: "DELETE" }).then(json<{ ok: true }>),
   cancelDownload: (id: string) =>
     fetchWithTimeout(`/api/download/${id}/cancel`, { method: "POST" }).then(
       json<{ ok: boolean; workshopId?: string; status?: string; error?: string }>
@@ -165,6 +179,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }).then(json<{ ok: true }>),
+  libraryTranscode: (id: string) =>
+    fetchWithTimeout(`/api/library/${id}/transcode`, { method: "POST" }).then(
+      json<{ ok: true; transcode_status: "pending" | "skipped"; reason: string }>
+    ),
+  libraryTranscodeRetryAll: () =>
+    fetchWithTimeout(`/api/library/transcode/retry-all`, { method: "POST" }).then(
+      json<{ ok: true; queued: number; skipped: number; invalid: number }>
+    ),
 
   play: (id: string) => fetchWithTimeout(`/api/player/play/${id}`, { method: "POST" }).then(json<unknown>),
   pause: () => fetchWithTimeout(`/api/player/pause`, { method: "POST" }).then(json<unknown>),
@@ -230,6 +252,11 @@ export const api = {
   playerWatchWS: (): WebSocket => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws"
     return new WebSocket(`${proto}://${window.location.host}/api/player/watch`)
+  },
+
+  libraryTranscodeWatchWS: (): WebSocket => {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws"
+    return new WebSocket(`${proto}://${window.location.host}/api/library/transcode/watch`)
   },
 }
 

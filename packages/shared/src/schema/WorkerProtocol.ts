@@ -44,3 +44,12 @@ export const ProgressReport = Schema.Struct({
 export const FailReport = Schema.Struct({
   error: Schema.String,
 })
+
+export const TranscodeProgressEvent = Schema.Struct({
+  jobId: Schema.String,
+  workshopId: Schema.String,
+  status: TranscodeJobStatus,
+  progress: Schema.optionalWith(Schema.Number, { exact: true }),
+  error: Schema.optionalWith(Schema.String, { exact: true })
+})
+export type TranscodeProgressEvent = typeof TranscodeProgressEvent.Type

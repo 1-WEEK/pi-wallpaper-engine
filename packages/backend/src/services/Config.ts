@@ -1,8 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { readFile } from "node:fs/promises"
-import { resolve } from "node:path"
-import { homedir } from "node:os"
 import { Config as ConfigSchema, ConfigError, type Config as AppConfig } from "@pwe/shared"
+import { expandHome } from "../paths.js"
 
 export type RuntimeStorageConfig = {
   root: string | null
@@ -13,9 +12,6 @@ export type RuntimeConfig = Omit<AppConfig, "storage"> & {
 }
 
 export class Config extends Context.Tag("Config")<Config, RuntimeConfig>() {}
-
-const expandHome = (p: string): string =>
-  p.startsWith("~/") ? resolve(homedir(), p.slice(2)) : resolve(p)
 
 const withStorageDefaults = (decoded: AppConfig): RuntimeConfig => {
   return {

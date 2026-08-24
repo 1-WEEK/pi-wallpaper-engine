@@ -6,6 +6,10 @@ import { Db } from "./Db.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
 import { Storage } from "./Storage.js"
+import {
+  ACTIVE_TRANSCODE_JOB_STATUSES,
+  activeTranscodeStatusesSql,
+} from "./TranscodeJobStatus.js"
 
 export interface TranscodeMonitorImpl {
   /**
@@ -42,9 +46,9 @@ const buildSweep = (
       .query<StaleRow>(
         `SELECT id, workshop_id, worker, last_heartbeat
          FROM transcode_jobs
-         WHERE status IN ('claimed','running','uploading')
+         WHERE ${activeTranscodeStatusesSql()}
            AND (last_heartbeat IS NULL OR last_heartbeat < ?)`,
-        [cutoff]
+        [...ACTIVE_TRANSCODE_JOB_STATUSES, cutoff]
       )
       .pipe(
         Effect.catchAll((e) =>
@@ -60,8 +64,8 @@ const buildSweep = (
         .exec(
           `UPDATE transcode_jobs
            SET status = 'pending', worker = NULL, claimed_at = NULL, last_heartbeat = NULL
-           WHERE id = ? AND status IN ('claimed','running','uploading')`,
-          [row.id]
+           WHERE id = ? AND ${activeTranscodeStatusesSql()}`,
+          [row.id, ...ACTIVE_TRANSCODE_JOB_STATUSES]
         )
         .pipe(
           Effect.as(true),

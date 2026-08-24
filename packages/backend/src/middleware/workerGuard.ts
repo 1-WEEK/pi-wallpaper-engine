@@ -1,4 +1,12 @@
 import { Elysia } from "elysia"
+import { timingSafeEqual, createHash } from "node:crypto"
+
+/** Hash both sides with SHA-256 so buffers are always equal length, then compare. */
+function constantTimeEqual(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest()
+  const hb = createHash("sha256").update(b).digest()
+  return timingSafeEqual(ha, hb)
+}
 
 /**
  * Machine-to-machine auth for the Worker pull protocol. Distinct from
@@ -22,12 +30,11 @@ export const workerGuard = () => {
     )
   }
   const expected = key
-
   return new Elysia({ name: "pwe-worker-guard" }).onBeforeHandle(
     { as: "scoped" },
     ({ request, set }) => {
       const provided = request.headers.get("x-worker-key")
-      if (!provided || provided !== expected) {
+      if (!provided || !constantTimeEqual(provided, expected)) {
         set.status = 401
         return { ok: false, error: "Worker authentication required." }
       }

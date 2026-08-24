@@ -1,12 +1,18 @@
 import { Context, Effect, Layer } from "effect"
-import { ulid } from "ulid"
-import type { TranscodeJob } from "@pwe/shared"
+import { randomUUID } from "node:crypto"
+import type { TaskStage, TranscodeJob, TranscodeJobStatus, TranscodeProgressEvent } from "@pwe/shared"
 import { DbError } from "@pwe/shared"
+import { Stream, PubSub } from "effect"
 import type { ScreenSpec, TranscodeDecision } from "../transcode/decide.js"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
+import { Tasks } from "./Tasks.js"
+import {
+  ACTIVE_TRANSCODE_JOB_STATUSES,
+  activeTranscodeStatusesSql,
+} from "./TranscodeJobStatus.js"
 
 export interface CompleteReport {
   readonly output_relative_path: string
@@ -65,12 +71,29 @@ export interface TranscodeQueueImpl {
    * Terminal failure. transcode_jobs.status = failed; library.transcode_error = message.
    */
   readonly fail: (jobId: string, error: string) => Effect.Effect<void, DbError>
+
+  /**
+   * Stream of transcode progress events.
+   */
+  readonly watch: () => Stream.Stream<TranscodeProgressEvent>
 }
 
 export class TranscodeQueue extends Context.Tag("TranscodeQueue")<
   TranscodeQueue,
   TranscodeQueueImpl
 >() {}
+
+// Worker-facing job statuses map onto the unified task stages: terminal
+// states reuse the download vocabulary ("complete"/"failed") so history and
+// bulk-clear treat both task types alike.
+const TRANSCODE_TASK_STAGE: Record<TranscodeJobStatus, TaskStage> = {
+  pending: "pending",
+  claimed: "claimed",
+  running: "running",
+  uploading: "uploading",
+  completed: "complete",
+  failed: "failed",
+}
 
 const noopReport = (workshopId: string) => ({
   workshopId,
@@ -124,6 +147,7 @@ export const TranscodeQueueNoop = Layer.effect(
         Effect.sync(() => {
           console.warn(`TranscodeQueueNoop.fail(${jobId}, ${error}) — ignored`)
         }),
+      watch: () => Stream.empty,
     }
   })
 )
@@ -138,11 +162,52 @@ export const TranscodeQueueLive = Layer.effect(
     const db = yield* Db
     const library = yield* Library
     const logger = yield* Logger
+    const tasks = yield* Tasks
 
     const screen: ScreenSpec = {
       width: config.screen.width,
       height: config.screen.height,
     }
+
+    const pubsub = yield* PubSub.unbounded<TranscodeProgressEvent>()
+    const publish = (event: TranscodeProgressEvent) => Effect.runFork(pubsub.publish(event))
+
+    const updateAndPublish = (
+      jobId: string,
+      workshopId: string,
+      status: TranscodeJobStatus,
+      patch: Record<string, unknown> = {},
+      eventFields: Partial<TranscodeProgressEvent> = {}
+    ) =>
+      Effect.gen(function* () {
+        yield* library.update(workshopId, {
+          transcode_status: status,
+          ...patch,
+        })
+
+        const lib = yield* library.get(workshopId).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        // Upsert even when the library row is gone (deleted mid-flight), so
+        // the terminal record still lands in history; title fields come from
+        // the library row when it exists.
+        yield* tasks.upsert(jobId, {
+          task_type: "transcode",
+          workshop_id: workshopId,
+          ...(lib
+            ? {
+                title: lib.title,
+                preview_url: lib.preview_url,
+                content_rating: lib.content_rating,
+                rating_sex: lib.rating_sex,
+              }
+            : {}),
+          stage: TRANSCODE_TASK_STAGE[status],
+          percent: typeof eventFields.progress === "number" ? eventFields.progress : undefined,
+          message: eventFields.error ?? "",
+          finished_at: (status === "completed" || status === "failed") ? Date.now() : undefined,
+        })
+
+        publish({ jobId, workshopId, status, ...eventFields })
+      })
 
     return {
       enqueue: (workshopId, decision, sourceRelativePath) =>
@@ -151,11 +216,14 @@ export const TranscodeQueueLive = Layer.effect(
             yield* library.update(workshopId, {
               transcode_status: "skipped",
               transcode_progress: 0,
+              transcode_error: null,
             })
             return
           }
 
-          const jobId = ulid()
+          // UUID, same format as download task ids — the job id doubles as
+          // the task_id of the history row.
+          const jobId = randomUUID()
           const outputRelativePath = `${config.paths.optimized_dir}/${workshopId}.mp4`
 
           yield* db.exec(
@@ -164,17 +232,15 @@ export const TranscodeQueueLive = Layer.effect(
             [jobId, workshopId, Date.now()]
           )
 
-          yield* library.update(workshopId, {
-            transcode_status: "pending",
-            transcode_progress: 0,
-            transcode_error: null,
-          })
-
           yield* logger.info(`Enqueued transcode job ${jobId} for ${workshopId}`, {
             sourceRelativePath,
             outputRelativePath,
             targetCodec: decision.target_codec,
             screen,
+          })
+          yield* updateAndPublish(jobId, workshopId, "pending", {
+            transcode_progress: 0,
+            transcode_error: null,
           })
         }),
 
@@ -203,8 +269,7 @@ export const TranscodeQueueLive = Layer.effect(
             .pipe(Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(null)))
           if (!lib) return null
 
-          yield* library.update(row.workshop_id, {
-            transcode_status: "claimed",
+          yield* updateAndPublish(row.id, row.workshop_id, "claimed", {
             transcode_progress: 0,
             transcode_error: null,
           })
@@ -230,16 +295,14 @@ export const TranscodeQueueLive = Layer.effect(
             `UPDATE transcode_jobs
              SET last_heartbeat = ?,
                  status = CASE WHEN status = 'claimed' THEN 'running' ELSE status END
-             WHERE id = ? AND status IN ('claimed','running','uploading')
+             WHERE id = ? AND ${activeTranscodeStatusesSql()}
              RETURNING workshop_id, status`,
-            [Date.now(), jobId]
+            [Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) return false
 
           if (row.status === "running") {
-            yield* library.update(row.workshop_id, {
-              transcode_status: "running",
-            })
+            yield* updateAndPublish(jobId, row.workshop_id, "running")
           }
           return true
         }),
@@ -249,14 +312,18 @@ export const TranscodeQueueLive = Layer.effect(
           const clamped = Math.max(0, Math.min(100, Math.round(percent)))
           const row = yield* db.queryOne<{ workshop_id: string }>(
             `UPDATE transcode_jobs SET progress = ?, last_heartbeat = ?
-             WHERE id = ? AND status IN ('claimed','running','uploading')
+             WHERE id = ? AND ${activeTranscodeStatusesSql()}
              RETURNING workshop_id`,
-            [clamped, Date.now(), jobId]
+            [clamped, Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) return
-          yield* library.update(row.workshop_id, {
-            transcode_progress: clamped,
-          })
+          yield* updateAndPublish(
+            jobId,
+            row.workshop_id,
+            "running",
+            { transcode_progress: clamped },
+            { progress: clamped }
+          )
         }),
 
       uploading: (jobId) =>
@@ -264,14 +331,12 @@ export const TranscodeQueueLive = Layer.effect(
           const row = yield* db.queryOne<{ workshop_id: string }>(
             `UPDATE transcode_jobs
              SET status = 'uploading', last_heartbeat = ?
-             WHERE id = ? AND status IN ('claimed','running','uploading')
+             WHERE id = ? AND ${activeTranscodeStatusesSql()}
              RETURNING workshop_id`,
-            [Date.now(), jobId]
+            [Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) return false
-          yield* library.update(row.workshop_id, {
-            transcode_status: "uploading",
-          })
+          yield* updateAndPublish(jobId, row.workshop_id, "uploading")
           return true
         }),
 
@@ -280,27 +345,31 @@ export const TranscodeQueueLive = Layer.effect(
           const row = yield* db.queryOne<{ workshop_id: string }>(
             `UPDATE transcode_jobs
              SET status = 'completed', progress = 100, completed_at = ?, error = NULL
-             WHERE id = ? AND status IN ('claimed','running','uploading')
+             WHERE id = ? AND ${activeTranscodeStatusesSql()}
              RETURNING workshop_id`,
-            [Date.now(), jobId]
+            [Date.now(), jobId, ...ACTIVE_TRANSCODE_JOB_STATUSES]
           )
           if (!row) {
             yield* logger.warn(`complete(${jobId}) but job missing/stale — ignored`)
             return
           }
 
-          yield* library.update(row.workshop_id, {
-            transcode_status: "completed",
-            transcode_progress: 100,
-            transcode_error: null,
-            transcoded_path: report.output_relative_path,
-            transcoded_resolution: targetResolution,
-            transcoded_codec: targetCodec,
-            transcoded_size: report.output_size,
-          })
-
           yield* logger.info(
             `Transcode complete ${jobId} (${row.workshop_id}) — ${report.output_size} bytes in ${report.duration_ms}ms`
+          )
+          yield* updateAndPublish(
+            jobId,
+            row.workshop_id,
+            "completed",
+            {
+              transcode_progress: 100,
+              transcode_error: null,
+              transcoded_path: report.output_relative_path,
+              transcoded_resolution: targetResolution,
+              transcoded_codec: targetCodec,
+              transcoded_size: report.output_size,
+            },
+            { progress: 100 }
           )
         }),
 
@@ -315,13 +384,17 @@ export const TranscodeQueueLive = Layer.effect(
           )
           if (!row) return
 
-          yield* library.update(row.workshop_id, {
-            transcode_status: "failed",
-            transcode_error: error,
-          })
-
           yield* logger.warn(`Transcode failed ${jobId} (${row.workshop_id}): ${error}`)
+          yield* updateAndPublish(
+            jobId,
+            row.workshop_id,
+            "failed",
+            { transcode_error: error },
+            { error }
+          )
         }),
+        
+      watch: () => Stream.fromPubSub(pubsub),
     }
   })
 )

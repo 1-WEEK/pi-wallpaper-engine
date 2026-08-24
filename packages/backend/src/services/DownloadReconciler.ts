@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { rm } from "node:fs/promises"
 import { resolve } from "node:path"
-import type { DownloadTask } from "@pwe/shared"
+import type { ActivityTask } from "@pwe/shared"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
 import { DownloadProcessRegistry } from "./DownloadProcessRegistry.js"
@@ -31,7 +31,7 @@ export const DOWNLOAD_STALE_SWEEP_INTERVAL_MS = 5 * 60 * 1000
 
 export const reconcileFinishedTaskState = (
   hasLibraryRow: boolean
-): Pick<DownloadTask, "stage" | "message"> =>
+): Pick<ActivityTask, "stage" | "message"> =>
   hasLibraryRow
     ? { stage: "complete", message: "Library updated" }
     : { stage: "error", message: "Download did not finalize" }
@@ -43,7 +43,7 @@ const promiseError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
 
 export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {}) =>
-  Layer.effect(
+  Layer.scoped(
     DownloadReconciler,
     Effect.gen(function* () {
       const db = yield* Db
@@ -116,16 +116,16 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
 
       const reconcileInterrupted = Effect.gen(function* () {
         const interrupted = yield* db.query<{ workshop_id: string }>(
-          `SELECT workshop_id FROM download_tasks WHERE finished_at IS NULL`
+          `SELECT workshop_id FROM tasks WHERE finished_at IS NULL AND task_type = 'download'`
         )
         if (interrupted.length === 0) return
 
         yield* db.exec(
-          `UPDATE download_tasks
+          `UPDATE tasks
            SET stage = 'error',
                message = 'Interrupted by restart',
                finished_at = ?
-           WHERE finished_at IS NULL`,
+           WHERE finished_at IS NULL AND task_type = 'download'`,
           [now()]
         )
         yield* logger.info(`Reconciled ${interrupted.length} interrupted download task(s)`)
@@ -139,8 +139,8 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
       })
 
       const reconcileInconsistentFinished = Effect.gen(function* () {
-        const inconsistent = yield* db.query<DownloadTask>(
-          `SELECT * FROM download_tasks WHERE finished_at IS NOT NULL AND stage NOT IN ('complete', 'error')`
+        const inconsistent = yield* db.query<ActivityTask>(
+          `SELECT * FROM tasks WHERE finished_at IS NOT NULL AND stage NOT IN ('complete', 'error', 'failed') AND task_type = 'download'`
         )
 
         for (const row of inconsistent) {
@@ -149,7 +149,7 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
             .pipe(Effect.as(true), Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(false)))
           const patch = reconcileFinishedTaskState(hasLibraryRow)
           yield* db.exec(
-            `UPDATE download_tasks SET stage = ?, message = ? WHERE workshop_id = ?`,
+            `UPDATE tasks SET stage = ?, message = ? WHERE workshop_id = ? AND task_type = 'download'`,
             [patch.stage, patch.message, row.workshop_id]
           )
         }
@@ -169,18 +169,18 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
         Effect.gen(function* () {
           const cutoff = now() - staleGraceMs
           const stale = yield* db.query<{ workshop_id: string; started_at: number }>(
-            `SELECT workshop_id, started_at FROM download_tasks
-             WHERE finished_at IS NULL AND started_at < ?`,
+            `SELECT workshop_id, started_at FROM tasks
+             WHERE finished_at IS NULL AND started_at < ? AND task_type = 'download'`,
             [cutoff]
           )
           if (stale.length === 0) return
 
           yield* db.exec(
-            `UPDATE download_tasks
+            `UPDATE tasks
              SET stage = 'error',
                  message = 'Cancelled (stale task)',
                  finished_at = ?
-             WHERE finished_at IS NULL AND started_at < ?`,
+             WHERE finished_at IS NULL AND started_at < ? AND task_type = 'download'`,
             [now(), cutoff]
           )
           yield* logger.info(`Cleaned ${stale.length} stale download task(s)`)
@@ -201,12 +201,14 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
       yield* reconciler.startup()
 
       if (startSweeper) {
-        yield* Effect.gen(function* () {
-          while (true) {
-            yield* Effect.sleep(`${sweepIntervalMs} millis`)
-            yield* reconciler.reconcileStale()
-          }
-        }).pipe(Effect.fork)
+        yield* Effect.forkScoped(
+          Effect.gen(function* () {
+            while (true) {
+              yield* Effect.sleep(`${sweepIntervalMs} millis`)
+              yield* reconciler.reconcileStale()
+            }
+          })
+        )
       }
 
       return reconciler

@@ -65,4 +65,15 @@ describe("workerGuard", () => {
     process.env[ENV] = "short"
     expect(() => workerGuard()).toThrow(/PWE_WORKER_API_KEY/)
   })
+  test("401 when X-Worker-Key has different length than expected", async () => {
+    const app = buildApp()
+    const res = await app.handle(
+      new Request("http://localhost/api/transcode/claim", {
+        method: "POST",
+        headers: { "x-worker-key": "x" },
+      })
+    )
+    expect(res.status).toBe(401)
+  })
+
 })

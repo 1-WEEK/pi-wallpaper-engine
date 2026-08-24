@@ -5,20 +5,21 @@ import { DisplayLive } from "./services/Display.js"
 import { DownloadIntakeLive } from "./services/DownloadIntake.js"
 import { DownloadProcessRegistryLive } from "./services/DownloadProcessRegistry.js"
 import { DownloadReconcilerLive } from "./services/DownloadReconciler.js"
-import { DownloadTasksLive } from "./services/DownloadTasks.js"
+import { TasksLive } from "./services/Tasks.js"
 import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
 import { MigrateLive } from "./services/Migrate.js"
 import { MpvLive } from "./services/Mpv.js"
+import { PlaybackLive } from "./services/Playback.js"
 import { PlaybackPrefsLive } from "./services/PlaybackPrefs.js"
 import { PlayerPowerLive } from "./services/PlayerPower.js"
 import { RotationLive } from "./services/Rotation.js"
-import { SleepTimerLive } from "./services/SleepTimer.js"
 import { PlayerStateLive } from "./services/PlayerState.js"
 import { PlayerWatchLive } from "./services/PlayerWatch.js"
 import { SteamCmdLive } from "./services/SteamCmd.js"
 import { SteamWorkshopLive } from "./services/SteamWorkshop.js"
 import { StorageLive } from "./services/Storage.js"
+import { StorageRootSelectionLive } from "./services/StorageRootSelection.js"
 import { TranscodeMonitorLive } from "./services/TranscodeMonitor.js"
 import { TranscodeQueueLive, TranscodeQueueNoop } from "./services/TranscodeQueue.js"
 
@@ -45,16 +46,17 @@ export const transcodeMode = (): "live" | "noop" => {
 export const buildLayer = (configPath: string) => {
   const queueLayer = transcodeMode() === "live" ? TranscodeQueueLive : TranscodeQueueNoop
   const applicationLayer = TranscodeMonitorLive.pipe(
+    Layer.provideMerge(StorageRootSelectionLive),
     Layer.provideMerge(DownloadIntakeLive),
     Layer.provideMerge(queueLayer),
-    Layer.provideMerge(SleepTimerLive),
+    Layer.provideMerge(PlaybackLive),
     Layer.provideMerge(PlayerWatchLive),
     Layer.provideMerge(RotationLive),
     Layer.provideMerge(PlayerPowerLive),
     Layer.provideMerge(PlayerStateLive),
     Layer.provideMerge(PlaybackPrefsLive),
     Layer.provideMerge(DownloadReconcilerLive),
-    Layer.provideMerge(DownloadTasksLive)
+    Layer.provideMerge(TasksLive)
   )
 
   return applicationLayer.pipe(

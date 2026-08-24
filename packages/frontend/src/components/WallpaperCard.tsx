@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react"
-import type { WorkshopItem } from "@pwe/shared"
-import { api, type DownloadTask } from "../api.js"
+import type { ActivityTask, WorkshopItem } from "@pwe/shared"
+import { api } from "../api.js"
+import { isTaskFinished, taskStageLabel } from "../taskDisplay.js"
 
 interface Props {
   item: WorkshopItem
   isInLibrary?: boolean
-  downloadTask?: DownloadTask
+  downloadTask?: ActivityTask
   onDownloadQueued?: () => void
   onOpen?: () => void
 }
-
-const isFinishedTask = (task: DownloadTask): boolean =>
-  task.stage === "complete" || task.stage === "error" || task.finished_at !== null
 
 const formatFileSize = (raw: WorkshopItem["file_size"]): string | null => {
   if (raw === undefined) return null
@@ -27,23 +25,6 @@ const pickTag = (item: WorkshopItem): string | null => {
   if (tags.length === 0) return null
   const preferred = tags.find((tag) => tag !== "Video")
   return preferred ?? tags[0] ?? null
-}
-
-const stageLabel = (task: DownloadTask): string => {
-  switch (task.stage) {
-    case "starting":
-      return "Queued"
-    case "downloading":
-      return "Downloading"
-    case "finalizing":
-      return "Finalizing"
-    case "done":
-      return "SteamCMD done"
-    case "complete":
-      return "Complete"
-    case "error":
-      return "Failed"
-  }
 }
 
 export const WallpaperCard = ({
@@ -75,7 +56,7 @@ export const WallpaperCard = ({
   }
 
   const steamUrl = `https://steamcommunity.com/sharedfiles/filedetails/?id=${item.publishedfileid}`
-  const activeTask = downloadTask && !isFinishedTask(downloadTask) ? downloadTask : null
+  const activeTask = downloadTask && !isTaskFinished(downloadTask) ? downloadTask : null
   const taskPercent =
     activeTask?.percent !== null && activeTask?.percent !== undefined
       ? Math.max(0, Math.min(100, activeTask.percent))
@@ -122,7 +103,7 @@ export const WallpaperCard = ({
           {readyState ? (
             <span className="status-pill status-pill-ok">In library</span>
           ) : activeTask ? (
-            <span className="status-pill status-pill-working">{stageLabel(activeTask)}</span>
+            <span className="status-pill status-pill-working">{taskStageLabel(activeTask)}</span>
           ) : queuedState ? (
             <span className="status-pill status-pill-working">Queued</span>
           ) : taskError ? (
@@ -137,7 +118,7 @@ export const WallpaperCard = ({
         {activeTask && (
           <div className="wallpaper-progress-block">
             <div className="wallpaper-progress-meta">
-              <span>{stageLabel(activeTask)}</span>
+              <span>{taskStageLabel(activeTask)}</span>
               <span className="mono">
                 {taskPercent !== null ? `${taskPercent.toFixed(1)}%` : activeTask.message}
               </span>

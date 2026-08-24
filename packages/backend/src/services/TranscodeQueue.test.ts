@@ -7,6 +7,7 @@ import { Db, type DbImpl } from "./Db.js"
 import { Library, type LibraryImpl } from "./Library.js"
 import { Logger, type LoggerImpl } from "./Logger.js"
 import { TranscodeQueue, TranscodeQueueLive } from "./TranscodeQueue.js"
+import { TasksLive } from "./Tasks.js"
 import type { TranscodeDecision } from "../transcode/decide.js"
 
 let openDbs: Database[] = []
@@ -147,6 +148,7 @@ describe("TranscodeQueueLive", () => {
     library = makeLibraryStub(baseLibraryRow)
     logger = makeLoggerStub()
     const stack = TranscodeQueueLive.pipe(
+      Layer.provide(TasksLive),
       Layer.provide(library.layer),
       Layer.provide(logger.layer),
       Layer.provide(dbStub.layer),

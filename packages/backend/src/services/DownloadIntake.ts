@@ -1,10 +1,11 @@
 import { Cause, Context, Effect, Exit, Fiber, Layer, Option, PubSub, Stream } from "effect"
 import { rm } from "node:fs/promises"
 import { resolve } from "node:path"
+import { randomUUID } from "node:crypto"
 import {
   FfprobeError,
   hasAdultTitleHint,
-  type DownloadStage,
+  type TaskStage,
   type VideoProbe,
 } from "@pwe/shared"
 import { decideTranscode } from "../transcode/decide.js"
@@ -12,7 +13,7 @@ import { ffprobe } from "../transcode/ffprobe.js"
 import { Config } from "./Config.js"
 import { Db } from "./Db.js"
 import { DownloadProcessRegistry } from "./DownloadProcessRegistry.js"
-import { DownloadTasks } from "./DownloadTasks.js"
+import { Tasks } from "./Tasks.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
 import { Migrate } from "./Migrate.js"
@@ -29,7 +30,7 @@ export type DownloadProgressEvent =
 
 export type DownloadStartResult =
   | { readonly _tag: "Started"; readonly workshopId: string }
-  | { readonly _tag: "AlreadyRunning"; readonly workshopId: string; readonly stage: DownloadStage }
+  | { readonly _tag: "AlreadyRunning"; readonly workshopId: string; readonly stage: TaskStage }
   | { readonly _tag: "StorageUnavailable"; readonly workshopId: string; readonly message: string }
   | { readonly _tag: "MigrationRunning"; readonly workshopId: string; readonly message: string }
 
@@ -55,6 +56,13 @@ export interface DownloadIntakeDeps {
 
 interface CancelledDownload {
   readonly _tag: "Cancelled"
+}
+
+// The workshop id and its task row id travel together through the whole
+// download workflow (spec 05's data clump).
+interface DownloadJob {
+  readonly workshopId: string
+  readonly taskId: string
 }
 
 export const downloadFailureMessage = (err: unknown): string => {
@@ -86,7 +94,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
       const lib = yield* Library
       const queue = yield* TranscodeQueue
       const logger = yield* Logger
-      const tasks = yield* DownloadTasks
+      const tasks = yield* Tasks
       const storage = yield* Storage
       const migrate = yield* Migrate
       const processRegistry = yield* DownloadProcessRegistry
@@ -96,21 +104,21 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
 
       const publish = (event: DownloadProgressEvent) => pubsub.publish(event)
 
-      const mirrorProgress = (p: DownloadProgress) => {
+      const mirrorProgress = (taskId: string) => (p: DownloadProgress) => {
         Effect.runFork(publish(p))
-        Effect.runSync(
-          tasks.upsert(p.workshopId, {
+        Effect.runFork(
+          tasks.upsert(taskId, {
             stage: p.stage,
             message: p.message ?? "",
             percent: p.percent ?? null,
             bytes_done: p.bytes_done ?? null,
             bytes_total: p.bytes_total ?? null,
-          })
+          }).pipe(Effect.ignore)
         )
       }
 
-      const markError = (workshopId: string, message: string) =>
-        tasks.upsert(workshopId, {
+      const markError = (taskId: string, message: string) =>
+        tasks.upsert(taskId, {
           stage: "error",
           message,
           finished_at: Date.now(),
@@ -144,26 +152,31 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           )
         })
 
-      const handleFailure = (workshopId: string, err: unknown) =>
+      const handleFailure = (job: DownloadJob, err: unknown) =>
         Effect.gen(function* () {
+          const { workshopId, taskId } = job
           const tag = (err as { _tag?: string })._tag
           const message = downloadFailureMessage(err)
           yield* logger.error(`Download ${workshopId} failed (${tag ?? "unknown"}): ${message}`)
-          yield* publish({ workshopId, stage: "error", message })
-          yield* markError(workshopId, message)
+          // Cleanup must finish before the task turns terminal: once finished_at
+          // is set a retry can start, and its fresh download must never race the rm.
           yield* cleanupOrphan(workshopId)
+          yield* publish({ workshopId, stage: "error", message })
+          yield* markError(taskId, message)
         }).pipe(
           Effect.catchAll((e) =>
-            logger.error(`Download failure handling failed for ${workshopId}: ${String(e)}`)
+            logger.error(`Download failure handling failed for ${job.workshopId}: ${String(e)}`)
           )
         )
 
-      const runWorkflow = (workshopId: string) =>
+      const runWorkflow = (job: DownloadJob) =>
         Effect.gen(function* () {
+          const { workshopId, taskId } = job
           const dataRoot = yield* storage.mediaRoot()
 
-          yield* logger.info(`Download requested: ${workshopId}`)
-          yield* tasks.upsert(workshopId, {
+          yield* logger.info(`Download requested: ${workshopId} (task: ${taskId})`)
+          yield* tasks.upsert(taskId, {
+            workshop_id: workshopId,
             stage: "starting",
             message: "Queued",
             started_at: Date.now(),
@@ -190,24 +203,29 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           yield* logger.info(`[trace] metadata fetched: title="${item.title}"`)
 
           const title = item.title ?? workshopId
-          yield* tasks.upsert(workshopId, {
+          yield* tasks.upsert(taskId, {
             title,
             preview_url: item.preview_url ?? "",
             adult_hint: hasAdultTitleHint(title) ? 1 : 0,
           })
 
           yield* logger.info(`[trace] spawning SteamCMD...`)
-          const download = yield* steam.download(workshopId, mirrorProgress)
+          const download = yield* steam.download(workshopId, mirrorProgress(taskId)).pipe(
+            Effect.retry({
+              times: 2,
+              while: (e) => e._tag === "SteamCmdError" && (e.kind === "Timeout" || e.message.includes("failed (Failure)"))
+            })
+          )
           yield* logger.info(`[trace] SteamCMD finished: ${download.localPath}`)
 
-          yield* tasks.upsert(workshopId, {
+          yield* tasks.upsert(taskId, {
             stage: "finalizing",
             message: "Validating files…",
           })
           yield* publish({ workshopId, stage: "finalizing", message: "Validating files…" })
 
           const files = yield* resolveWallpaperFiles(download.localPath, workshopId)
-          yield* tasks.upsert(workshopId, {
+          yield* tasks.upsert(taskId, {
             content_rating: files.contentRating,
             rating_sex: files.ratingSex,
           })
@@ -246,7 +264,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
 
               yield* queue.enqueue(workshopId, decision, sourceRel)
 
-              yield* tasks.upsert(workshopId, {
+              yield* tasks.upsert(taskId, {
                 stage: "complete",
                 message: "Library updated",
                 finished_at: Date.now(),
@@ -281,7 +299,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           }
 
           if (inflight.has(workshopId)) {
-            const task = yield* tasks.get(workshopId)
+            const task = yield* tasks.getActiveByWorkshopId(workshopId)
             return {
               _tag: "AlreadyRunning",
               workshopId,
@@ -289,8 +307,8 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
             }
           }
 
-          const existing = yield* tasks.get(workshopId)
-          if (existing && existing.finished_at === null) {
+          const existing = yield* tasks.getActiveByWorkshopId(workshopId)
+          if (existing) {
             return {
               _tag: "AlreadyRunning",
               workshopId,
@@ -298,16 +316,17 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
             }
           }
 
-          const workflow = runWorkflow(workshopId).pipe(
+          const taskId = randomUUID()
+          const workflow = runWorkflow({ workshopId, taskId }).pipe(
             Effect.onExit((exit) => {
               if (Exit.isSuccess(exit)) return Effect.void
               if (Cause.isInterruptedOnly(exit.cause)) {
-                return handleFailure(workshopId, { _tag: "Cancelled" } satisfies CancelledDownload)
+                return handleFailure({ workshopId, taskId }, { _tag: "Cancelled" } satisfies CancelledDownload)
               }
 
               const failure = Cause.failureOption(exit.cause)
               const err = Option.getOrElse(failure, () => new Error(Cause.pretty(exit.cause)))
-              return handleFailure(workshopId, err)
+              return handleFailure({ workshopId, taskId }, err)
             })
           )
 
@@ -331,13 +350,13 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
             return { _tag: "Cancelling", workshopId }
           }
 
-          const task = yield* tasks.get(workshopId)
-          if (task && task.finished_at === null) {
+          const task = yield* tasks.getActiveByWorkshopId(workshopId)
+          if (task) {
             const message = "Cancelled (zombie cleanup)"
             yield* processRegistry.stop(workshopId)
-            yield* publish({ workshopId, stage: "error", message })
-            yield* markError(workshopId, message)
             yield* cleanupOrphan(workshopId)
+            yield* publish({ workshopId, stage: "error", message })
+            yield* markError(task.task_id, message)
             return { _tag: "CancelledZombie", workshopId }
           }
 

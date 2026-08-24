@@ -26,18 +26,45 @@ describe("buildJobPaths", () => {
 describe("buildFfmpegArgs", () => {
   const paths = buildJobPaths("/tmp/pwe/J1/source", "/tmp/pwe/J1/output.mp4")
 
-  test("QSV path uses hevc_qsv + scale_qsv + global_quality", () => {
+  test("QSV path uses hevc_qsv + scale_qsv + global_quality with hardware device init", () => {
     const args = buildFfmpegArgs(job, paths, "qsv")
+    expect(args).toContain("-init_hw_device")
+    expect(args).toContain("-filter_hw_device")
     expect(args).toContain("-c:v")
     expect(args).toContain("hevc_qsv")
     const vfIndex = args.indexOf("-vf")
     expect(vfIndex).toBeGreaterThan(-1)
-    expect(args[vfIndex + 1]).toBe("scale_qsv=w=1200:h=1080:mode=hq")
+    expect(args[vfIndex + 1]).toBe(
+      "hwupload=extra_hw_frames=64,format=qsv,scale_qsv=w=1200:h=1080:mode=hq"
+    )
     expect(args).toContain("-global_quality")
     expect(args[args.indexOf("-global_quality") + 1]).toBe("23")
     // Writes to .partial, not final.
     expect(args[args.length - 1]).toBe(paths.partialAbs)
   })
+  test("VA-API path uses hevc_vaapi + scale_vaapi + qp with hardware device init", () => {
+    const args = buildFfmpegArgs(job, paths, "vaapi")
+    expect(args).toContain("-init_hw_device")
+    expect(args).toContain("-filter_hw_device")
+    expect(args).toContain("-c:v")
+    expect(args).toContain("hevc_vaapi")
+    const vfIndex = args.indexOf("-vf")
+    expect(vfIndex).toBeGreaterThan(-1)
+    expect(args[vfIndex + 1]).toBe(
+      "format=nv12,hwupload,scale_vaapi=w=1200:h=1080:mode=hq"
+    )
+    expect(args).toContain("-qp")
+    expect(args[args.indexOf("-qp") + 1]).toBe("23")
+    expect(args[args.length - 1]).toBe(paths.partialAbs)
+  })
+
+  test("VA-API path uses h264_vaapi when target_codec is h264", () => {
+    const h264Job: TranscodeJob = { ...job, target_codec: "h264" }
+    const args = buildFfmpegArgs(h264Job, paths, "vaapi")
+    expect(args).toContain("h264_vaapi")
+    expect(args).not.toContain("hevc_vaapi")
+  })
+
 
   test("libx265 fallback uses scale + crop + crf with -preset medium", () => {
     const args = buildFfmpegArgs(job, paths, "x265")
@@ -61,6 +88,14 @@ describe("buildFfmpegArgs", () => {
   test("audio is dropped via -an", () => {
     const args = buildFfmpegArgs(job, paths, "qsv")
     expect(args).toContain("-an")
+  })
+
+  test("declares the MP4 muxer when writing to a .partial path", () => {
+    const args = buildFfmpegArgs(job, paths, "x265")
+    const formatIndex = args.indexOf("-f")
+    expect(formatIndex).toBeGreaterThan(-1)
+    expect(args[formatIndex + 1]).toBe("mp4")
+    expect(args[args.length - 1]).toBe(paths.partialAbs)
   })
 })
 

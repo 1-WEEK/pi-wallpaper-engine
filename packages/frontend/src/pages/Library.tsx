@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from "react"
-import { isAdultContent, type DisplayMode, type LibraryItem } from "@pwe/shared"
+import { isAdultContent, type LibraryItem } from "@pwe/shared"
 import useSWR from "swr"
 import { api } from "../api.js"
 import { spaceSavedPercent } from "../format.js"
 import { appIcons } from "../icons.js"
 import { useLayout } from "../components/mobile/index.js"
+import { VideoPreview } from "../components/VideoPreview.js"
 
 interface Props {
   nowPlayingId: string | null
   onSystemRefresh: () => void
 }
 
-const DISPLAY_MODES: DisplayMode[] = ["fill", "fit", "stretch"]
+
 
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -37,12 +38,19 @@ const showsTranscodeBadge = (status: LibraryItem["transcode_status"]): boolean =
   status === "claimed" ||
   status === "pending"
 
+const canRetranscode = (status: LibraryItem["transcode_status"]): boolean =>
+  status === "failed" || status === "skipped"
+
+const canPreview = (row: LibraryItem): boolean => row.transcode_status === "completed"
+
 export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const { mobile } = useLayout()
   const [view, setView] = useState<"grid" | "list">("grid")
   const [privacyOpen, setPrivacyOpen] = useState(false)
   const [showAdult, setShowAdult] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [previewItem, setPreviewItem] = useState<LibraryItem | null>(null)
 
   useEffect(() => {
     if (mobile && view !== "grid") setView("grid")
@@ -102,16 +110,27 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
       })
       .catch((e: Error) => setError(e.message))
   }
-  const handleDisplayMode = (id: string, mode: DisplayMode) => {
+  const handleTranscode = (id: string) =>
     api
-      .libraryUpdate(id, { display_mode: mode })
-      .then(async () => {
+      .libraryTranscode(id)
+      .then(async (res) => {
         setError(null)
+        setNotice(res.transcode_status === "skipped" ? `Not queued — ${res.reason}` : null)
         await mutate()
-        onSystemRefresh()
       })
       .catch((e: Error) => setError(e.message))
-  }
+
+  const handleTranscodeAll = () =>
+    api
+      .libraryTranscodeRetryAll()
+      .then(async (res) => {
+        setError(null)
+        setNotice(`Transcode sweep: ${res.queued} queued, ${res.skipped} skipped`)
+        await mutate()
+      })
+      .catch((e: Error) => setError(e.message))
+
+
 
   const countLabel = `${visibleRows.length} wallpaper${visibleRows.length === 1 ? "" : "s"} · ${formatBytes(totalSize)}`
 
@@ -141,17 +160,17 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                 <span className="btn-icon">{appIcons.modeShuffle}</span>
                 Shuffle
               </button>
+              {rows.some((row) => canRetranscode(row.transcode_status)) && (
+                <button
+                  type="button"
+                  className="btn library-rotation-btn"
+                  onClick={handleTranscodeAll}
+                >
+                  Transcode all
+                </button>
+              )}
             </div>
           )}
-          <button
-            type="button"
-            className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
-            aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
-            aria-expanded={privacyOpen}
-            onClick={() => setPrivacyOpen((open) => !open)}
-          >
-            ••
-          </button>
           {!mobile && (
             <div className="segmented">
               <button
@@ -170,6 +189,15 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
               </button>
             </div>
           )}
+          <button
+            type="button"
+            className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
+            aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
+            aria-expanded={privacyOpen}
+            onClick={() => setPrivacyOpen((open) => !open)}
+          >
+            ••
+          </button>
         </div>
       </header>
 
@@ -207,6 +235,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+      {notice && <div className="info-banner">{notice}</div>}
       {visibleRows.length === 0 && (
         <div className="empty-state">Library is empty. Download some wallpapers in Browse.</div>
       )}
@@ -263,21 +292,25 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     <span className="library-card-play-icon">{appIcons.play}</span>
                     Play
                   </button>
-                  {!mobile && (
-                    <div className="segmented segmented-compact library-card-modes">
-                      {DISPLAY_MODES.map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          className={`segmented-button ${
-                            row.display_mode === mode ? "active" : ""
-                          }`}
-                          onClick={() => handleDisplayMode(row.workshop_id, mode)}
-                        >
-                          {mode}
-                        </button>
-                      ))}
-                    </div>
+                  {canPreview(row) && (
+                    <button
+                      type="button"
+                      className="btn library-card-preview"
+                      onClick={() => setPreviewItem(row)}
+                      aria-label="Preview this wallpaper in the browser"
+                    >
+                      {mobile ? "▶" : "Preview"}
+                    </button>
+                  )}
+                  {canRetranscode(row.transcode_status) && (
+                    <button
+                      type="button"
+                      className="btn library-card-transcode"
+                      onClick={() => handleTranscode(row.workshop_id)}
+                      aria-label="Transcode this wallpaper"
+                    >
+                      {mobile ? "⟳" : "Transcode"}
+                    </button>
                   )}
                   <button
                     type="button"
@@ -288,24 +321,7 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     {mobile ? "✕" : "Delete"}
                   </button>
                 </div>
-                {mobile && (
-                  <div className="library-card-modes-row">
-                    <div className="segmented segmented-compact library-card-modes">
-                      {DISPLAY_MODES.map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          className={`segmented-button ${
-                            row.display_mode === mode ? "active" : ""
-                          }`}
-                          onClick={() => handleDisplayMode(row.workshop_id, mode)}
-                        >
-                          {mode}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+
               </article>
             )
           })}
@@ -347,18 +363,26 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     {formatBytes(row.transcoded_size ?? row.source_size)}
                   </div>
                 </div>
-                <div className="segmented segmented-compact">
-                  {DISPLAY_MODES.map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={`segmented-button ${row.display_mode === mode ? "active" : ""}`}
-                      onClick={() => handleDisplayMode(row.workshop_id, mode)}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
+
+                {canPreview(row) && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setPreviewItem(row)}
+                    aria-label="Preview this wallpaper in the browser"
+                  >
+                    Preview
+                  </button>
+                )}
+                {canRetranscode(row.transcode_status) && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => handleTranscode(row.workshop_id)}
+                  >
+                    Transcode
+                  </button>
+                )}
                 <button type="button" className="btn btn-primary" onClick={() => handlePlay(row.workshop_id)}>
                   Play
                 </button>
@@ -374,6 +398,8 @@ export const Library = ({ nowPlayingId, onSystemRefresh }: Props) => {
           })}
         </ul>
       )}
+
+      {previewItem && <VideoPreview item={previewItem} onClose={() => setPreviewItem(null)} />}
     </div>
   )
 }

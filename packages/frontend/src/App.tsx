@@ -8,7 +8,7 @@ import type { PlayerStatus, SystemSummary } from "@pwe/shared"
 import { fetchSession, fetchSetupState } from "./auth.js"
 import { appIcons } from "./icons.js"
 import { Browse } from "./pages/Browse.js"
-import { Downloads } from "./pages/Downloads.js"
+import { Activity } from "./pages/Activity.js"
 import { Library } from "./pages/Library.js"
 import { Login } from "./pages/Login.js"
 import { Setup } from "./pages/Setup.js"
@@ -22,6 +22,7 @@ import {
   useContainerWidth,
   useLayout,
 } from "./components/mobile/index.js"
+import { getActiveTaskCount } from "./activeTaskCount.js"
 
 const formatStorageUsage = (
   usedBytes: number | null | undefined,
@@ -53,7 +54,7 @@ const ShellNavLink = ({
       <span className="sidebar-link-icon">{icon}</span>
       <span className="sidebar-link-label">{label}</span>
       {badge !== undefined && badge > 0 && (
-        <span className={`sidebar-badge ${href === "/downloads" ? "hot" : ""}`}>{badge}</span>
+        <span className={`sidebar-badge ${href === "/activity" ? "hot" : ""}`}>{badge}</span>
       )}
     </Link>
   )
@@ -76,8 +77,14 @@ const Routes = ({
         onSystemRefresh={onRefresh}
       />
     </Route>
+    <Route path="/activity">
+      <Activity />
+    </Route>
     <Route path="/downloads">
-      <Downloads />
+      <Redirect to="/activity" />
+    </Route>
+    <Route path="/transcode">
+      <Redirect to="/activity" />
     </Route>
     <Route path="/settings">
       <Settings summary={summary ?? null} onRefresh={onRefresh} />
@@ -90,7 +97,7 @@ const Routes = ({
 
 const pageTitle = (loc: string): string => {
   if (loc.startsWith("/library")) return "Library"
-  if (loc.startsWith("/downloads")) return "Downloads"
+  if (loc.startsWith("/activity")) return "Activity"
   if (loc.startsWith("/settings")) return "Settings"
   return "Browse"
 }
@@ -246,11 +253,11 @@ const DesktopShell = ({
       badge: summary?.status.library.total,
     },
     {
-      href: "/downloads",
-      active: loc === "/downloads",
-      label: "Downloads",
-      icon: appIcons.downloads,
-      badge: summary?.status.downloads.active,
+      href: "/activity",
+      active: loc === "/activity",
+      label: "Activity",
+      icon: appIcons.activity,
+      badge: getActiveTaskCount(summary),
     },
     {
       href: "/settings",

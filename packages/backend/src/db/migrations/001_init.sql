@@ -42,8 +42,10 @@ CREATE TABLE IF NOT EXISTS transcode_jobs (
 CREATE INDEX IF NOT EXISTS idx_transcode_jobs_status ON transcode_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_transcode_jobs_workshop_id ON transcode_jobs(workshop_id);
 
-CREATE TABLE IF NOT EXISTS download_tasks (
-  workshop_id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS tasks (
+  task_id     TEXT PRIMARY KEY,
+  task_type   TEXT NOT NULL DEFAULT 'download',
+  workshop_id TEXT NOT NULL,
   title       TEXT NOT NULL,
   preview_url TEXT NOT NULL DEFAULT '',
   content_rating TEXT,
@@ -58,7 +60,7 @@ CREATE TABLE IF NOT EXISTS download_tasks (
   bytes_total INTEGER
 );
 
-CREATE INDEX IF NOT EXISTS idx_download_tasks_started_at ON download_tasks(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_started_at ON tasks(started_at DESC);
 
 CREATE TABLE IF NOT EXISTS player_state (
   id                  TEXT PRIMARY KEY CHECK (id = 'singleton'),

@@ -3,7 +3,9 @@ import type { AuthConfig } from "@pwe/shared"
 
 const STATE_CHANGING = new Set(["POST", "PUT", "PATCH", "DELETE"])
 
-const PUBLIC_PREFIXES = ["/api/health", "/api/auth/"]
+// Worker requests authenticate with X-Worker-Key and are not browser requests,
+// so they legitimately have no Origin header.
+const PUBLIC_PREFIXES = ["/api/health", "/api/auth/", "/api/transcode/"]
 
 const isPublicPath = (pathname: string): boolean =>
   PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p))

@@ -20,6 +20,7 @@ pi-wallpaper-engine-data/
 .codegraph/
 .commandcode/
 .playwright-mcp/
+.scratch/
 
 # TypeScript
 *.tsbuildinfo

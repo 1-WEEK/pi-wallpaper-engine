@@ -9,14 +9,29 @@ A Wallpaper Engine **Video** wallpaper player on a Raspberry Pi 4B. The web UI b
 - **Download process registry**: The local record used to reconnect a download intake to the SteamCMD process doing the work.
 - **Download progress stream**: The live per-item observations that tell the UI where a download intake is in its lifecycle.
 - **Download reconciler**: The startup and stale-task maintenance that turns interrupted download intake state into a terminal visible result and removes unsafe leftovers.
+- **Media root**: The currently-active storage directory media reads and writes target (`currentRoot` / `mediaRoot()` internally; `data_root` in API responses). It is the custom root if set, else the default root.
+- **Default root**: The factory-default storage location (`default_root` in API responses; config `paths.data_root`).
+- **Custom root**: The user's persisted override of the media root (config `storage.root`; `null` means "use the default root").
+- **Allowed roots**: The whitelist fence a root must sit inside to be browsed or selected (`allowedRoots` / `candidateRoots`). A guardrail for the single admin, enforced via `realpath` escape detection — not exposed in the API.
+- **Target root**: A root being switched to, pending validation and possible migration (`target_root` request field).
+- **Switch plan**: The internal decision for a target root after validation: keep the current root, persist the target immediately, or start a background media migration. The route executes this plan; the root-selection module owns the decision.
+- **Playback orchestration**: The coordination that keeps playback intents consistent — starting/stopping a wallpaper, stepping and rotating, sleeping, and display power — so rotation linkage and power linkage always move together. One module (`Playback`) owns it; HTTP routes only express intents and never coordinate rotation or timers themselves.
+- **Transcode mode**: Whether the system has a remote transcode worker attached (`live`) or not (`noop`). Determined at startup by the presence of `PWE_WORKER_API_KEY`. In noop mode every wallpaper's transcode status is set to `skipped` and the Pi plays source files directly.
+- **Transcode decision**: The per-wallpaper judgment of whether the source video needs transcoding, and if so, to what resolution and codec. Based on the source probe (resolution, codec) and the Pi's screen spec. The decision is `skip` (source is fine as-is) or `transcode` (with target parameters).
+- **Transcode queue**: The service that accepts transcode decisions, writes jobs for the Worker to pull, and mirrors job progress back to the library row. Has two implementations: Live (Phase 2, writes `transcode_jobs` rows) and Noop (Phase 1, marks everything `skipped`).
+- **Transcode job**: A single unit of work in the `transcode_jobs` table. Created by the queue, claimed and executed by the Worker. Lifecycle: `pending` → `claimed` → `running` → `uploading` → `completed` | `failed`. The library row's `transcode_status` mirrors this lifecycle, plus `skipped` for noop-mode wallpapers.
+- **Transcode monitor**: A background reaper that detects stale transcode jobs (no heartbeat within the configured timeout) and resets them to `pending` for retry.
+
+> Naming convention: `snake_case` at boundaries (HTTP JSON, config keys, SQLite columns); `camelCase` for internal TypeScript.
 
 ## Architecture
 - **Phase 1 (Active)**: Direct playback of original video files via `mpv` spawned by the backend over JSON IPC.
 - **Phase 2 (Worker Transcoding)**: A NAS-side Docker worker pulls jobs from the Pi to transcode HEVC videos via Intel QSV, avoiding Pi CPU overload. The worker communicates via `PWE_WORKER_API_KEY` authenticated routes (`/api/transcode/*`). The `optimized/` output replaces the source file for playback automatically.
 - **Storage**: Declarative custom directory (`storage.root`). Changes trigger a background rsync migration (`@pwe/migrate`). The SQLite DB remains local (`~/.local/state/pi-wallpaper-engine/`).
 - **Auth**: Single-admin Better Auth + Passkey. Protects business APIs and WebSockets.
-- **Player & Display**: `PlayerPower` controls `mpv` and display status linkage. `Rotation` interval-timer manages playlists (Sequential/Shuffle/Single).
+- **Player & Display**: `Playback` owns playback orchestration (intent verbs: play/stop/next/prev/mode/interval/sleep/display power). Behind it, `PlayerPower` controls `mpv` and display status linkage; `Rotation` interval-timer manages playlists (Sequential/Shuffle/Single).
 - **Downloads**: Async SteamCMD wrapper using `box86`. Progress uses SQLite-backed `download_tasks`. Non-video items are rejected during finalization.
+- **Transcode**: env-gated (`PWE_WORKER_API_KEY`). `TranscodeQueue` owns the job lifecycle; `TranscodeMonitor` reaps stale jobs. `library.transcode_status` mirrors job state for the frontend. In noop mode, no jobs exist and every wallpaper is `skipped`.
 
 ## Tech Stack
 - Debian 13 Trixie (aarch64) on Raspberry Pi 4B

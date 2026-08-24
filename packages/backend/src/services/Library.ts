@@ -243,6 +243,15 @@ export const LibraryLive = Layer.effect(
               Effect.ignore
             )
           }
+
+          // Clean the entire source/<workshopId>/ directory tree
+          const sourceDir = resolve(dataRoot, config.paths.source_dir, workshopId)
+          yield* Effect.tryPromise({
+            try: () => rm(sourceDir, { recursive: true, force: true }),
+            catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+          }).pipe(
+            Effect.catchAll((e) => logger.warn(`Failed to clean source dir ${sourceDir}: ${e.message}`))
+          )
         }),
 
       playablePath: (row) =>

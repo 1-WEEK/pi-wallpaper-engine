@@ -7,7 +7,7 @@ import {
   SteamCmdError,
   StorageError,
   WorkshopApiError,
-  type DownloadTask,
+  type ActivityTask,
   type LibraryItem,
   type VideoProbe,
   type WorkshopItem,
@@ -27,7 +27,7 @@ import {
   makeDownloadIntakeLive,
   type DownloadIntakeImpl,
 } from "./DownloadIntake.js"
-import { DownloadTasks, type DownloadTasksImpl } from "./DownloadTasks.js"
+import { Tasks, type TasksImpl } from "./Tasks.js"
 import { Library, type LibraryImpl } from "./Library.js"
 import { Logger, type LoggerImpl } from "./Logger.js"
 import { Migrate, type MigrateImpl } from "./Migrate.js"
@@ -65,7 +65,9 @@ const waitFor = async <T>(probe: () => T | null | undefined | false): Promise<T>
   throw new Error("Timed out waiting for condition")
 }
 
-const baseTask = (workshopId: string, patch: Partial<DownloadTask> = {}): DownloadTask => ({
+const baseTask = (taskId: string, workshopId: string, patch: Partial<ActivityTask> = {}): ActivityTask => ({
+  task_id: taskId,
+  task_type: "download",
   workshop_id: workshopId,
   title: workshopId,
   preview_url: "",
@@ -135,23 +137,32 @@ const createWallpaper = (
 }
 
 const makeTasks = () => {
-  const rows = new Map<string, DownloadTask>()
-  const patches: Array<{ workshopId: string; patch: Partial<Omit<DownloadTask, "workshop_id">> }> =
+  const rows = new Map<string, ActivityTask>()
+  const patches: Array<{ taskId: string; patch: Partial<Omit<ActivityTask, "task_id">> }> =
     []
 
-  const impl: DownloadTasksImpl = {
-    list: () => Effect.sync(() => [...rows.values()]),
-    get: (workshopId) => Effect.sync(() => rows.get(workshopId) ?? null),
-    upsert: (workshopId, patch) =>
+  const impl: TasksImpl = {
+    list: () => Effect.sync(() => ({ items: [...rows.values()] as any, total: rows.size })),
+    get: (taskId) => Effect.sync(() => rows.get(taskId) ?? null),
+    getActiveByWorkshopId: (workshopId) =>
       Effect.sync(() => {
-        patches.push({ workshopId, patch })
-        const current = rows.get(workshopId) ?? baseTask(workshopId)
-        rows.set(workshopId, { ...current, ...patch })
+        const matching = [...rows.values()].filter(
+          (t) => t.workshop_id === workshopId && t.finished_at === null
+        )
+        if (matching.length === 0) return null
+        return matching.sort((a, b) => b.started_at - a.started_at)[0] ?? null
       }),
-    dismiss: (workshopId) =>
+    upsert: (taskId, patch) =>
       Effect.sync(() => {
-        rows.delete(workshopId)
+        patches.push({ taskId, patch })
+        const current = rows.get(taskId) ?? baseTask(taskId, patch.workshop_id ?? taskId)
+        rows.set(taskId, { ...current, ...patch } as ActivityTask)
       }),
+    dismiss: (taskId) =>
+      Effect.sync(() => {
+        rows.delete(taskId)
+      }),
+    dismissAll: () => Effect.void,
   }
 
   return { impl, rows, patches }
@@ -200,6 +211,7 @@ const makeTranscodeQueue = () => {
     uploading: () => Effect.succeed(false),
     complete: () => Effect.void,
     fail: () => Effect.void,
+    watch: () => Stream.empty,
   }
   return { impl, enqueues }
 }
@@ -334,7 +346,7 @@ const makeHarness = (
     Layer.provideMerge(Layer.succeed(Library, library.impl)),
     Layer.provideMerge(Layer.succeed(TranscodeQueue, transcode.impl)),
     Layer.provideMerge(Layer.succeed(Logger, makeLogger())),
-    Layer.provideMerge(Layer.succeed(DownloadTasks, tasks.impl)),
+    Layer.provideMerge(Layer.succeed(Tasks, tasks.impl)),
     Layer.provideMerge(Layer.succeed(Storage, storageImpl)),
     Layer.provideMerge(Layer.succeed(Migrate, migrateImpl))
   )
@@ -366,7 +378,7 @@ describe("DownloadIntake.start", () => {
 
     expect(result).toEqual({ _tag: "Started", workshopId: "abc" })
     const task = await waitFor(() => {
-      const row = harness.tasks.rows.get("abc")
+      const row = [...harness.tasks.rows.values()].find(t => t.workshop_id === "abc")
       return row?.stage === "complete" ? row : null
     })
 
@@ -409,7 +421,7 @@ describe("DownloadIntake.start", () => {
     expect(first).toEqual({ _tag: "Started", workshopId: "dup" })
     expect(second).toEqual({ _tag: "AlreadyRunning", workshopId: "dup", stage: "starting" })
     expect(starts).toBe(1)
-    await waitFor(() => harness.tasks.rows.get("dup")?.stage === "complete")
+    await waitFor(() => [...harness.tasks.rows.values()].find(t => t.workshop_id === "dup")?.stage === "complete")
   })
 
   test("blocks new downloads while storage migration is running", async () => {
@@ -455,7 +467,7 @@ describe("DownloadIntake.start", () => {
 
     expect(result).toEqual({ _tag: "Started", workshopId: "scene" })
     const task = await waitFor(() => {
-      const row = harness.tasks.rows.get("scene")
+      const row = [...harness.tasks.rows.values()].find(t => t.workshop_id === "scene")
       return row?.stage === "error" ? row : null
     })
 
@@ -474,7 +486,7 @@ describe("DownloadIntake.start", () => {
 
     expect(result).toEqual({ _tag: "Started", workshopId: "bad-media" })
     const task = await waitFor(() => {
-      const row = harness.tasks.rows.get("bad-media")
+      const row = [...harness.tasks.rows.values()].find(t => t.workshop_id === "bad-media")
       return row?.stage === "error" ? row : null
     })
 
@@ -491,7 +503,7 @@ describe("DownloadIntake.start", () => {
     const result = await start(harness, "fallback")
 
     expect(result).toEqual({ _tag: "Started", workshopId: "fallback" })
-    await waitFor(() => harness.tasks.rows.get("fallback")?.stage === "complete")
+    await waitFor(() => [...harness.tasks.rows.values()].find(t => t.workshop_id === "fallback")?.stage === "complete")
     expect(harness.library.rows.get("fallback")?.title).toBe("fallback")
   })
 })
@@ -531,7 +543,7 @@ describe("DownloadIntake.cancel", () => {
     expect(startedResult).toEqual({ _tag: "Started", workshopId: "live-cancel" })
     await waitFor(() => (started ? true : null))
     await waitFor(() => {
-      const row = harness.tasks.rows.get("live-cancel")
+      const row = [...harness.tasks.rows.values()].find(t => t.workshop_id === "live-cancel")
       return row?.stage === "downloading" ? row : null
     })
     expect(existsSync(join(harness.mediaRoot, "source", "live-cancel"))).toBe(true)
@@ -541,7 +553,7 @@ describe("DownloadIntake.cancel", () => {
     expect(result).toEqual({ _tag: "Cancelling", workshopId: "live-cancel" })
     expect(harness.registry.stops).toEqual(["live-cancel"])
     const task = await waitFor(() => {
-      const row = harness.tasks.rows.get("live-cancel")
+      const row = [...harness.tasks.rows.values()].find(t => t.workshop_id === "live-cancel")
       return row?.stage === "error" ? row : null
     })
     expect(task.message).toBe("Cancelled")
@@ -558,8 +570,8 @@ describe("DownloadIntake.cancel", () => {
   test("marks an unfinished task without live work as zombie-cancelled", async () => {
     const harness = makeHarness()
     harness.tasks.rows.set(
-      "zombie",
-      baseTask("zombie", {
+      "t1",
+      baseTask("t1", "zombie", {
         stage: "downloading",
         message: "Still downloading",
         finished_at: null,
@@ -581,7 +593,7 @@ describe("DownloadIntake.cancel", () => {
 
     expect(result).toEqual({ _tag: "CancelledZombie", workshopId: "zombie" })
     expect(harness.registry.stops).toEqual(["zombie"])
-    const task = harness.tasks.rows.get("zombie")
+    const task = harness.tasks.rows.get("t1")
     expect(task?.stage).toBe("error")
     expect(task?.message).toBe("Cancelled (zombie cleanup)")
     expect(task?.finished_at).toBeNumber()
@@ -596,8 +608,8 @@ describe("DownloadIntake.cancel", () => {
   test("returns not-found when there is no live or unfinished task evidence", async () => {
     const harness = makeHarness()
     harness.tasks.rows.set(
-      "finished",
-      baseTask("finished", {
+      "t2",
+      baseTask("t2", "finished", {
         stage: "complete",
         message: "Library updated",
         finished_at: Date.now(),
@@ -617,6 +629,6 @@ describe("DownloadIntake.cancel", () => {
       workshopId: "finished",
       message: "No active download for this workshop id",
     })
-    expect(harness.tasks.rows.get("finished")?.stage).toBe("complete")
+    expect(harness.tasks.rows.get("t2")?.stage).toBe("complete")
   })
 })
