@@ -13,7 +13,7 @@ import type { TranscodeJob } from "@pwe/shared"
 
 const FFMPEG = process.env["FFMPEG_BIN"] ?? "ffmpeg"
 
-export type EncoderKind = "qsv" | "x265"
+export type EncoderKind = "qsv" | "vaapi" | "x265"
 
 export interface EncoderChoice {
   readonly kind: EncoderKind
@@ -86,41 +86,76 @@ export const detectEncoder = async (
   ffmpeg: string = FFMPEG
 ): Promise<EncoderChoice> => {
   const list = await runOnce(ffmpeg, ["-hide_banner", "-encoders"], { timeoutMs: 5_000 })
-  if (list.code !== 0 || !list.stdout.includes("hevc_qsv")) {
-    return { kind: "x265", reason: "hevc_qsv not present in ffmpeg -encoders output" }
-  }
 
-  // ~1 frame at 24fps from a 64x64 lavfi source. Encoded into a null muxer so
-  // nothing is written. If /dev/dri/renderD128 is missing or not accessible,
-  // ffmpeg exits non-zero with "No MFX/oneVPL runtime found" / similar.
-  const probe = await runOnce(
-    ffmpeg,
-    [
-      "-hide_banner",
-      "-nostdin",
-      "-loglevel",
-      "error",
-      "-f",
-      "lavfi",
-      "-i",
-      "nullsrc=s=64x64:d=0.04",
-      "-c:v",
-      "hevc_qsv",
-      "-f",
-      "null",
-      "-",
-    ],
-    { timeoutMs: 8_000 }
-  )
-  if (probe.code !== 0) {
-    return {
-      kind: "x265",
-      reason: `hevc_qsv device probe failed (${probe.code}): ${probe.stderr.split("\n").slice(-3).join(" / ").slice(0, 200)}`,
+  // 1. Try Intel QSV (oneVPL / Gen12+)
+  if (list.code === 0 && list.stdout.includes("hevc_qsv")) {
+    const qsvProbe = await runOnce(
+      ffmpeg,
+      [
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-init_hw_device",
+        "qsv=hw",
+        "-filter_hw_device",
+        "hw",
+        "-f",
+        "lavfi",
+        "-i",
+        "nullsrc=s=256x256:d=0.04",
+        "-vf",
+        "format=nv12,hwupload=extra_hw_frames=64,format=qsv",
+        "-c:v",
+        "hevc_qsv",
+        "-f",
+        "null",
+        "-",
+      ],
+      { timeoutMs: 8_000 }
+    )
+    if (qsvProbe.code === 0) {
+      return { kind: "qsv", reason: "hevc_qsv device probe succeeded" }
     }
   }
-  return { kind: "qsv", reason: "hevc_qsv device probe succeeded" }
-}
 
+  // 2. Try Intel / AMD VA-API (Gen8-Gen11 Intel Jasper Lake / UHD Graphics / AMD)
+  if (list.code === 0 && list.stdout.includes("hevc_vaapi")) {
+    const vaapiProbe = await runOnce(
+      ffmpeg,
+      [
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-init_hw_device",
+        "vaapi=va:/dev/dri/renderD128",
+        "-filter_hw_device",
+        "va",
+        "-f",
+        "lavfi",
+        "-i",
+        "nullsrc=s=256x256:d=0.04",
+        "-vf",
+        "format=nv12,hwupload",
+        "-c:v",
+        "hevc_vaapi",
+        "-f",
+        "null",
+        "-",
+      ],
+      { timeoutMs: 8_000 }
+    )
+    if (vaapiProbe.code === 0) {
+      return { kind: "vaapi", reason: "hevc_vaapi device probe succeeded" }
+    }
+  }
+
+  return {
+    kind: "x265",
+    reason: "hardware encoder (qsv / vaapi) unavailable or /dev/dri not accessible",
+  }
+}
 /**
  * Build the ffmpeg argv for a given encoder + job. Pure — no side effects.
  * Exported for unit testing.
@@ -170,6 +205,25 @@ export const buildFfmpegArgs = (
       String(q),
       "-pix_fmt",
       "nv12",
+      "-movflags",
+      "+faststart",
+      paths.partialAbs,
+    ]
+  }
+  if (encoder === "vaapi") {
+    const enc = job.target_codec === "h264" ? "h264_vaapi" : "hevc_vaapi"
+    return [
+      ...common,
+      "-init_hw_device",
+      "vaapi=va:/dev/dri/renderD128",
+      "-filter_hw_device",
+      "va",
+      "-vf",
+      `format=nv12,hwupload,scale_vaapi=w=${w}:h=${h}:mode=hq`,
+      "-c:v",
+      enc,
+      "-qp",
+      String(q),
       "-movflags",
       "+faststart",
       paths.partialAbs,

@@ -56,12 +56,12 @@ const main = async () => {
   const encoderChoice = await detectEncoder()
   console.log(`  encoder: ${encoderChoice.kind} — ${encoderChoice.reason}`)
 
-  if (config.requireHardware && encoderChoice.kind !== "qsv") {
+  if (config.requireHardware && encoderChoice.kind !== "qsv" && encoderChoice.kind !== "vaapi") {
     console.error(
-      `✗ Fatal: Hardware encoding is mandatory, but QSV detection failed: ${encoderChoice.reason}`
+      `✗ Fatal: Hardware encoding is mandatory, but hardware detection failed: ${encoderChoice.reason}`
     )
     console.error(
-      `  Ensure Intel iGPU /dev/dri is mapped to container and oneVPL runtime (libmfx-gen1.2) is loaded.`
+      `  Ensure Intel iGPU /dev/dri is mapped to container and VA-API / oneVPL drivers are loaded.`
     )
     process.exit(2)
   }

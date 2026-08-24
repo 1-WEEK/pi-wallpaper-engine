@@ -42,6 +42,29 @@ describe("buildFfmpegArgs", () => {
     // Writes to .partial, not final.
     expect(args[args.length - 1]).toBe(paths.partialAbs)
   })
+  test("VA-API path uses hevc_vaapi + scale_vaapi + qp with hardware device init", () => {
+    const args = buildFfmpegArgs(job, paths, "vaapi")
+    expect(args).toContain("-init_hw_device")
+    expect(args).toContain("-filter_hw_device")
+    expect(args).toContain("-c:v")
+    expect(args).toContain("hevc_vaapi")
+    const vfIndex = args.indexOf("-vf")
+    expect(vfIndex).toBeGreaterThan(-1)
+    expect(args[vfIndex + 1]).toBe(
+      "format=nv12,hwupload,scale_vaapi=w=1200:h=1080:mode=hq"
+    )
+    expect(args).toContain("-qp")
+    expect(args[args.indexOf("-qp") + 1]).toBe("23")
+    expect(args[args.length - 1]).toBe(paths.partialAbs)
+  })
+
+  test("VA-API path uses h264_vaapi when target_codec is h264", () => {
+    const h264Job: TranscodeJob = { ...job, target_codec: "h264" }
+    const args = buildFfmpegArgs(h264Job, paths, "vaapi")
+    expect(args).toContain("h264_vaapi")
+    expect(args).not.toContain("hevc_vaapi")
+  })
+
 
   test("libx265 fallback uses scale + crop + crf with -preset medium", () => {
     const args = buildFfmpegArgs(job, paths, "x265")
