@@ -31,16 +31,13 @@ RUN bun build packages/worker/src/index.ts \
       --outdir dist \
       --sourcemap=linked
 
-# ── stage 2: minimal runtime — ffmpeg + Intel media driver + the bundle ────
+# ── stage 2: minimal runtime — FFmpeg 9.x + Intel media driver + the bundle ─
 FROM oven/bun:1.3.14-slim AS runtime
 
 ARG TARGETARCH
 
-# On Debian 13 (Trixie), FFmpeg 7.x/9.x uses oneVPL (`libvpl2`) for Intel QSV.
-# `libmfx-gen1.2` provides the oneVPL Intel GPU user-space runtime driver
-# (`libmfx-gen.so.1.2`). `intel-media-va-driver-non-free` ships the iHD VA-API
-# driver for Gen8+ Intel iGPUs. These packages are amd64-specific (Intel hardware);
-# on arm64 (Apple Silicon / ARM NAS) the worker falls back to libx265 software encoding.
+# On Debian 13 (Trixie), install Intel media drivers for VA-API / oneVPL hardware acceleration.
+# FFmpeg 9.0.1 (gpl static build) is installed from official BtbN builds for amd64 and arm64.
 RUN sed -i 's/^Components: main$/Components: main non-free non-free-firmware/' \
        /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
@@ -49,10 +46,18 @@ RUN sed -i 's/^Components: main$/Components: main non-free non-free-firmware/' \
        dpkg --print-architecture | grep -q amd64 && EXTRA_PKGS="intel-media-va-driver-non-free libmfx-gen1.2" || true; \
      fi \
   && apt-get install -y --no-install-recommends \
-       ffmpeg \
        $EXTRA_PKGS \
        ca-certificates \
+       curl \
+       xz-utils \
        tini \
+  && ARCH_SUFFIX="linux64" \
+  && if [ "$TARGETARCH" = "arm64" ]; then ARCH_SUFFIX="linuxarm64"; fi \
+  && curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-${ARCH_SUFFIX}-gpl-9.0.tar.xz" | tar -xJ -C /tmp/ \
+  && mv /tmp/ffmpeg-n9.0-latest-${ARCH_SUFFIX}-gpl-9.0/bin/ffmpeg /usr/local/bin/ffmpeg \
+  && mv /tmp/ffmpeg-n9.0-latest-${ARCH_SUFFIX}-gpl-9.0/bin/ffprobe /usr/local/bin/ffprobe \
+  && rm -rf /tmp/ffmpeg-n9.0-latest-* \
+  && apt-get purge -y --auto-remove curl xz-utils \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
