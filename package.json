@@ -27,10 +27,10 @@
     "post-checkout": "codegraph index"
   },
   "devDependencies": {
-    "@colbymchenry/codegraph": "^1.4.1",
-    "@types/bun": "latest",
-    "playwright": "^1.61.1",
-    "simple-git-hooks": "^2.13.1",
+    "@colbymchenry/codegraph": "^1.6.0",
+    "@types/bun": "^1.4.2",
+    "playwright": "^1.63.0",
+    "simple-git-hooks": "^2.14.0",
     "typescript": "7.0.2"
   },
   "engines": {
