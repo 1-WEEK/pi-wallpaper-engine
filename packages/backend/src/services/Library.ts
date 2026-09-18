@@ -26,7 +26,7 @@ export interface LibraryImpl {
   readonly playablePath: (row: LibraryRow) => Effect.Effect<string, StorageError>
 }
 
-export class Library extends Context.Tag("Library")<Library, LibraryImpl>() {}
+export class Library extends Context.Service<Library, LibraryImpl>()("Library") {}
 
 const COLUMNS = [
   "workshop_id",
@@ -91,7 +91,7 @@ export const LibraryLive = Layer.effect(
           return normalizeAdultMetadata(JSON.parse(raw) as { contentrating?: string; ratingsex?: string })
         },
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-      }).pipe(Effect.catchAll(() => Effect.succeed(normalizeAdultMetadata(null))))
+      }).pipe(Effect.catch(() => Effect.succeed(normalizeAdultMetadata(null))))
 
     // SteamCMD's "Success" line sometimes reports the transient
     // downloads/<weAppId>/<id> path, then moves the files to content/.
@@ -119,7 +119,7 @@ export const LibraryLive = Layer.effect(
           `Reconciled library source_path for ${workshop_id}: ${source_path} -> ${repaired}`
         )
       }
-    }).pipe(Effect.catchAll((e) => logger.error(`Library path reconcile failed: ${e.message}`)))
+    }).pipe(Effect.catch((e) => logger.error(`Library path reconcile failed: ${e.message}`)))
 
     const reconcileSuspectRows = Effect.gen(function* () {
       const dataRoot = yield* storage.mediaRootOrNull()
@@ -161,7 +161,7 @@ export const LibraryLive = Layer.effect(
             catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
           }).pipe(
             Effect.tap(() => logger.warn(`Removed invalid library row ${row.workshop_id}`)),
-            Effect.catchAll((e) => logger.warn(`Failed to clean invalid library row ${row.workshop_id}: ${e.message}`))
+            Effect.catch((e) => logger.warn(`Failed to clean invalid library row ${row.workshop_id}: ${e.message}`))
           )
           continue
         }
@@ -181,7 +181,7 @@ export const LibraryLive = Layer.effect(
         )
         yield* logger.info(`Healed library metadata for ${row.workshop_id}`)
       }
-    }).pipe(Effect.catchAll((e) => logger.error(`Library reconcile failed: ${e.message}`)))
+    }).pipe(Effect.catch((e) => logger.error(`Library reconcile failed: ${e.message}`)))
 
     yield* reconcilePaths
     yield* reconcileSuspectRows
@@ -250,7 +250,7 @@ export const LibraryLive = Layer.effect(
             try: () => rm(sourceDir, { recursive: true, force: true }),
             catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
           }).pipe(
-            Effect.catchAll((e) => logger.warn(`Failed to clean source dir ${sourceDir}: ${e.message}`))
+            Effect.catch((e) => logger.warn(`Failed to clean source dir ${sourceDir}: ${e.message}`))
           )
         }),
 

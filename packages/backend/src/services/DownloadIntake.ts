@@ -45,10 +45,10 @@ export interface DownloadIntakeImpl {
   readonly progressStream: (workshopId: string) => Stream.Stream<DownloadProgressEvent>
 }
 
-export class DownloadIntake extends Context.Tag("DownloadIntake")<
+export class DownloadIntake extends Context.Service<
   DownloadIntake,
   DownloadIntakeImpl
->() {}
+>()("DownloadIntake") {}
 
 export interface DownloadIntakeDeps {
   readonly probeVideo?: (filePath: string) => Effect.Effect<VideoProbe, FfprobeError>
@@ -99,10 +99,10 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
       const migrate = yield* Migrate
       const processRegistry = yield* DownloadProcessRegistry
       const pubsub = yield* PubSub.unbounded<DownloadProgressEvent>()
-      const inflight = new Map<string, Fiber.RuntimeFiber<unknown, unknown>>()
+      const inflight = new Map<string, Fiber.Fiber<unknown, unknown>>()
       const probeVideo = deps.probeVideo ?? ffprobe
 
-      const publish = (event: DownloadProgressEvent) => pubsub.publish(event)
+      const publish = (event: DownloadProgressEvent) => PubSub.publish(pubsub, event)
 
       const mirrorProgress = (taskId: string) => (p: DownloadProgress) => {
         Effect.runFork(publish(p))
@@ -131,7 +131,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
             .pipe(
               Effect.as(true),
               Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(false)),
-              Effect.catchAll((e) =>
+              Effect.catch((e) =>
                 logger.warn(`Skipping orphan cleanup for ${workshopId}: ${e.message}`).pipe(
                   Effect.as(true)
                 )
@@ -148,7 +148,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
             catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
           }).pipe(
             Effect.tap(() => logger.info(`Cleaned orphan source dir: ${sourceDir}`)),
-            Effect.catchAll((e) => logger.warn(`Cleanup failed for ${sourceDir}: ${e.message}`))
+            Effect.catch((e) => logger.warn(`Cleanup failed for ${sourceDir}: ${e.message}`))
           )
         })
 
@@ -164,7 +164,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           yield* publish({ workshopId, stage: "error", message })
           yield* markError(taskId, message)
         }).pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             logger.error(`Download failure handling failed for ${job.workshopId}: ${String(e)}`)
           )
         )
@@ -320,17 +320,17 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           const workflow = runWorkflow({ workshopId, taskId }).pipe(
             Effect.onExit((exit) => {
               if (Exit.isSuccess(exit)) return Effect.void
-              if (Cause.isInterruptedOnly(exit.cause)) {
+              if (Cause.hasInterruptsOnly(exit.cause)) {
                 return handleFailure({ workshopId, taskId }, { _tag: "Cancelled" } satisfies CancelledDownload)
               }
 
-              const failure = Cause.failureOption(exit.cause)
+              const failure = Cause.findErrorOption(exit.cause)
               const err = Option.getOrElse(failure, () => new Error(Cause.pretty(exit.cause)))
               return handleFailure({ workshopId, taskId }, err)
             })
           )
 
-          const fiber = yield* Effect.forkDaemon(workflow)
+          const fiber = yield* Effect.forkDetach(workflow, { startImmediately: true })
           yield* Effect.sync(() => {
             inflight.set(workshopId, fiber)
             fiber.addObserver(() => {
@@ -346,7 +346,7 @@ export const makeDownloadIntakeLive = (deps: DownloadIntakeDeps = {}) =>
           const fiber = inflight.get(workshopId)
           if (fiber) {
             yield* processRegistry.stop(workshopId)
-            yield* Fiber.interrupt(fiber).pipe(Effect.forkDaemon)
+            yield* Fiber.interrupt(fiber).pipe(Effect.forkDetach)
             return { _tag: "Cancelling", workshopId }
           }
 

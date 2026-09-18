@@ -27,7 +27,7 @@ export interface MigrateImpl {
   readonly isRunning: () => Effect.Effect<boolean>
 }
 
-export class Migrate extends Context.Tag("Migrate")<Migrate, MigrateImpl>() {}
+export class Migrate extends Context.Service<Migrate, MigrateImpl>()("Migrate") {}
 
 const formatGb = (bytes: number): string => `${(bytes / 1e9).toFixed(1)} GB`
 
@@ -65,7 +65,7 @@ export const MigrateLive = Layer.effect(
     const storage = yield* Storage
 
     const jobRef = yield* Ref.make<MigrationProgress | null>(null)
-    const fiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+    const fiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
 
     const isRunning = () => Ref.get(jobRef).pipe(Effect.map((job) => job?.state === "running"))
 
@@ -228,7 +228,7 @@ export const MigrateLive = Layer.effect(
             })
             yield* logger.info(`Storage migration complete: ${fromRoot} -> ${toRoot}`)
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.gen(function* () {
                 const message =
                   error instanceof MigrateError
@@ -248,7 +248,7 @@ export const MigrateLive = Layer.effect(
             Effect.onInterrupt(() => Ref.set(jobRef, null))
           )
 
-          const fiber = yield* Effect.forkDaemon(job)
+          const fiber = yield* Effect.forkDetach(job)
           yield* Ref.set(fiberRef, fiber)
           return initial
         }).pipe(Effect.tapError(() => Ref.set(jobRef, null)))

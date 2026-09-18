@@ -19,7 +19,7 @@ export interface PlayerWatchImpl {
   readonly stream: () => Stream.Stream<PlayerSnapshot>
 }
 
-export class PlayerWatch extends Context.Tag("PlayerWatch")<PlayerWatch, PlayerWatchImpl>() {}
+export class PlayerWatch extends Context.Service<PlayerWatch, PlayerWatchImpl>()("PlayerWatch") {}
 
 const snapshotsEqual = (a: PlayerSnapshot, b: PlayerSnapshot): boolean =>
   a.playing === b.playing &&
@@ -34,19 +34,19 @@ const snapshotsEqual = (a: PlayerSnapshot, b: PlayerSnapshot): boolean =>
   a.rotation_interval_sec === b.rotation_interval_sec
 
 const buildSnapshot = (
-  mpv: Context.Tag.Service<Mpv>,
-  library: Context.Tag.Service<Library>,
-  prefs: Context.Tag.Service<PlaybackPrefs>
+  mpv: Context.Service.Shape<typeof Mpv>,
+  library: Context.Service.Shape<typeof Library>,
+  prefs: Context.Service.Shape<typeof PlaybackPrefs>
 ): Effect.Effect<PlayerSnapshot> =>
   Effect.gen(function* () {
     const status = yield* mpv.status()
     const item = status.current_workshop_id
       ? yield* library.get(status.current_workshop_id).pipe(
-          Effect.catchAll(() => Effect.succeed(null))
+          Effect.catch(() => Effect.succeed(null))
         )
       : null
     const prefsState = yield* prefs.get().pipe(
-      Effect.catchAll(() =>
+      Effect.catch(() =>
         Effect.succeed({ play_mode: "single" as const, rotation_interval_sec: 600 })
       )
     )
@@ -67,7 +67,7 @@ const buildSnapshot = (
 // equality gate ensures the PubSub only fires when something actually changed.
 const TICK = Schedule.spaced("1 second")
 
-export const PlayerWatchLive = Layer.scoped(
+export const PlayerWatchLive = Layer.effect(
   PlayerWatch,
   Effect.gen(function* () {
     const mpv = yield* Mpv
@@ -82,9 +82,9 @@ export const PlayerWatchLive = Layer.scoped(
       const last = yield* Ref.get(lastRef)
       if (last && snapshotsEqual(last, snap)) return
       yield* Ref.set(lastRef, snap)
-      yield* pubsub.publish(snap)
+      yield* PubSub.publish(pubsub, snap)
     }).pipe(
-      Effect.catchAllCause((cause) =>
+      Effect.catchCause((cause) =>
         logger.warn(`PlayerWatch tick failed: ${String(cause)}`)
       )
     )

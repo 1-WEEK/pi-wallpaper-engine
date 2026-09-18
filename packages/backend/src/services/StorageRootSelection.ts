@@ -60,10 +60,10 @@ export interface StorageRootSelectionImpl {
   ) => Effect.Effect<SwitchPlan, StorageError | MigrateError | DbError>
 }
 
-export class StorageRootSelection extends Context.Tag("StorageRootSelection")<
+export class StorageRootSelection extends Context.Service<
   StorageRootSelection,
   StorageRootSelectionImpl
->() {}
+>()("StorageRootSelection") {}
 
 const hasControlChars = (value: string): boolean => /[\r\n\0]/.test(value)
 

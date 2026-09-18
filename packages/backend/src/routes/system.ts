@@ -35,7 +35,7 @@ const storageSummary = (path: string) =>
         error: null,
       }
     }),
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.succeed({
         available: false as const,
         path,
@@ -93,7 +93,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
                   `SELECT status, COUNT(*) AS n FROM transcode_jobs GROUP BY status`
                 )
                 .pipe(
-                  Effect.catchAll(() =>
+                  Effect.catch(() =>
                     Effect.succeed([] as Array<{ status: string; n: number }>)
                   )
                 ),
@@ -131,7 +131,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
           const playback = yield* prefs
             .get()
             .pipe(
-              Effect.catchAll(() =>
+              Effect.catch(() =>
                 Effect.succeed({ play_mode: "single" as const, rotation_interval_sec: 600 })
               )
             )

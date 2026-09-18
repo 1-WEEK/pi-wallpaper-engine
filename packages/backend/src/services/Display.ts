@@ -19,7 +19,7 @@ export interface DisplayImpl {
   readonly status: () => Effect.Effect<DisplayStatus, DisplayError>
 }
 
-export class Display extends Context.Tag("Display")<Display, DisplayImpl>() {}
+export class Display extends Context.Service<Display, DisplayImpl>()("Display") {}
 
 interface SpawnResult {
   readonly exitCode: number | null

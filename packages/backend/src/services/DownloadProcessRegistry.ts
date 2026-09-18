@@ -67,10 +67,10 @@ export interface DownloadProcessRegistryImpl {
   readonly sweep: () => Effect.Effect<void>
 }
 
-export class DownloadProcessRegistry extends Context.Tag("DownloadProcessRegistry")<
+export class DownloadProcessRegistry extends Context.Service<
   DownloadProcessRegistry,
   DownloadProcessRegistryImpl
->() {}
+>()("DownloadProcessRegistry") {}
 
 export const downloadProcessRegistryDir = (stateRoot = resolveStateRoot()): string =>
   resolve(stateRoot, REGISTRY_DIR)
@@ -232,7 +232,7 @@ export const makeDownloadProcessRegistryImpl = (
       try: () => rm(pathFor(workshopId), { force: true }),
       catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         logger.warn(`Failed to remove download process registry entry ${workshopId}: ${error.message}`)
       )
     )
@@ -247,7 +247,7 @@ export const makeDownloadProcessRegistryImpl = (
       catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
     }).pipe(
       Effect.flatMap((entry) => (entry ? Effect.succeed(entry) : removeEntry(workshopId).pipe(Effect.as(null)))),
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         logger.warn(`Failed to read download process registry entry ${workshopId}: ${error.message}`).pipe(
           Effect.as(null)
         )
@@ -260,7 +260,7 @@ export const makeDownloadProcessRegistryImpl = (
       catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
     }).pipe(
       Effect.as(true),
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         logger.warn(`Failed to stop SteamCMD process ${pid}: ${error.message}`).pipe(Effect.as(false))
       )
     )
@@ -274,7 +274,7 @@ export const makeDownloadProcessRegistryImpl = (
       const argv = yield* Effect.tryPromise({
         try: () => platform.readCommandLine(entry.pid),
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-      }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+      }).pipe(Effect.catch(() => Effect.succeed(null)))
 
       if (!argv || !matchesSteamCmdWorkshopCommand(argv, entry.workshopId)) {
         yield* removeEntry(entry.workshopId)
@@ -300,7 +300,7 @@ export const makeDownloadProcessRegistryImpl = (
       const processes = yield* Effect.tryPromise({
         try: () => platform.listProcesses(),
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-      }).pipe(Effect.catchAll(() => Effect.succeed<ReadonlyArray<ProcessCommandLine>>([])))
+      }).pipe(Effect.catch(() => Effect.succeed<ReadonlyArray<ProcessCommandLine>>([])))
       const matches = processes.filter((row) => matchesSteamCmdWorkshopCommand(row.argv, workshopId))
       if (matches.length === 0) return null
 
@@ -339,7 +339,7 @@ export const makeDownloadProcessRegistryImpl = (
           },
           catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             logger.warn(`Failed to register SteamCMD process for ${workshopId}: ${error.message}`)
           )
         )
@@ -367,7 +367,7 @@ export const makeDownloadProcessRegistryImpl = (
             return readdir(dir)
           },
           catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-        }).pipe(Effect.catchAll(() => Effect.succeed<string[]>([])))
+        }).pipe(Effect.catch(() => Effect.succeed<string[]>([])))
 
         const registryFiles = files.filter((file) => file.endsWith(".json"))
         if (registryFiles.length > 0) {
@@ -385,14 +385,14 @@ export const makeDownloadProcessRegistryImpl = (
           const raw = yield* Effect.tryPromise({
             try: () => readFile(resolve(dir, file), "utf8"),
             catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-          }).pipe(Effect.catchAll(() => Effect.succeed("")))
+          }).pipe(Effect.catch(() => Effect.succeed("")))
           const entry = parseRegistryEntry(raw)
           if (!entry) {
             invalid += 1
             yield* Effect.tryPromise({
               try: () => rm(resolve(dir, file), { force: true }),
               catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-            }).pipe(Effect.catchAll(() => Effect.void))
+            }).pipe(Effect.catch(() => Effect.void))
             continue
           }
           const result = yield* stopRegistryEntry(entry, "registry", "startup-sweep")

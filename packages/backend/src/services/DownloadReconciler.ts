@@ -14,10 +14,10 @@ export interface DownloadReconcilerImpl {
   readonly reconcileStale: () => Effect.Effect<void>
 }
 
-export class DownloadReconciler extends Context.Tag("DownloadReconciler")<
+export class DownloadReconciler extends Context.Service<
   DownloadReconciler,
   DownloadReconcilerImpl
->() {}
+>()("DownloadReconciler") {}
 
 export interface DownloadReconcilerOptions {
   readonly staleGraceMs?: number
@@ -43,7 +43,7 @@ const promiseError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
 
 export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {}) =>
-  Layer.scoped(
+  Layer.effect(
     DownloadReconciler,
     Effect.gen(function* () {
       const db = yield* Db
@@ -62,7 +62,7 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
         Effect.gen(function* () {
           for (const { workshop_id } of rows) {
             yield* processRegistry.stop(workshop_id).pipe(
-              Effect.catchAll((e) =>
+              Effect.catch((e) =>
                 logger.warn(`Failed to stop SteamCMD process for ${workshop_id}: ${errorMessage(e)}`)
               )
             )
@@ -73,7 +73,7 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
         library.get(workshopId).pipe(
           Effect.as(true),
           Effect.catchTag("LibraryNotFoundError", () => Effect.succeed(false)),
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             logger
               .warn(
                 `Skipping source cleanup for ${workshopId}: failed to check library ownership: ${errorMessage(e)}`
@@ -109,7 +109,7 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
               catch: promiseError,
             }).pipe(
               Effect.tap(() => logger.info(messages.cleaned(sourceDir))),
-              Effect.catchAll((e) => logger.warn(messages.failed(sourceDir, e)))
+              Effect.catch((e) => logger.warn(messages.failed(sourceDir, e)))
             )
           }
         })
@@ -163,7 +163,7 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
         Effect.gen(function* () {
           yield* reconcileInterrupted
           yield* reconcileInconsistentFinished
-        }).pipe(Effect.catchAll((e) => logger.error(`Download reconcile failed: ${errorMessage(e)}`)))
+        }).pipe(Effect.catch((e) => logger.error(`Download reconcile failed: ${errorMessage(e)}`)))
 
       const reconcileStale = () =>
         Effect.gen(function* () {
@@ -191,7 +191,7 @@ export const makeDownloadReconcilerLive = (opts: DownloadReconcilerOptions = {})
             cleaned: (sourceDir) => `Cleaned stale source dir: ${sourceDir}`,
             failed: (sourceDir, error) => `Failed to clean stale ${sourceDir}: ${error.message}`,
           })
-        }).pipe(Effect.catchAll((e) => logger.error(`Stale task sweep failed: ${errorMessage(e)}`)))
+        }).pipe(Effect.catch((e) => logger.error(`Stale task sweep failed: ${errorMessage(e)}`)))
 
       const reconciler: DownloadReconcilerImpl = {
         startup,

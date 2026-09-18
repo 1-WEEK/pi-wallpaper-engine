@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { DisplayMode } from "./Config.js"
 
-export const TranscodeStatus = Schema.Literal(
+export const TranscodeStatus = Schema.Literals([
   "skipped",
   "pending",
   "claimed",
@@ -9,7 +9,7 @@ export const TranscodeStatus = Schema.Literal(
   "uploading",
   "completed",
   "failed"
-)
+])
 export type TranscodeStatus = typeof TranscodeStatus.Type
 
 export const LibraryItem = Schema.Struct({

@@ -46,9 +46,9 @@ export interface RotationImpl {
   readonly disarm: () => Effect.Effect<void>
 }
 
-export class Rotation extends Context.Tag("Rotation")<Rotation, RotationImpl>() {}
+export class Rotation extends Context.Service<Rotation, RotationImpl>()("Rotation") {}
 
-export const RotationLive = Layer.scoped(
+export const RotationLive = Layer.effect(
   Rotation,
   Effect.gen(function* () {
     const library = yield* Library
@@ -81,14 +81,14 @@ export const RotationLive = Layer.scoped(
             idx = advanceIndex(idx, seq.length, dir)
             continue
           }
-          const item = yield* library.get(id).pipe(Effect.catchAll(() => Effect.succeed(null)))
+          const item = yield* library.get(id).pipe(Effect.catch(() => Effect.succeed(null)))
           const path = item
-            ? yield* library.playablePath(item).pipe(Effect.catchAll(() => Effect.succeed(null)))
+            ? yield* library.playablePath(item).pipe(Effect.catch(() => Effect.succeed(null)))
             : null
           if (item && path) {
             yield* mpv
               .play(item.workshop_id, path)
-              .pipe(Effect.catchAll((e) => logWarn(`Rotation play failed: ${String(e)}`)))
+              .pipe(Effect.catch((e) => logWarn(`Rotation play failed: ${String(e)}`)))
             yield* mpv.setDisplayMode(item.display_mode).pipe(Effect.ignore)
             yield* library.update(item.workshop_id, { last_played_at: Date.now() }).pipe(Effect.ignore)
             yield* Ref.set(idxRef, idx)
@@ -111,7 +111,7 @@ export const RotationLive = Layer.scoped(
               const nextIdx = advanceIndex(cur, seq.length, 1)
               if (nextIdx < 0) return
               yield* playAt(nextIdx, 1)
-            }).pipe(Effect.catchAll((e) => logWarn(`Rotation tick failed: ${String(e)}`)))
+            }).pipe(Effect.catch((e) => logWarn(`Rotation tick failed: ${String(e)}`)))
           )
         }, ms)
         ;(timer as { unref?: () => void }).unref?.()

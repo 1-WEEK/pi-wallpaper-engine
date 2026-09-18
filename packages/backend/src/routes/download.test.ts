@@ -191,7 +191,7 @@ describe("download routes", () => {
     })
 
     await Effect.runPromise(
-      pubsub.publish({ workshopId: "abc", stage: "complete", message: "Library updated" })
+      PubSub.publish(pubsub, { workshopId: "abc", stage: "complete", message: "Library updated" })
     )
 
     expect(JSON.parse(await withTimeout(message, 1_000))).toEqual({

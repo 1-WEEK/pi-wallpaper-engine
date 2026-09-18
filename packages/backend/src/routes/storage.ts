@@ -132,7 +132,7 @@ export const storageRoutes = (runtime: AppRuntime) =>
             const selection = yield* StorageRootSelection
             return yield* selection.validateTarget(body.target_root).pipe(
               Effect.map(mapValidatedTarget),
-              Effect.catchAll((cause) =>
+              Effect.catch((cause) =>
                 Effect.succeed({
                   ok: false as const,
                   error: cause.message,

@@ -155,7 +155,7 @@ export interface DbImpl {
   readonly transaction: <A, E, R>(fn: () => Effect.Effect<A, E, R>) => Effect.Effect<A, E | DbError, R>
 }
 
-export class Db extends Context.Tag("Db")<Db, DbImpl>() {}
+export class Db extends Context.Service<Db, DbImpl>()("Db") {}
 
 const tryDb =
   <T>(op: string) =>
@@ -165,7 +165,7 @@ const tryDb =
       catch: (cause) => new DbError({ operation: op, cause }),
     })
 
-export const DbLive = Layer.scoped(
+export const DbLive = Layer.effect(
   Db,
   Effect.gen(function* () {
     const config = yield* Config

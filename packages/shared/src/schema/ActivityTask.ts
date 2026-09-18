@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-export const TaskStage = Schema.Literal(
+export const TaskStage = Schema.Literals([
   "starting",
   "downloading",
   "finalizing",
@@ -13,12 +13,12 @@ export const TaskStage = Schema.Literal(
   "running",
   "uploading",
   "failed"
-)
+])
 export type TaskStage = typeof TaskStage.Type
 
 export const ActivityTask = Schema.Struct({
   task_id: Schema.String,
-  task_type: Schema.Literal("download", "transcode"),
+  task_type: Schema.Literals(["download", "transcode"]),
   workshop_id: Schema.String,
   title: Schema.String,
   preview_url: Schema.String,

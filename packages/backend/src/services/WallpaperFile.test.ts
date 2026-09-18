@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect, Either } from "effect"
+import { Effect, Result } from "effect"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
@@ -58,12 +58,12 @@ describe("resolveWallpaperFiles", () => {
       "scene.pkg": "x",
     })
 
-    const res = await Effect.runPromise(Effect.either(resolveWallpaperFiles(dir, "777")))
+    const res = await Effect.runPromise(Effect.result(resolveWallpaperFiles(dir, "777")))
 
-    expect(Either.isLeft(res)).toBe(true)
-    if (Either.isLeft(res) && res.left._tag === "NotVideoWallpaperError") {
-      expect(res.left.actualType).toBe("scene")
-      expect(res.left.workshopId).toBe("777")
+    expect(Result.isFailure(res)).toBe(true)
+    if (Result.isFailure(res) && res.failure._tag === "NotVideoWallpaperError") {
+      expect(res.failure.actualType).toBe("scene")
+      expect(res.failure.workshopId).toBe("777")
     }
   })
 
@@ -79,11 +79,11 @@ describe("resolveWallpaperFiles", () => {
   test("rejects when there is no type and no video file", async () => {
     const dir = await makeItemDir({ "readme.txt": "x" })
 
-    const res = await Effect.runPromise(Effect.either(resolveWallpaperFiles(dir, "9")))
+    const res = await Effect.runPromise(Effect.result(resolveWallpaperFiles(dir, "9")))
 
-    expect(Either.isLeft(res)).toBe(true)
-    if (Either.isLeft(res) && res.left._tag === "NotVideoWallpaperError") {
-      expect(res.left.actualType).toBe("unknown")
+    expect(Result.isFailure(res)).toBe(true)
+    if (Result.isFailure(res) && res.failure._tag === "NotVideoWallpaperError") {
+      expect(res.failure.actualType).toBe("unknown")
     }
   })
 })

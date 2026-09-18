@@ -26,9 +26,9 @@ const ClaimBody = t.Object({ worker: t.String({ minLength: 1 }) })
 const ProgressBody = t.Object({ progress: t.Number({ minimum: 0, maximum: 100 }) })
 const FailBody = t.Object({ error: t.String({ minLength: 1, maxLength: 4000 }) })
 
-const decodeProgress = Schema.decodeUnknown(ProgressReport)
-const decodeFail = Schema.decodeUnknown(FailReport)
-const decodeClaim = Schema.decodeUnknown(ClaimRequest)
+const decodeProgress = Schema.decodeUnknownEffect(ProgressReport)
+const decodeFail = Schema.decodeUnknownEffect(FailReport)
+const decodeClaim = Schema.decodeUnknownEffect(ClaimRequest)
 
 class WorkerFileError extends Error {
   readonly status: number
@@ -85,7 +85,7 @@ const sourceFile = (jobId: string) =>
     const dataRoot = yield* storage.mediaRoot()
     const lib = yield* library
       .get(row.workshop_id)
-      .pipe(Effect.catchAll(() => failFile(404, "Library item not found for job.")))
+      .pipe(Effect.catch(() => failFile(404, "Library item not found for job.")))
     const sourceAbs = resolve(dataRoot, lib.source_path)
     if (!isPathInsideRoot(sourceAbs, dataRoot)) {
       return yield* failFile(400, "Source path escapes the current media root.")

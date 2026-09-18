@@ -12,14 +12,14 @@ interface MockMpvMemento {
 }
 
 const makeMockMpv = Effect.sync((): MockMpvMemento => {
-  const statusRef = Ref.unsafeMake<PlayerStatus>({
+  const statusRef = Ref.makeUnsafe<PlayerStatus>({
     playing: false,
     current_workshop_id: null,
     path: null,
     display_mode: "fill",
   })
 
-  const sentCommands = Ref.unsafeMake<unknown[][]>([])
+  const sentCommands = Ref.makeUnsafe<unknown[][]>([])
 
   const send = (cmd: unknown[]) => Ref.update(sentCommands, (cmds) => [...cmds, cmd])
 

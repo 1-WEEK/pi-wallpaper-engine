@@ -37,10 +37,10 @@ export interface PlayerPowerImpl {
   readonly displayOn: () => Effect.Effect<PowerOnResult, DisplayError>
 }
 
-export class PlayerPower extends Context.Tag("PlayerPower")<
+export class PlayerPower extends Context.Service<
   PlayerPower,
   PlayerPowerImpl
->() {}
+>()("PlayerPower") {}
 
 export const shouldAutoRestoreOnStartup = (status: DisplayStatus): boolean =>
   status.state === "on" && status.source === "probed"
@@ -48,7 +48,7 @@ export const shouldAutoRestoreOnStartup = (status: DisplayStatus): boolean =>
 export const shouldPowerOnBeforePlay = (status: DisplayStatus): boolean =>
   status.state === "off"
 
-export const PlayerPowerLive = Layer.scoped(
+export const PlayerPowerLive = Layer.effect(
   PlayerPower,
   Effect.gen(function* () {
     const display = yield* Display
@@ -137,7 +137,7 @@ export const PlayerPowerLive = Layer.scoped(
               return null
             })
           ),
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             Effect.gen(function* () {
               yield* logWarn(`Could not restore ${saved.workshop_id} on ${source}: ${String(e)}`)
               return null
@@ -154,7 +154,7 @@ export const PlayerPowerLive = Layer.scoped(
           yield* clearRestoreBestEffort("successful restore")
           return true
         }).pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             Effect.gen(function* () {
               const message = e instanceof Error ? e.message : String(e)
               yield* logWarn(`Could not restore ${saved.workshop_id} on ${source}: ${message}`)
@@ -182,7 +182,7 @@ export const PlayerPowerLive = Layer.scoped(
       const timer = setTimeout(() => {
         Effect.runFork(
           stopAndPowerOff("auto_off").pipe(
-            Effect.catchAll((e) =>
+            Effect.catch((e) =>
               logWarn(`Auto display off failed: ${e instanceof Error ? e.message : String(e)}`)
             )
           )
@@ -202,7 +202,7 @@ export const PlayerPowerLive = Layer.scoped(
         yield* logger.info("Restored wallpaper after backend startup with display on")
       }
     }).pipe(
-      Effect.catchAll((e) =>
+      Effect.catch((e) =>
         logWarn(`Startup display restore skipped: ${e instanceof Error ? e.message : String(e)}`)
       )
     )

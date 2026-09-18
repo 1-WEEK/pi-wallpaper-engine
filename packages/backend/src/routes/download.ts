@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia"
-import { Effect, Stream } from "effect"
+import { Effect, Fiber, Stream } from "effect"
 import { DownloadIntake, type DownloadCancelResult, type DownloadStartResult } from "../services/DownloadIntake.js"
 import { Tasks } from "../services/Tasks.js"
 import { httpFromError } from "./httpError.js"
@@ -194,7 +194,7 @@ export const downloadRoutes = (runtime: AppRuntime, auth: AuthService | null = n
           | ReturnType<AppRuntime["runFork"]>
           | undefined
         if (fiber) {
-          runtime.runFork(fiber.interruptAsFork(fiber.id()))
+          runtime.runFork(Fiber.interrupt(fiber))
         }
       },
     })

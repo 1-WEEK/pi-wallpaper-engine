@@ -68,7 +68,7 @@ export const resolveWallpaperFiles = (
         return JSON.parse(raw) as ProjectJson
       },
       catch: () => null as ProjectJson | null,
-    }).pipe(Effect.catchAll(() => Effect.succeed(null as ProjectJson | null)))
+    }).pipe(Effect.catch(() => Effect.succeed(null as ProjectJson | null)))
 
     // WE wallpaper types in project.json: "video", "scene", "web", "application".
     // Only "video" is renderable on the Pi (we just hand it to mpv). Reject

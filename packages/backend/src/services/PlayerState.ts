@@ -19,10 +19,10 @@ export interface PlayerStateImpl {
   readonly clearRestore: () => Effect.Effect<void, DbError>
 }
 
-export class PlayerState extends Context.Tag("PlayerState")<
+export class PlayerState extends Context.Service<
   PlayerState,
   PlayerStateImpl
->() {}
+>()("PlayerState") {}
 
 interface RestoreRow {
   readonly restore_workshop_id: string

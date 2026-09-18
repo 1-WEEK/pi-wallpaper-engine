@@ -39,9 +39,9 @@ export interface PlaybackImpl {
   readonly sleepStatus: () => Effect.Effect<SleepStatus>
 }
 
-export class Playback extends Context.Tag("Playback")<Playback, PlaybackImpl>() {}
+export class Playback extends Context.Service<Playback, PlaybackImpl>()("Playback") {}
 
-export const PlaybackLive = Layer.scoped(
+export const PlaybackLive = Layer.effect(
   Playback,
   Effect.gen(function* () {
     const logger = yield* Logger
@@ -72,9 +72,9 @@ export const PlaybackLive = Layer.scoped(
       yield* rotation.disarm()
       yield* playerPower
         .displayOff()
-        .pipe(Effect.catchAll(() => playerPower.stopForIdle().pipe(Effect.asVoid)))
+        .pipe(Effect.catch(() => playerPower.stopForIdle().pipe(Effect.asVoid)))
     }).pipe(
-      Effect.catchAll((e) =>
+      Effect.catch((e) =>
         logger.warn(`Sleep timer action failed: ${String(e)}`).pipe(Effect.ignore)
       )
     )
@@ -86,7 +86,7 @@ export const PlaybackLive = Layer.scoped(
         Effect.gen(function* () {
           const result = yield* playerPower.play(workshopId)
           // Best-effort: a play succeeds even if arming rotation hiccups.
-          yield* rotation.arm(workshopId).pipe(Effect.catchAll(() => Effect.void))
+          yield* rotation.arm(workshopId).pipe(Effect.catch(() => Effect.void))
           return result
         }),
 
@@ -108,7 +108,7 @@ export const PlaybackLive = Layer.scoped(
           // Re-arm rotation on the restored wallpaper (ADR 0009 follow-up,
           // signed off 2026-07-06). Best-effort, like arming after play.
           if (result.restored && restored_workshop_id) {
-            yield* rotation.arm(restored_workshop_id).pipe(Effect.catchAll(() => Effect.void))
+            yield* rotation.arm(restored_workshop_id).pipe(Effect.catch(() => Effect.void))
           }
           return result
         }),

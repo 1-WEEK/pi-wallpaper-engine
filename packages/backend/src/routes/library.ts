@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia"
-import { Effect, Stream } from "effect"
+import { Effect, Fiber, Stream } from "effect"
 import { resolve, sep } from "node:path"
 import type { DisplayMode, LibraryItem } from "@pwe/shared"
 import { Config } from "../services/Config.js"
@@ -46,7 +46,7 @@ export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = nu
     runtime
       .runPromise(
         effect.pipe(
-          Effect.catchAll((err) =>
+          Effect.catch((err) =>
             Effect.sync(() => {
               const { status, body } = httpFromError(err)
               set.status = status
@@ -108,7 +108,7 @@ export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = nu
             const row = yield* lib.get(params.workshopId)
             const root = yield* storage.mediaRoot()
             return { row, root, optimizedDir: config.paths.optimized_dir }
-          }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+          }).pipe(Effect.catch(() => Effect.succeed(null)))
         )
         .catch(() => null)
 
@@ -310,7 +310,7 @@ export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = nu
           | ReturnType<AppRuntime["runFork"]>
           | undefined
         if (fiber) {
-          runtime.runFork(fiber.interruptAsFork(fiber.id()))
+          runtime.runFork(Fiber.interrupt(fiber))
         }
       },
     })

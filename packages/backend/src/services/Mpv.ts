@@ -30,7 +30,7 @@ export interface MpvImpl {
   readonly status: () => Effect.Effect<PlayerStatus>
 }
 
-export class Mpv extends Context.Tag("Mpv")<Mpv, MpvImpl>() {}
+export class Mpv extends Context.Service<Mpv, MpvImpl>()("Mpv") {}
 
 // The compositor owns the fullscreen state and may strip it at runtime
 // (observed on labwc: after a display power cycle mpv can end up windowed
@@ -77,7 +77,7 @@ const connectSocket = async (
   throw lastErr
 }
 
-export const MpvLive = Layer.scoped(
+export const MpvLive = Layer.effect(
   Mpv,
   Effect.gen(function* () {
     const config = yield* Config
@@ -255,16 +255,18 @@ export const MpvLive = Layer.scoped(
         const deferred = yield* Deferred.make<unknown, MpvIpcError>()
         yield* Queue.offer(cmdQueue, { id, cmd, deferred })
         return yield* Deferred.await(deferred).pipe(
-          Effect.timeoutFail({
+          Effect.timeoutOrElse({
             duration: "5 seconds",
-            onTimeout: () =>
-              new MpvIpcError({ reason: `mpv command timed out: ${JSON.stringify(cmd)}` }),
+            orElse: () =>
+              Effect.fail(
+                new MpvIpcError({ reason: `mpv command timed out: ${JSON.stringify(cmd)}` })
+              ),
           })
         )
       })
 
     yield* send(["observe_property", FULLSCREEN_OBSERVE_ID, "fullscreen"]).pipe(
-      Effect.catchAll((e) => logger.warn(`Could not observe mpv fullscreen: ${e.reason}`))
+      Effect.catch((e) => logger.warn(`Could not observe mpv fullscreen: ${e.reason}`))
     )
 
     return {

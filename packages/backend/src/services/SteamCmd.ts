@@ -66,7 +66,7 @@ export interface SteamCmdImpl {
   readonly progressStream: (workshopId: string) => Stream.Stream<DownloadProgress>
 }
 
-export class SteamCmd extends Context.Tag("SteamCmd")<SteamCmd, SteamCmdImpl>() {}
+export class SteamCmd extends Context.Service<SteamCmd, SteamCmdImpl>()("SteamCmd") {}
 
 const EMPTY_SNAPSHOT: DownloadSnapshot = {
   fileCount: 0,
@@ -252,7 +252,7 @@ export const SteamCmdLive = Layer.effect(
 
               const emit = (p: DownloadProgress) => {
                 onProgress?.(p)
-                Effect.runFork(pubsub.publish(p))
+                Effect.runFork(PubSub.publish(pubsub, p))
               }
 
               emit({

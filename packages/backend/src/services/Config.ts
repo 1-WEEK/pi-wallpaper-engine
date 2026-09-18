@@ -11,7 +11,7 @@ export type RuntimeConfig = Omit<AppConfig, "storage"> & {
   storage: RuntimeStorageConfig
 }
 
-export class Config extends Context.Tag("Config")<Config, RuntimeConfig>() {}
+export class Config extends Context.Service<Config, RuntimeConfig>()("Config") {}
 
 const withStorageDefaults = (decoded: AppConfig): RuntimeConfig => {
   return {
@@ -22,7 +22,7 @@ const withStorageDefaults = (decoded: AppConfig): RuntimeConfig => {
   }
 }
 
-const decodeConfig = Schema.decodeUnknown(ConfigSchema)
+const decodeConfig = Schema.decodeUnknownEffect(ConfigSchema)
 
 export const loadConfig = (configPath: string): Effect.Effect<RuntimeConfig, ConfigError> =>
   Effect.gen(function* () {
@@ -49,7 +49,7 @@ export const loadConfig = (configPath: string): Effect.Effect<RuntimeConfig, Con
         (e) =>
           new ConfigError({
             path: configPath,
-            reason: `Schema validation failed: ${e.message}`,
+            reason: `Schema validation failed: ${String(e)}`,
           })
       )
     )

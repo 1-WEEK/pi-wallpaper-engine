@@ -25,10 +25,10 @@ export interface TasksImpl {
   readonly dismissAll: (stage: Extract<TaskStage, "complete" | "error">) => Effect.Effect<void>
 }
 
-export class Tasks extends Context.Tag("Tasks")<
+export class Tasks extends Context.Service<
   Tasks,
   TasksImpl
->() {}
+>()("Tasks") {}
 
 // Derived from the schema so a new ActivityTask field fails loudly at the
 // SQL layer (unknown column) instead of being silently dropped on write.
@@ -84,7 +84,7 @@ export const TasksLive = Layer.effect(
 
           return { items, total: totalRow?.count ?? 0 }
         }).pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             Effect.gen(function* () {
               yield* logger.error(`Failed to list tasks: ${e.message}`)
               return { items: [], total: 0 }
@@ -98,7 +98,7 @@ export const TasksLive = Layer.effect(
             taskId,
           ])
           .pipe(
-            Effect.catchAll((e) =>
+            Effect.catch((e) =>
               Effect.gen(function* () {
                 yield* logger.error(`Failed to get task ${taskId}: ${e.message}`)
                 return null
@@ -112,7 +112,7 @@ export const TasksLive = Layer.effect(
             workshopId,
           ])
           .pipe(
-            Effect.catchAll((e) =>
+            Effect.catch((e) =>
               Effect.gen(function* () {
                 yield* logger.error(`Failed to get active task for ${workshopId}: ${e.message}`)
                 return null
@@ -168,14 +168,14 @@ export const TasksLive = Layer.effect(
             values
           )
         }).pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             logger.error(`Failed to upsert task ${taskId}: ${e.message}`)
           )
         ),
 
       dismiss: (taskId) =>
         db.exec(`DELETE FROM tasks WHERE task_id = ?`, [taskId]).pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             logger.error(`Failed to dismiss task ${taskId}: ${e.message}`)
           )
         ),
@@ -188,7 +188,7 @@ export const TasksLive = Layer.effect(
           const placeholders = stages.map(() => "?").join(",")
           yield* db.exec(`DELETE FROM tasks WHERE stage IN (${placeholders})`, [...stages])
         }).pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             logger.error(`Failed to dismiss all ${stage} tasks: ${e.message}`)
           )
         ),

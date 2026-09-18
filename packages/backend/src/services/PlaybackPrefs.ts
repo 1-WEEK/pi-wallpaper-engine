@@ -21,17 +21,17 @@ export interface PlaybackPrefsImpl {
   readonly setInterval: (sec: number) => Effect.Effect<void, DbError>
 }
 
-export class PlaybackPrefs extends Context.Tag("PlaybackPrefs")<
+export class PlaybackPrefs extends Context.Service<
   PlaybackPrefs,
   PlaybackPrefsImpl
->() {}
+>()("PlaybackPrefs") {}
 
 interface PrefsRow {
   readonly play_mode: PlayMode
   readonly rotation_interval_sec: number
 }
 
-export const PlaybackPrefsLive = Layer.scoped(
+export const PlaybackPrefsLive = Layer.effect(
   PlaybackPrefs,
   Effect.gen(function* () {
     const db = yield* Db
@@ -52,7 +52,7 @@ export const PlaybackPrefsLive = Layer.scoped(
 
     // Cache prefs in memory so PlayerWatch's 1Hz tick reads a Ref, not the DB.
     // All writes go through here, so the cache stays the source of truth.
-    const initial = yield* readDb().pipe(Effect.catchAll(() => Effect.succeed(DEFAULT_PREFS)))
+    const initial = yield* readDb().pipe(Effect.catch(() => Effect.succeed(DEFAULT_PREFS)))
     const cache = yield* Ref.make(initial)
 
     const upsert = (mode: PlayMode, sec: number) =>

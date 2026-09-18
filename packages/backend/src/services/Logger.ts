@@ -7,7 +7,7 @@ export interface LoggerImpl {
   readonly debug: (msg: string, meta?: Record<string, unknown>) => Effect.Effect<void>
 }
 
-export class Logger extends Context.Tag("Logger")<Logger, LoggerImpl>() {}
+export class Logger extends Context.Service<Logger, LoggerImpl>()("Logger") {}
 
 const format = (level: string, msg: string, meta?: Record<string, unknown>): string => {
   const ts = new Date().toISOString()

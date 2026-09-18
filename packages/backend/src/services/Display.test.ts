@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Either, Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime, Result } from "effect"
 import { Config, type RuntimeConfig } from "./Config.js"
 import { Logger } from "./Logger.js"
 import { Display, DisplayLive } from "./Display.js"
@@ -22,11 +22,11 @@ describe("DisplayLive", () => {
   test("fails with NotConfigured when the command is absent", async () => {
     const rt = makeRuntime(undefined)
     try {
-      const res = await rt.runPromise(Effect.either(Effect.flatMap(Display, (d) => d.on())))
-      expect(Either.isLeft(res)).toBe(true)
-      if (Either.isLeft(res)) {
-        expect(res.left._tag).toBe("DisplayError")
-        expect(res.left.kind).toBe("NotConfigured")
+      const res = await rt.runPromise(Effect.result(Effect.flatMap(Display, (d) => d.on())))
+      expect(Result.isFailure(res)).toBe(true)
+      if (Result.isFailure(res)) {
+        expect(res.failure._tag).toBe("DisplayError")
+        expect(res.failure.kind).toBe("NotConfigured")
       }
     } finally {
       await rt.dispose()
@@ -47,11 +47,11 @@ describe("DisplayLive", () => {
   test("surfaces a non-zero exit as NonZeroExit with the exit code", async () => {
     const rt = makeRuntime({ off_command: ["sh", "-c", "exit 3"] })
     try {
-      const res = await rt.runPromise(Effect.either(Effect.flatMap(Display, (d) => d.off())))
-      expect(Either.isLeft(res)).toBe(true)
-      if (Either.isLeft(res)) {
-        expect(res.left.kind).toBe("NonZeroExit")
-        expect(res.left.exitCode).toBe(3)
+      const res = await rt.runPromise(Effect.result(Effect.flatMap(Display, (d) => d.off())))
+      expect(Result.isFailure(res)).toBe(true)
+      if (Result.isFailure(res)) {
+        expect(res.failure.kind).toBe("NonZeroExit")
+        expect(res.failure.exitCode).toBe(3)
       }
     } finally {
       await rt.dispose()

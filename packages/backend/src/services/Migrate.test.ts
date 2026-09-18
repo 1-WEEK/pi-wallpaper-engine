@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime, Result } from "effect"
 import { Database } from "bun:sqlite"
 import { DbError, MigrateError } from "@pwe/shared"
 import { Config, type RuntimeConfig } from "./Config.js"
@@ -143,17 +143,17 @@ describe("MigrateLive", () => {
     const { result, status } = await runtime.runPromise(
       Effect.gen(function* () {
         const migrate = yield* Migrate
-        const result = yield* Effect.either(migrate.start("/to"))
+        const result = yield* Effect.result(migrate.start("/to"))
         const status = yield* migrate.status()
         return { result, status }
       })
     )
     await runtime.dispose()
 
-    expect(result._tag).toBe("Left")
-    if (result._tag === "Left") {
-      expect(result.left).toBeInstanceOf(MigrateError)
-      expect(result.left.kind).toBe("Busy")
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toBeInstanceOf(MigrateError)
+      expect(result.failure.kind).toBe("Busy")
     }
     expect(status).toBeNull()
   })

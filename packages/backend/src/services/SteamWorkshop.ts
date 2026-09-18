@@ -34,13 +34,13 @@ export interface SteamWorkshopImpl {
   readonly getItem: (workshopId: string) => Effect.Effect<WorkshopItem, WorkshopApiError>
 }
 
-export class SteamWorkshop extends Context.Tag("SteamWorkshop")<
+export class SteamWorkshop extends Context.Service<
   SteamWorkshop,
   SteamWorkshopImpl
->() {}
+>()("SteamWorkshop") {}
 
-const decodeQuery = Schema.decodeUnknown(QueryFilesResponse)
-const decodeDetails = Schema.decodeUnknown(GetPublishedFileDetailsResponse)
+const decodeQuery = Schema.decodeUnknownEffect(QueryFilesResponse)
+const decodeDetails = Schema.decodeUnknownEffect(GetPublishedFileDetailsResponse)
 
 const fetchJson = (url: string): Effect.Effect<unknown, WorkshopApiError> =>
   Effect.tryPromise({
@@ -152,7 +152,7 @@ export const SteamWorkshopLive = Layer.effect(
           )
           const decoded = yield* decodeQuery(raw).pipe(
             Effect.mapError(
-              (e) => new WorkshopApiError({ status: 0, message: `Schema: ${e.message}` })
+              (e) => new WorkshopApiError({ status: 0, message: `Schema: ${String(e)}` })
             )
           )
           const nextCursor = decoded.response.next_cursor
@@ -198,7 +198,7 @@ export const SteamWorkshopLive = Layer.effect(
           })
           const decoded = yield* decodeDetails(raw).pipe(
             Effect.mapError(
-              (e) => new WorkshopApiError({ status: 0, message: `Schema: ${e.message}` })
+              (e) => new WorkshopApiError({ status: 0, message: `Schema: ${String(e)}` })
             )
           )
           const item = decoded.response.publishedfiledetails[0]

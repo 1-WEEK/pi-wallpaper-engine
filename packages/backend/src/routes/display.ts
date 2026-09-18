@@ -17,7 +17,7 @@ export const displayRoutes = (runtime: AppRuntime) => {
     runtime
       .runPromise(
         effect.pipe(
-          Effect.catchAll((err) =>
+          Effect.catch((err) =>
             Effect.sync(() => {
               const { status, body } = httpFromError(err)
               set.status = status

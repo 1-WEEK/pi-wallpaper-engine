@@ -20,10 +20,10 @@ export type PlayerStatus = typeof PlayerStatus.Type
 
 // ── Display Status ─────────────────────────────────
 
-export const DisplayState = Schema.Literal("on", "off", "unknown")
+export const DisplayState = Schema.Literals(["on", "off", "unknown"])
 export type DisplayState = typeof DisplayState.Type
 
-export const DisplayStateSource = Schema.Literal("probed", "cached", "default")
+export const DisplayStateSource = Schema.Literals(["probed", "cached", "default"])
 export type DisplayStateSource = typeof DisplayStateSource.Type
 
 export const DisplayStatus = Schema.Struct({

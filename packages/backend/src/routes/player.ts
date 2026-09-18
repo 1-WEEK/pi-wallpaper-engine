@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia"
-import { Effect, Stream } from "effect"
+import { Effect, Fiber, Stream } from "effect"
 import { Mpv } from "../services/Mpv.js"
 import { Playback } from "../services/Playback.js"
 import { PlayerWatch } from "../services/PlayerWatch.js"
@@ -19,7 +19,7 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
     runtime
       .runPromise(
         effect.pipe(
-          Effect.catchAll((err) =>
+          Effect.catch((err) =>
             Effect.sync(() => {
               const { status, body } = httpFromError(err)
               set.status = status
@@ -227,7 +227,7 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
           | ReturnType<AppRuntime["runFork"]>
           | undefined
         if (fiber) {
-          runtime.runFork(fiber.interruptAsFork(fiber.id()))
+          runtime.runFork(Fiber.interrupt(fiber))
         }
       },
     })

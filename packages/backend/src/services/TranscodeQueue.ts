@@ -78,10 +78,10 @@ export interface TranscodeQueueImpl {
   readonly watch: () => Stream.Stream<TranscodeProgressEvent>
 }
 
-export class TranscodeQueue extends Context.Tag("TranscodeQueue")<
+export class TranscodeQueue extends Context.Service<
   TranscodeQueue,
   TranscodeQueueImpl
->() {}
+>()("TranscodeQueue") {}
 
 // Worker-facing job statuses map onto the unified task stages: terminal
 // states reuse the download vocabulary ("complete"/"failed") so history and
@@ -170,7 +170,7 @@ export const TranscodeQueueLive = Layer.effect(
     }
 
     const pubsub = yield* PubSub.unbounded<TranscodeProgressEvent>()
-    const publish = (event: TranscodeProgressEvent) => Effect.runFork(pubsub.publish(event))
+    const publish = (event: TranscodeProgressEvent) => Effect.runFork(PubSub.publish(pubsub, event))
 
     const updateAndPublish = (
       jobId: string,
@@ -185,7 +185,7 @@ export const TranscodeQueueLive = Layer.effect(
           ...patch,
         })
 
-        const lib = yield* library.get(workshopId).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        const lib = yield* library.get(workshopId).pipe(Effect.catch(() => Effect.succeed(null)))
         // Upsert even when the library row is gone (deleted mid-flight), so
         // the terminal record still lands in history; title fields come from
         // the library row when it exists.

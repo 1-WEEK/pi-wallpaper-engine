@@ -21,7 +21,7 @@ export interface StorageImpl {
   readonly saveRoot: (root: string | null) => Effect.Effect<StorageState, StorageError>
 }
 
-export class Storage extends Context.Tag("Storage")<Storage, StorageImpl>() {}
+export class Storage extends Context.Service<Storage, StorageImpl>()("Storage") {}
 
 export const normalizeCustomRootPath = (
   field: string,
@@ -61,7 +61,7 @@ const serializeConfig = (raw: Record<string, unknown>, storage: RuntimeStorageCo
   `${JSON.stringify({ ...raw, storage }, null, 2)}\n`
 
 export const StorageLive = (configPath: string) =>
-  Layer.scoped(
+  Layer.effect(
     Storage,
     Effect.gen(function* () {
       const config = yield* Config
@@ -85,7 +85,7 @@ export const StorageLive = (configPath: string) =>
             }),
         }).pipe(
           Effect.timeout("5 seconds"),
-          Effect.catchTag("TimeoutException", () =>
+          Effect.catchTag("TimeoutError", () =>
             Effect.fail(
               new StorageError({
                 kind: "Disconnected",

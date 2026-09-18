@@ -19,10 +19,10 @@ export interface TranscodeMonitorImpl {
   readonly sweep: () => Effect.Effect<number>
 }
 
-export class TranscodeMonitor extends Context.Tag("TranscodeMonitor")<
+export class TranscodeMonitor extends Context.Service<
   TranscodeMonitor,
   TranscodeMonitorImpl
->() {}
+>()("TranscodeMonitor") {}
 
 interface StaleRow {
   readonly id: string
@@ -32,11 +32,11 @@ interface StaleRow {
 }
 
 const buildSweep = (
-  config: Context.Tag.Service<Config>,
-  db: Context.Tag.Service<Db>,
-  library: Context.Tag.Service<Library>,
-  logger: Context.Tag.Service<Logger>,
-  storage: Context.Tag.Service<Storage>,
+  config: Context.Service.Shape<typeof Config>,
+  db: Context.Service.Shape<typeof Db>,
+  library: Context.Service.Shape<typeof Library>,
+  logger: Context.Service.Shape<typeof Logger>,
+  storage: Context.Service.Shape<typeof Storage>,
   heartbeatTimeoutMs: number
 ) =>
   Effect.gen(function* () {
@@ -51,7 +51,7 @@ const buildSweep = (
         [...ACTIVE_TRANSCODE_JOB_STATUSES, cutoff]
       )
       .pipe(
-        Effect.catchAll((e) =>
+        Effect.catch((e) =>
           logger.error(`TranscodeMonitor.sweep query failed: ${e.operation}`).pipe(
             Effect.as<StaleRow[]>([])
           )
@@ -69,7 +69,7 @@ const buildSweep = (
         )
         .pipe(
           Effect.as(true),
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             logger
               .warn(`TranscodeMonitor.sweep reset failed for ${row.id}: ${e.operation}`)
               .pipe(Effect.as(false))
@@ -84,7 +84,7 @@ const buildSweep = (
           transcode_error: null,
         })
         .pipe(
-          Effect.catchAll((e) =>
+          Effect.catch((e) =>
             logger.warn(
               `TranscodeMonitor.sweep library.update(${row.workshop_id}) failed: ${e.operation}`
             )
@@ -131,7 +131,7 @@ export const TranscodeMonitorBareLayer = Layer.effect(
   })
 )
 
-export const TranscodeMonitorLive = Layer.scopedDiscard(
+export const TranscodeMonitorLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const config = yield* Config
     const db = yield* Db
@@ -155,7 +155,7 @@ export const TranscodeMonitorLive = Layer.scopedDiscard(
       yield* sweep().pipe(
         Effect.delay("30 seconds"),
         Effect.repeat(tickSchedule),
-        Effect.catchAllCause((cause) =>
+        Effect.catchCause((cause) =>
           logger.error(`TranscodeMonitor loop crashed: ${String(cause)}`)
         )
       )

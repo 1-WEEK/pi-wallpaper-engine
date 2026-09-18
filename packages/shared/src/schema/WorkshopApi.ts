@@ -6,7 +6,7 @@ export const WorkshopItem = Schema.Struct({
   description: Schema.optional(Schema.String),
   preview_url: Schema.optional(Schema.String),
   file_url: Schema.optional(Schema.String),
-  file_size: Schema.optional(Schema.Union(Schema.Number, Schema.String)),
+  file_size: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
   creator: Schema.optional(Schema.String),
   creator_appid: Schema.optional(Schema.Number),
   time_created: Schema.optional(Schema.Number),
