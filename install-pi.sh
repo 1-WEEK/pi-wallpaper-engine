@@ -106,22 +106,12 @@ else
   ok "SteamCMD tarball already at $STEAMCMD_DIR"
 fi
 
-if [ ! -x "$STEAMCMD_WRAPPER" ]; then
-  sudo tee "$STEAMCMD_WRAPPER" >/dev/null <<EOF
-#!/bin/bash
-# Pi Wallpaper Engine wrapper: run Valve's x86 SteamCMD via box86.
-cd "\$HOME/.local/share/steamcmd" || exit 1
-exec box86 ./steamcmd.sh "\$@"
-EOF
-  sudo chmod +x "$STEAMCMD_WRAPPER"
-  ok "Wrote wrapper $STEAMCMD_WRAPPER"
-else
-  ok "SteamCMD wrapper already at $STEAMCMD_WRAPPER"
-fi
+sudo install -m 755 "$PROJECT_ROOT/scripts/steamcmd-wrapper.sh" "$STEAMCMD_WRAPPER"
+ok "Installed SteamCMD wrapper at $STEAMCMD_WRAPPER"
 
 # First-run self-update — fetches linux32/ subdirectory needed for actual ops.
 # Run quietly; if it fails the user will see it in the SteamCMD step below.
-if [ ! -d "$STEAMCMD_DIR/linux32" ]; then
+if [ ! -x "$STEAMCMD_DIR/linux32/steamcmd" ]; then
   warn "SteamCMD has not self-updated yet — running once to download linux32/..."
   "$STEAMCMD_WRAPPER" +quit || warn "First SteamCMD run reported errors — may be normal on first launch"
 fi
