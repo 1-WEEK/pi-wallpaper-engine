@@ -8,7 +8,7 @@ A Wallpaper Engine video player for the Raspberry Pi 4B. Use the web interface f
 
 - **Direct Playback**: Downloads and plays original Workshop video files directly on the Pi.
 - **Remote Control**: Mobile-friendly web UI for managing your library, rotating playlists (sequential, shuffle, or single loop), and setting sleep timers.
-- **Display Power Management**: Automatically turns the monitor on when playback starts and off when idle.
+- **Display Power Management**: With display commands configured, turns the monitor on when playback starts and off when idle.
 - **Storage Management**: Store wallpapers anywhere on the Pi. The UI includes a directory browser to safely move your media library across drives.
 - **Optional NAS Transcoding**: Avoid overloading the Pi's CPU. Deploy a companion Docker worker to an Intel NAS to handle heavy HEVC conversions.
 - **Secure Access**: Enable Passkey authentication if you expose the web UI to the internet via Cloudflare Tunnel or a reverse proxy.
@@ -41,10 +41,17 @@ bash install-pi.sh --service
 
 ## Configure
 
-`config.json` stores your local settings. The SQLite state database remains isolated at:
-`~/.local/state/pi-wallpaper-engine/`
+Local settings live in `~/.config/pi-wallpaper-engine/config.json`. Set `PWE_CONFIG`
+to use a different file; [config.example.json](config.example.json) is the template.
+SQLite state stays local, by default under `~/.local/state/pi-wallpaper-engine/`.
 
-Local media files live in the directory specified by your configuration. You can change this directory at any time from the Storage settings page in the UI, and the system will safely migrate your files in the background.
+Media lives under `storage.root`, or `paths.data_root` when no custom root is set.
+Change it from Storage settings after stopping playback and waiting for active
+downloads and transcodes to finish. Existing media is copied and verified before
+the active root switches and the old copies are removed.
+
+For public access, follow [Authentication](docs/auth.md). Optional NAS transcoding
+is covered in the [Worker deployment guide](docs/worker-deployment.md).
 
 ## Start
 
@@ -84,9 +91,13 @@ Other common commands:
 bun install
 bun test
 bun run typecheck
-bun run --filter @pwe/frontend build
+bun run build
 ```
 
-For architecture details, workspace structure, and design decisions, read `CONTEXT.md` and the `docs/adr/` directory. Active development tasks are tracked in `plans/iteration-backlog.md`.
+See the [Development Guide](docs/agents/development.md) for workspace layout,
+browser tests, and service deployment. Agents start at [AGENTS.md](AGENTS.md).
+The [Domain Guide](docs/agents/domain.md) indexes the glossary and architecture
+decisions. Local specs and issues follow the [Issue Tracker](docs/agents/issue-tracker.md);
+repository-level progress is in [iteration-backlog.md](plans/iteration-backlog.md).
 
 Uninstall instructions are available in [docs/uninstall.md](docs/uninstall.md).

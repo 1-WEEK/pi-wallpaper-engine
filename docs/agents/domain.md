@@ -1,40 +1,28 @@
-# Domain Docs
+# Domain Documentation
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+This repository has one domain context. Read [CONTEXT.md](../../CONTEXT.md) when
+naming concepts or changing ownership boundaries, then the ADRs for the area involved.
 
-## Before exploring, read these
+| Area | Decision history |
+| --- | --- |
+| Administrator access | [0001: Passkey auth](../adr/0001-auth-passkey.md) |
+| Download intake and cancellation | [0002: Persistent progress](../adr/0002-downloads-progress-sqlite.md), [0007: Process registry](../adr/0007-download-process-registry.md) |
+| Playback and display | [0003: Power linkage](../adr/0003-display-power-linkage.md), [0004: Rotation](../adr/0004-playback-rotation.md), [0009: Orchestration](../adr/0009-playback-orchestration.md) |
+| Storage selection | [0008: Root selection](../adr/0008-storage-root-selection.md) |
+| Software validation | [0005: Acceptance-free testing](../adr/0005-acceptance-free-testing.md), [0006: Browser route mocking](../adr/0006-e2e-route-mocking.md) |
 
-- **`CONTEXT.md`** at the repo root.
-- **`docs/adr/`** — read ADRs that touch the area you're about to work in.
+## Where Information Belongs
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
+- `CONTEXT.md` defines domain terms. Keep definitions short and free of module
+  paths, API fields, dependency versions, and implementation recipes.
+- [Backend Guide](backend.md) describes current ownership and behavioral constraints.
+  [Development Guide](development.md) describes commands, validation, and operation.
+- `docs/adr/` records decisions and their tradeoffs. Historical code paths,
+  counts, and implementation plans describe the state when an ADR was written;
+  use current source and guides for today's behavior and commands.
+- [Local specs and issues](issue-tracker.md) hold work in progress.
 
-## File structure
-
-Single-context repo:
-
-```
-/
-├── CONTEXT.md
-├── docs/adr/
-│   ├── 0001-*.md
-│   └── 0002-*.md
-└── packages/
-    ├── backend/
-    ├── frontend/
-    ├── shared/
-    ├── migrate/
-    └── worker/
-```
-
-## Use the glossary's vocabulary
-
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
-
-If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
-
-## Flag ADR conflicts
-
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
-
-> _Contradicts ADR-0007 (event-sourced orders) — but worth reopening because…_
+Use glossary terms in issue titles, tests, and design discussions. Add or refine a
+term when its meaning becomes clear. When a proposed change contradicts an ADR,
+state the conflict and reason; update the decision record when the change is adopted.
+Create new ADRs for durable choices with meaningful alternatives, not routine edits.

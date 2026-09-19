@@ -1,30 +1,40 @@
-# Issue tracker: Local Markdown
+# Local Issue Tracker
 
-Issues and specs (you may know a spec as a PRD) for this repo live as markdown files in `.scratch/`.
+Specs and implementation issues live under `.scratch/<feature-slug>/`:
 
-## Conventions
+| Artifact | Path |
+| --- | --- |
+| Spec or PRD | `spec.md` |
+| Individual issue | `issues/<NN>-<slug>.md`, numbered from `01` |
+| Exploration map, when used | `map.md` |
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The spec is `.scratch/<feature-slug>/spec.md`
-- Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` — never a single combined tickets file
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+`.scratch/` is gitignored local working context. Keep durable decisions in
+[domain docs](domain.md) and repository-level progress in
+[iteration-backlog.md](../../plans/iteration-backlog.md).
 
-## When a skill says "publish to the issue tracker"
+## Tracker Operations
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+- **Publish a spec or issue:** create the corresponding file above, one issue per
+  file. Record `Status:` near the top using the existing effort's convention and
+  [triage labels](triage-labels.md) for readiness decisions.
+- **Fetch a ticket:** read its referenced path. Ticket numbers are local to an
+  effort; when only a number is supplied, use the current effort to resolve it.
+- **Comment:** append under `## Comments` in the issue file.
+- **Finish:** record the result and validation evidence and update its status.
+  Existing implementation issues use `done` or `closed`; preserve the effort's
+  terminal vocabulary.
 
-## When a skill says "fetch the relevant ticket"
+## Exploration Maps
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+Use this workflow for efforts that already have a map or explicitly request one.
+The map holds Notes, Decisions-so-far, and Fog; child tickets hold one question each.
 
-## Wayfinding operations
-
-Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
-
-- **Map**: `.scratch/<effort>/map.md` — the Notes / Decisions-so-far / Fog body.
-- **Child ticket**: `.scratch/<effort>/issues/NN-<slug>.md`, numbered from `01`, with the question in the body. A `Type:` line records the ticket type (`research`/`prototype`/`grilling`/`task`); a `Status:` line records `claimed`/`resolved`.
-- **Blocking**: a `Blocked by: NN, NN` line near the top. A ticket is unblocked when every file it lists is `resolved`.
-- **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed; first by number wins.
-- **Claim**: set `Status: claimed` and save before any work.
-- **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer (gist + link) to the map's Decisions-so-far in `map.md`.
+- Tickets use `Type: research|prototype|grilling|task` and execution states
+  `open`, `claimed`, `resolved`, or `backlog`. These are separate from triage roles.
+- `Blocked by: NN, NN` lists dependencies. A ticket becomes unblocked when all
+  listed tickets are `resolved`.
+- The frontier is the lowest-numbered open, unblocked, unclaimed ticket.
+  A `backlog` ticket is deferred and stays outside the frontier.
+- Before work, save `Status: claimed`. On completion, append `## Answer`, set
+  `Status: resolved`, and add a gist plus a relative ticket link to the map's
+  Decisions-so-far section.

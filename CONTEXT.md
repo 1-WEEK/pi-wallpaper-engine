@@ -1,43 +1,75 @@
 # Pi Wallpaper Engine Context
 
-## Product Goal
-A Wallpaper Engine **Video** wallpaper player on a Raspberry Pi 4B. The web UI browses Steam Workshop, downloads video wallpapers, stores them in a declarative directory (`storage.root`), and controls mpv fullscreen loop playback.
+A video wallpaper player for a single Raspberry Pi administrator. The administrator
+browses Steam Workshop, downloads video wallpapers, chooses where media lives, and
+controls playback and display power.
 
-## Glossary
-- **Download intake**: The lifecycle of accepting one Steam Workshop item for download and carrying it until it either becomes a library wallpaper or fails with visible cleanup.
-- **Download cancellation**: The user's request to stop a download intake, including any still-running work tied to that intake, and leave a visible terminal cleanup state.
-- **Download process registry**: The local record used to reconnect a download intake to the SteamCMD process doing the work.
-- **Download progress stream**: The live per-item observations that tell the UI where a download intake is in its lifecycle.
-- **Download reconciler**: The startup and stale-task maintenance that turns interrupted download intake state into a terminal visible result and removes unsafe leftovers.
-- **Media root**: The currently-active storage directory media reads and writes target (`currentRoot` / `mediaRoot()` internally; `data_root` in API responses). It is the custom root if set, else the default root.
-- **Default root**: The factory-default storage location (`default_root` in API responses; config `paths.data_root`).
-- **Custom root**: The user's persisted override of the media root (config `storage.root`; `null` means "use the default root").
-- **Allowed roots**: The whitelist fence a root must sit inside to be browsed or selected (`allowedRoots` / `candidateRoots`). A guardrail for the single admin, enforced via `realpath` escape detection — not exposed in the API.
-- **Target root**: A root being switched to, pending validation and possible migration (`target_root` request field).
-- **Switch plan**: The internal decision for a target root after validation: keep the current root, persist the target immediately, or start a background media migration. The route executes this plan; the root-selection module owns the decision.
-- **Administrator access**: The authority to control the Pi Wallpaper Engine through its web interface. It belongs to the single device administrator and is distinct from any external-service identity.
-- **Steam connection**: The external Steam identity and credential state used to discover and download Workshop items. It does not grant administrator access to the Pi Wallpaper Engine.
-- **Playback orchestration**: The coordination that keeps playback intents consistent — starting/stopping a wallpaper, stepping and rotating, sleeping, and display power — so rotation linkage and power linkage always move together. One module (`Playback`) owns it; HTTP routes only express intents and never coordinate rotation or timers themselves.
-- **Transcode mode**: Whether the system has a remote transcode worker attached (`live`) or not (`noop`). Determined at startup by the presence of `PWE_WORKER_API_KEY`. In noop mode every wallpaper's transcode status is set to `skipped` and the Pi plays source files directly.
-- **Transcode decision**: The per-wallpaper judgment of whether the source video needs transcoding, and if so, to what resolution and codec. Based on the source probe (resolution, codec) and the Pi's screen spec. The decision is `skip` (source is fine as-is) or `transcode` (with target parameters).
-- **Transcode queue**: The service that accepts transcode decisions, writes jobs for the Worker to pull, and mirrors job progress back to the library row. Has two implementations: Live (Phase 2, writes `transcode_jobs` rows) and Noop (Phase 1, marks everything `skipped`).
-- **Transcode job**: A single unit of work in the `transcode_jobs` table. Created by the queue, claimed and executed by the Worker. Lifecycle: `pending` → `claimed` → `running` → `uploading` → `completed` | `failed`. The library row's `transcode_status` mirrors this lifecycle, plus `skipped` for noop-mode wallpapers.
-- **Transcode monitor**: A background reaper that detects stale transcode jobs (no heartbeat within the configured timeout) and resets them to `pending` for retry.
+## Language
 
-> Naming convention: `snake_case` at boundaries (HTTP JSON, config keys, SQLite columns); `camelCase` for internal TypeScript.
+### Downloads
 
-## Architecture
-- **Phase 1 (Active)**: Direct playback of original video files via `mpv` spawned by the backend over JSON IPC.
-- **Phase 2 (Worker Transcoding)**: A NAS-side Docker worker pulls jobs from the Pi to transcode HEVC videos via Intel QSV, avoiding Pi CPU overload. The worker communicates via `PWE_WORKER_API_KEY` authenticated routes (`/api/transcode/*`). The `optimized/` output replaces the source file for playback automatically.
-- **Storage**: Declarative custom directory (`storage.root`). Changes trigger a background rsync migration (`@pwe/migrate`). The SQLite DB remains local (`~/.local/state/pi-wallpaper-engine/`).
-- **Auth**: Single-admin Better Auth + Passkey. Protects business APIs and WebSockets.
-- **Player & Display**: `Playback` owns playback orchestration (intent verbs: play/stop/next/prev/mode/interval/sleep/display power). Behind it, `PlayerPower` controls `mpv` and display status linkage; `Rotation` interval-timer manages playlists (Sequential/Shuffle/Single).
-- **Downloads**: Async SteamCMD wrapper using `box86`. Progress uses SQLite-backed `download_tasks`. Non-video items are rejected during finalization.
-- **Transcode**: env-gated (`PWE_WORKER_API_KEY`). `TranscodeQueue` owns the job lifecycle; `TranscodeMonitor` reaps stale jobs. `library.transcode_status` mirrors job state for the frontend. In noop mode, no jobs exist and every wallpaper is `skipped`.
+**Download intake**: The lifecycle of accepting one Steam Workshop item and
+carrying it until it becomes a library wallpaper or fails with visible cleanup.
 
-## Tech Stack
-- Debian 13 Trixie (aarch64) on Raspberry Pi 4B
-- Bun 1.2+ workspace monorepo
-- Backend: Elysia + Effect-TS
-- Frontend: Vite 8 + React + SWC (Plain CSS, no Tailwind)
-- Transcode Worker: `ffmpeg` + Node.js (Dockerized)
+**Download cancellation**: A request to stop an intake, including its ongoing
+work, and leave a visible terminal cleanup state.
+
+**Download process registry**: The local record connecting an intake to the
+SteamCMD process doing its work.
+
+**Download progress stream**: Live per-item observations of where an intake is
+in its lifecycle.
+
+**Download reconciler**: The maintenance that turns interrupted or stale intakes
+into visible terminal results and removes unsafe leftovers.
+
+### Storage
+
+**Media root**: The currently active directory for media reads and writes. It is
+the custom root when one is selected, otherwise the default root.
+
+**Default root**: The configured baseline media directory used when the
+administrator has not selected a custom root.
+
+**Custom root**: The administrator's persisted override of the default root.
+Clearing it returns media storage to the default root.
+
+**Allowed roots**: The directories within which the administrator may browse and
+select a media root.
+
+**Target root**: A directory being considered for selection, pending validation
+and any required migration.
+
+**Switch plan**: The decision for a validated target: keep the current root,
+select the target immediately, or migrate existing media before switching.
+
+### Access
+
+**Administrator access**: The authority to control Pi Wallpaper Engine through
+its web interface. It belongs to the single device administrator.
+
+**Steam connection**: The external Steam identity and credential state used to
+discover and download Workshop items. It does not grant administrator access.
+
+### Playback
+
+**Playback orchestration**: Coordination of wallpaper playback, stepping,
+rotation, sleep, and display power so that their effects stay consistent.
+
+### Transcoding
+
+**Transcode mode**: Whether remote transcoding is enabled. Direct-playback mode
+skips new transcode requests; worker mode can queue them for a remote worker.
+
+**Transcode decision**: The per-wallpaper judgment of whether the source needs
+conversion for the Pi's screen and playback capabilities, and the target
+resolution and codec when it does.
+
+**Transcode queue**: The service that accepts transcode decisions, offers jobs
+to workers, and exposes their progress alongside the library wallpaper.
+
+**Transcode job**: One request to convert a wallpaper. It progresses through
+waiting, claim, encoding, and upload before completing or failing.
+
+**Transcode monitor**: Maintenance that detects stale worker claims and makes
+their jobs available for retry.
