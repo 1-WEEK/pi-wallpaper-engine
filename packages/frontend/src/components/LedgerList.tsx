@@ -23,7 +23,8 @@ export const LedgerRow = ({
 }: {
   /** Zero-padded index readout, e.g. "001". */
   no: string
-  title: string
+  /** Row title; a ReactNode lets callers append chips (e.g. NOW PLAYING). */
+  title: ReactNode
   /** Right-aligned mono metadata readout. */
   meta: string
   thumb?: string | null
@@ -47,7 +48,7 @@ export const LedgerRow = ({
     ) : (
       <span className="ledger-thumb ledger-thumb-empty" aria-hidden="true" />
     )}
-    <span className="ledger-title" title={title}>
+    <span className="ledger-title" title={typeof title === "string" ? title : undefined}>
       {title}
     </span>
     <span className="ledger-leader" aria-hidden="true" />

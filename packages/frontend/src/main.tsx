@@ -8,6 +8,7 @@ import "./browse.css"
 import "./ledger.css"
 import "./focusRing.css"
 import "./playerBar.css"
+import "./library.css"
 
 const root = document.getElementById("root")
 if (!root) throw new Error("#root not found")

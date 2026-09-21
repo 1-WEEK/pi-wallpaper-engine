@@ -1,0 +1,790 @@
+/* ── Library contact sheet (implementation ticket 08) ──────────────
+   spec §4.2 (06 票定稿): the same contact sheet as Browse (grid grammar
+   mirrors browse.css) plus occupancy — NOW PLAYING inverse chip, TX pill
+   (fixed dark scrim over imagery, theme-decoupled per §2.1), caption meta
+   prefers the transcoded readout + ↓n% saved. The detail popover reuses
+   the §2.4 glass recipe (same values as playerBar.css — the glass shells
+   stay deliberately copy-faithful rather than abstracted). Hover action
+   cluster: PLAY (inverse primary) / PREVIEW (transcoded only) / DELETE
+   (two-step SURE?). Colors come exclusively from the --pt-* token layer;
+   motion consumes the token curves/durations. */
+
+.lib {
+  position: relative;
+  /* Same bleed-over as .bws (see browse.css). */
+  margin: -18px -20px -14px;
+  padding: 46px 52px 174px;
+  background: var(--pt-bg);
+  color: var(--pt-text);
+  /* Legacy banners rendered inside .lib alias onto the --pt-* layer. */
+  --ink: var(--pt-bg);
+  --ink-1: var(--pt-bg);
+  --ink-2: var(--pt-fill);
+  --ink-3: var(--pt-line-soft);
+  --paper: var(--pt-text);
+  --paper-dim: var(--pt-dim);
+  --paper-faint: var(--pt-faint);
+  --border: var(--pt-line);
+  --accent-2: var(--pt-accent);
+  --accent-bg: color-mix(in oklab, var(--pt-accent) 14%, transparent);
+  --accent-border: color-mix(in oklab, var(--pt-accent) 30%, transparent);
+  --danger: var(--pt-danger);
+  transition: background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+
+.lib > *:not(.bws-gridlines):not(.ldet) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Header: Clash display title + mono count + view hint ───────── */
+.lib-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.lib-title {
+  margin: 0;
+  font-family: var(--pf-display);
+  font-size: clamp(40px, 4.5vw, 62px);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.022em;
+  text-transform: uppercase;
+}
+
+.lib-title-slash {
+  color: var(--pt-faint);
+  font-weight: 400;
+}
+
+.lib-head-side {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+}
+
+.lib-view-hint {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-faint);
+  white-space: nowrap;
+}
+
+.lib-count {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-dim);
+  white-space: nowrap;
+}
+
+/* ── Rail page controls (spec §4.2, via the RailControls portal) ── */
+.lib-rc-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--pt-faint);
+  margin-bottom: 4px;
+}
+
+.lib-rc-kbd {
+  font-size: 9px;
+  color: var(--pt-faint);
+}
+
+.lib-rc-query input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-line);
+  outline: none;
+  padding: 8px 0;
+  color: var(--pt-text);
+  font-family: var(--pf-sans);
+  font-size: 14px;
+}
+
+.lib-rc-query input:focus {
+  border-bottom-color: var(--pt-text);
+}
+
+.lib-rc-query input::placeholder {
+  color: var(--pt-faint);
+}
+
+/* Ledger row grammar in the rail: name left + dotted leader + mark
+   right (●/○ selection, → command). */
+.lib-rc-row {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  padding: 3px 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.lib-rc-row.is-on {
+  color: var(--pt-text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lib-rc-row:hover {
+    color: var(--pt-text);
+  }
+}
+
+.lib-rc-row-dots {
+  flex: 1;
+  margin: 0 8px;
+  border-bottom: 1px dotted var(--pt-faint);
+  transform: translateY(-3px);
+}
+
+.lib-rc-row-mark {
+  font-size: 8px;
+}
+
+.lib-rc-cmd-mark {
+  font-size: 9px;
+  color: var(--pt-faint);
+}
+
+.lib-rc-sec {
+  border-top: 1px solid var(--pt-line-soft);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lib-rc-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--pt-faint);
+  margin-bottom: -6px;
+}
+
+.lib-rc-sec-clear {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-dim);
+  padding: 0 0 1px;
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lib-rc-sec-clear:hover {
+    color: var(--pt-text);
+    border-bottom-color: var(--pt-text);
+  }
+}
+
+/* Discreet adult-content entry: two faint dots at rest, ● 18+ when on. */
+.lib-rc-content button {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-faint);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.lib-rc-content button.is-on {
+  color: var(--pt-text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lib-rc-content button:hover {
+    color: var(--pt-text);
+  }
+}
+
+/* ── Contact sheet grid (columns measured at runtime, applied inline) ── */
+.lib-grid {
+  display: grid;
+  gap: 18px 16px;
+}
+
+.lib-card {
+  min-width: 0;
+  /* Same content-visibility engineering as Browse (spec §8.6); the
+     intrinsic height is fed back by GridOverlay as --lib-card-h. */
+  content-visibility: auto;
+  contain-intrinsic-width: auto 280px;
+  contain-intrinsic-height: auto var(--lib-card-h, 320px);
+}
+
+.lib-card-index {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-faint);
+}
+
+/* Keyboard cursor: the FocusRing owns the band; the card only brightens
+   its N° index (same language as .bws-cursor). */
+.lib-card.lib-cursor .lib-card-index {
+  color: var(--pt-text);
+}
+
+/* NOW PLAYING inverse chip (§4.2: only non-default occupancy is marked). */
+.lib-now {
+  flex-shrink: 0;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  padding: 2px 6px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.lib-media {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--pt-fill);
+}
+
+.lib-media-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lib-media-img {
+    transition: transform var(--dur-base) var(--ease-out);
+  }
+
+  .lib-card:hover .lib-media-img {
+    transform: scale(1.045);
+  }
+}
+
+/* TX pill on the media corner — fixed dark scrim, theme-decoupled (§2.1). */
+.lib-tx {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  background: rgba(0, 0, 0, 0.58);
+  color: rgba(255, 255, 255, 0.85);
+  padding: 3px 7px;
+  border-radius: 2px;
+}
+
+.lib-tx-err {
+  color: rgba(255, 130, 130, 0.95);
+}
+
+/* Inline variant inside ledger rows: no scrim, plain dim readout. */
+.lib-tx-inline {
+  position: static;
+  flex-shrink: 0;
+  background: none;
+  color: var(--pt-dim);
+  padding: 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.lib-tx-inline.lib-tx-err {
+  color: var(--pt-danger);
+}
+
+.lib-caption {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.lib-caption-title {
+  min-width: 0;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lib-caption-meta {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  white-space: nowrap;
+}
+
+/* ── Hover action cluster (cards + ledger rows): PLAY inverse primary,
+     PREVIEW (transcoded only), DELETE two-step. Hidden at rest; revealed
+     by hover-capable pointers or keyboard focus. ─────────────────── */
+.lib-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  opacity: 0;
+  transition: opacity var(--dur-exit) var(--ease-out);
+}
+
+.lib-card:focus-within .lib-actions,
+.ledger-row:focus-within .lib-actions {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lib-card:hover .lib-actions,
+  .ledger-row:hover .lib-actions {
+    opacity: 1;
+  }
+}
+
+.lib-act {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--pt-dim);
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  padding: 0 0 1px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lib-act:hover {
+    color: var(--pt-text);
+    border-bottom-color: var(--pt-text);
+  }
+}
+
+.lib-act-primary {
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  padding: 5px 10px;
+  border-radius: 2px;
+  border-bottom: none;
+  transition: transform var(--dur-exit) var(--ease-out);
+}
+
+.lib-act-primary:active {
+  transform: scale(0.96);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lib-act-primary:hover {
+    color: var(--pt-inv-text);
+  }
+}
+
+.lib-act-danger.is-armed {
+  color: var(--pt-danger);
+  border-bottom-color: var(--pt-danger);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lib-act-danger:hover {
+    color: var(--pt-danger);
+    border-bottom-color: var(--pt-danger);
+  }
+}
+
+/* NOW PLAYING chip inside a ledger-row title. */
+.ledger-row .lib-now {
+  margin-left: 10px;
+}
+
+/* ── Detail popover (§4.2): the §2.4 glass shell with playback
+     semantics — SOURCE / OPTIMIZED double spec line + PLAY / PREVIEW /
+     TRANSCODE / DELETE / STEAM. Glass usage boundary (§2.4): temporary
+     focused overlay, never nested, no other glass on screen besides the
+     PlayerBar. ───────────────────────────────────────────────────── */
+.ldet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+}
+
+.ldet-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: ldet-scrim-in var(--dur-hover) var(--ease-out) both;
+}
+
+@keyframes ldet-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* F1 (spec §5): the scrim exits WITH the panel — same 150ms, same curve. */
+.ldet-scrim-out {
+  opacity: 0;
+  transition: opacity var(--dur-exit) var(--ease-out);
+}
+
+.ldet-panel {
+  position: relative;
+  width: min(880px, 92vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.07);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 40px 120px rgba(0, 0, 0, 0.65);
+  /* No blur in the keyframes (backdrop-filter repaint ghosts, §8.5). */
+  animation: ldet-in 280ms var(--ease-out) both;
+}
+
+@keyframes ldet-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+}
+
+/* Live-DOM entrance during a VT (§5 F3): the panel/scrim deliberately
+   carry no view-transition-name; the panel enters on a delay so the media
+   morph leads and the chrome settles. */
+.ldet-vt {
+  animation: ldet-in 240ms var(--ease-out) 120ms both;
+}
+
+.ldet-closing {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity var(--dur-exit) var(--ease-out),
+    transform var(--dur-exit) var(--ease-out);
+}
+
+/* Near-invisible grain (3%) + static specular, same recipe as the dock. */
+.ldet-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.ldet-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      180px 90px at 30% 0%,
+      rgba(255, 255, 255, 0.16),
+      transparent 70%
+    ),
+    linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.07) 50%, transparent 58%);
+}
+
+html[data-theme="light"] .ldet-panel {
+  background: rgba(255, 255, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 40px 120px rgba(0, 0, 0, 0.25);
+}
+
+html[data-theme="light"] .ldet-panel::after {
+  background:
+    radial-gradient(
+      180px 90px at 30% 0%,
+      rgba(255, 255, 255, 0.55),
+      transparent 70%
+    ),
+    linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.25) 50%, transparent 58%);
+}
+
+.ldet-media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--pt-fill);
+  view-transition-name: lib-card-media;
+}
+
+.ldet-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ldet-now {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+}
+
+.ldet-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out),
+    transform var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ldet-close:hover {
+    background: rgba(0, 0, 0, 0.75);
+    transform: scale(1.06);
+  }
+}
+
+.ldet-body {
+  padding: 20px 24px 22px;
+}
+
+.ldet-title {
+  margin: 0 0 8px;
+  font-family: var(--pf-display);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.ldet-meta {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--pt-dim);
+  margin-bottom: 12px;
+}
+
+.ldet-specs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--pt-dim);
+  margin-bottom: 18px;
+}
+
+.ldet-specs-err {
+  color: var(--pt-danger);
+}
+
+.ldet-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.ldet-play {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  cursor: pointer;
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+
+.ldet-play:active {
+  transform: scale(0.96);
+}
+
+.ldet-cmd {
+  padding: 8px 0;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ldet-cmd:hover {
+    color: var(--pt-text);
+    border-bottom-color: var(--pt-text);
+  }
+
+  .ldet-cmd.ldet-danger:hover,
+  .ldet-cmd.ldet-danger.is-armed {
+    color: var(--pt-danger);
+    border-bottom-color: var(--pt-danger);
+  }
+}
+
+.ldet-cmd.ldet-danger.is-armed {
+  color: var(--pt-danger);
+  border-bottom-color: var(--pt-danger);
+}
+
+.ldet-steam {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
+  text-decoration: none;
+  border-bottom: 1px solid var(--pt-dim);
+  padding-bottom: 2px;
+  transition: color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ldet-steam:hover {
+    color: var(--pt-text);
+    border-bottom-color: var(--pt-text);
+  }
+}
+
+.ldet-step {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.ldet-step button {
+  font-family: var(--pf-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--pt-dim);
+  background: none;
+  border: 1px solid var(--pt-line);
+  border-radius: 3px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ldet-step button:hover {
+    color: var(--pt-text);
+    border-color: var(--pt-dim);
+  }
+}
+
+/* ── View Transition, open direction (§5 F3, Library variant) ──────
+   Same recipe as Browse's card-media morph: media named only, 300ms
+   --ease-out, old snapshot fast-out / new fades in, normal blending on
+   all three levels. The image-pair animates the clip radius 0 →
+   20px 20px 0 0 (the media sits at the panel's top; its bottom corners
+   are square where the body begins). */
+::view-transition-group(lib-card-media) {
+  animation-duration: 300ms;
+  animation-timing-function: var(--ease-out);
+}
+
+::view-transition-image-pair(lib-card-media) {
+  mix-blend-mode: normal;
+  overflow: hidden;
+  animation: ldet-media-radius 300ms var(--ease-out) both;
+}
+
+@keyframes ldet-media-radius {
+  from {
+    border-radius: 0;
+  }
+  to {
+    border-radius: 20px 20px 0 0;
+  }
+}
+
+::view-transition-old(lib-card-media) {
+  animation: ldet-vt-out 90ms var(--ease-out) both;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(lib-card-media) {
+  animation: ldet-vt-in 240ms var(--ease-out) both;
+  mix-blend-mode: normal;
+}
+
+@keyframes ldet-vt-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ldet-vt-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion (spec §5 F5): the panel entrance degrades to a pure
+   fade; VT/ghost never initialize (gated in TS). */
+@keyframes ldet-in-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ldet-panel {
+    animation-name: ldet-in-fade;
+    animation-duration: 200ms;
+    animation-delay: 0ms;
+  }
+}

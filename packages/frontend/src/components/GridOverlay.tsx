@@ -92,11 +92,15 @@ export const GridOverlay = ({
   gridRef,
   itemCount,
   cardSelector = ".bws-card",
+  heightVar = "--bws-card-h",
 }: {
   rootRef: RefObject<HTMLElement | null>
   gridRef: RefObject<HTMLElement | null>
   itemCount: number
   cardSelector?: string
+  /** CSS variable on the root that receives the measured card height, feeding
+   *  the cards' contain-intrinsic-height (spec §8.6). */
+  heightVar?: string
 }) => {
   const [metrics, setMetrics] = useState<GridMetrics>(EMPTY)
 
@@ -112,7 +116,7 @@ export const GridOverlay = ({
       // contact sheet is uniform, so feeding back the measured card height
       // keeps offscreen rows (and therefore the measured gutters) exact
       // before those rows ever render.
-      if (cardHeight) root.style.setProperty("--bws-card-h", `${cardHeight}px`)
+      if (cardHeight) root.style.setProperty(heightVar, `${cardHeight}px`)
       setMetrics(next)
     }
 
@@ -120,7 +124,7 @@ export const GridOverlay = ({
     const ro = new ResizeObserver(compute)
     ro.observe(grid)
     return () => ro.disconnect()
-  }, [rootRef, gridRef, itemCount, cardSelector])
+  }, [rootRef, gridRef, itemCount, cardSelector, heightVar])
 
   return (
     <div className="bws-gridlines" aria-hidden="true">

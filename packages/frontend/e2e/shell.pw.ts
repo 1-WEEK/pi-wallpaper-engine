@@ -49,7 +49,7 @@ test.describe("Desktop shell", () => {
 
     await nav.getByRole("link", { name: "Library" }).click()
     await expect(page).toHaveURL(/\/library$/)
-    await expect(page.locator("h1.page-title")).toHaveText("Library")
+    await expect(page.locator("h1.lib-title")).toContainText("Library")
     await expect(nav.locator(".rail-nav-link.is-here")).toHaveText(/Library/)
 
     await nav.getByRole("link", { name: "Settings" }).click()
