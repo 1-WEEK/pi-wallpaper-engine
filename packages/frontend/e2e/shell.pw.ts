@@ -53,7 +53,7 @@ test.describe("Desktop shell", () => {
     await expect(nav.locator(".rail-nav-link.is-here")).toHaveText(/Library/)
 
     await nav.getByRole("link", { name: "Settings" }).click()
-    await expect(page.locator("h1.page-title")).toHaveText("Settings")
+    await expect(page.locator("h1.set-title")).toContainText("Settings")
   })
 
   test("rail shows the live activity task count", async ({ page }) => {

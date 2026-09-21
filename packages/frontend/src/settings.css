@@ -1,0 +1,635 @@
+/* ── Settings (implementation ticket 10) ───────────────────────────
+   spec §4.4: four local sections — Playback / Storage / Access & Security
+   primary in the rail, System under a hairline as the secondary
+   diagnostic entry. One row grammar across all sections — the spec
+   ledger: sans name left (14px) + dotted leader + mono value right (11px)
+   + hairline below. Row identities: selection (●/○), command (→),
+   read-only (quiet). Rhythm: 900px content column, 48px block gaps, 44px
+   head→content, 15px row padding. The directory-change focused flow is
+   the page's only glass surface (§2.4 — recipe copy-faithful to
+   playerBar.css/library.css, same as the other glass shells). Colors come
+   exclusively from the --pt-* token layer; motion consumes the token
+   curves/durations. */
+
+.set {
+  position: relative;
+  margin: -18px -20px -14px;
+  padding: 46px 52px 174px;
+  background: var(--pt-bg);
+  color: var(--pt-text);
+  min-height: 100%;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+
+/* ── Header: Clash display title + mono section count ────────────── */
+.set-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 44px;
+}
+
+.set-title {
+  margin: 0;
+  font-family: var(--pf-display);
+  font-size: clamp(40px, 4.5vw, 62px);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.022em;
+  text-transform: uppercase;
+}
+
+.set-title-slash {
+  color: var(--pt-faint);
+  font-weight: 400;
+}
+
+.set-count {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-faint);
+  white-space: nowrap;
+}
+
+/* ── Rail: local section navigation (secondary System under a
+     hairline, `!` badge when something needs attention) ──────────── */
+.set-rc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.set-rc-sys {
+  border-top: 1px solid var(--pt-line-soft);
+  padding-top: 14px;
+}
+
+.set-rc-head {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--pt-faint);
+  margin-bottom: 8px;
+}
+
+.set-rc-row {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  padding: 5px 0;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.set-rc-row.is-on {
+  color: var(--pt-text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .set-rc-row:hover {
+    color: var(--pt-text);
+  }
+}
+
+.set-rc-row-dots {
+  flex: 1;
+  margin: 0 8px;
+  border-bottom: 1px dotted var(--pt-faint);
+  transform: translateY(-3px);
+}
+
+.set-rc-row-mark {
+  font-size: 8px;
+}
+
+.set-rc-attn {
+  margin-left: 6px;
+  font-size: 9px;
+  color: var(--pt-accent);
+  border: 1px solid var(--pt-line);
+  border-radius: 999px;
+  width: 14px;
+  height: 14px;
+  display: inline-grid;
+  place-items: center;
+}
+
+/* ── Content column ──────────────────────────────────────────────── */
+.set-body {
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.set-block {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Block head: label left, command right (PASSKEYS — 2/8 + ADD PASSKEY). */
+.set-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--pt-dim);
+  border-bottom: 1px solid var(--pt-line);
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  min-width: 0;
+}
+
+.set-label > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.set-label-act {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-dim);
+  padding: 0 0 1px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.set-label-act:disabled {
+  border-bottom-color: transparent;
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .set-label-act:hover:not(:disabled) {
+    color: var(--pt-text);
+    border-bottom-color: var(--pt-text);
+  }
+}
+
+/* ── The spec-ledger row ─────────────────────────────────────────── */
+.set-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--pt-line-soft);
+  font-family: var(--pf-sans);
+  color: var(--pt-text);
+  text-align: left;
+  text-decoration: none;
+  min-width: 0;
+}
+
+button.set-row {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-line-soft);
+  cursor: pointer;
+}
+
+button.set-row:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* Interactive rows get a full-width hover band; read-only rows stay
+   quiet (no hover fill). */
+@media (hover: hover) and (pointer: fine) {
+  .set-row-btn:hover:not(:disabled) {
+    background: var(--pt-fill);
+  }
+}
+
+.set-row-name {
+  font-size: 14px;
+  color: var(--pt-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.set-row-dots {
+  flex: 1;
+  min-width: 20px;
+  margin: 0 6px;
+  border-bottom: 1px dotted var(--pt-faint);
+  transform: translateY(-3px);
+}
+
+.set-row-val {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  white-space: nowrap;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.set-row-arrow {
+  font-size: 10px;
+  color: var(--pt-faint);
+}
+
+.set-warn {
+  color: var(--pt-accent);
+}
+
+.set-dim {
+  color: var(--pt-faint);
+}
+
+.set-note {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--pt-faint);
+  padding-top: 10px;
+  line-height: 1.6;
+}
+
+.set-default {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--pt-faint);
+  border: 1px solid var(--pt-line);
+  border-radius: 2px;
+  padding: 2px 6px;
+}
+
+/* Segmented option control (duration / interface sounds) — same
+   component language as the rail's THEME [A]/[B] tri-state. */
+.set-seg {
+  display: flex;
+  gap: 4px;
+}
+
+.set-seg button {
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--pt-dim);
+  background: none;
+  padding: 5px 11px;
+  border: 1px solid var(--pt-line);
+  border-radius: 3px;
+  cursor: pointer;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out);
+}
+
+.set-seg button.is-on {
+  color: var(--pt-inv-text);
+  background: var(--pt-inv-bg);
+  border-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .set-seg button:hover:not(.is-on) {
+    color: var(--pt-text);
+  }
+}
+
+/* In-place commit feedback: the target segment pulses ◌ until the server
+   confirms (spec §4.4 即时提交原位反馈). */
+@keyframes set-pulse {
+  to {
+    opacity: 0.25;
+  }
+}
+
+.set-pending {
+  animation: set-pulse 600ms var(--ease-out) infinite alternate;
+}
+
+/* In-row danger action: hairline-bordered chip; armed = red edge + red
+   text, second click commits (spec §4.4 两步确认). */
+.set-chip {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--pt-dim);
+  background: none;
+  border: 1px solid var(--pt-line);
+  border-radius: 2px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.set-chip.is-armed {
+  color: var(--pt-danger);
+  border-color: var(--pt-danger);
+}
+
+.set-chip:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .set-chip:hover:not(:disabled):not(.is-armed) {
+    color: var(--pt-text);
+    border-color: var(--pt-text);
+  }
+}
+
+.set-last {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+/* Full-width hairline capacity/progress bar. */
+.set-cap {
+  position: relative;
+  height: 2px;
+  margin-top: 10px;
+  background: var(--pt-line-soft);
+  overflow: hidden;
+}
+
+.set-cap-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  background: var(--pt-inv-bg);
+  transform-origin: left;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+/* ── System health rows: click to expand read-only params; warned rows
+     auto-expand with the amber actionable reason ahead of the technical
+     parameters (spec §4.4). ─────────────────────────────────────────── */
+.set-caret {
+  display: inline-block;
+  width: 16px;
+  color: var(--pt-faint);
+  font-size: 10px;
+}
+
+.set-params {
+  padding: 4px 0 12px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.set-param {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+}
+
+.set-reason {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--pt-accent);
+  padding-bottom: 4px;
+}
+
+/* ── Directory-change focused flow — the page's only glass (§2.4).
+     Scrim + panel recipe mirrors playerBar.css / library.css exactly. ── */
+.set-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+}
+
+.set-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: set-sheet-scrim-in var(--dur-hover) var(--ease-out) both;
+}
+
+@keyframes set-sheet-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.set-sheet-panel {
+  position: relative;
+  width: min(560px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.07);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 40px 120px rgba(0, 0, 0, 0.65);
+  /* No blur in the keyframes (backdrop-filter repaint ghosts, §8.5). */
+  animation: set-sheet-in 280ms var(--ease-out) both;
+}
+
+@keyframes set-sheet-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+}
+
+/* Near-invisible grain (3%) + static specular, same recipe as the dock. */
+.set-sheet-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.set-sheet-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      180px 90px at 30% 0%,
+      rgba(255, 255, 255, 0.16),
+      transparent 70%
+    ),
+    linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.07) 50%, transparent 58%);
+}
+
+html[data-theme="light"] .set-sheet-panel {
+  background: rgba(255, 255, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.25),
+    0 40px 120px rgba(60, 50, 30, 0.35);
+}
+
+.set-sheet-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: none;
+  color: var(--pt-dim);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .set-sheet-close:hover:not(:disabled) {
+    color: var(--pt-text);
+  }
+}
+
+.set-sheet-body {
+  padding: 22px 24px 24px;
+}
+
+.set-sheet-title {
+  font-family: var(--pf-display);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 16px;
+}
+
+/* The sheet reuses .set-row / .set-label inside the glass; the panel's
+   ::after specular sits above content without this lift. */
+.set-sheet-body > * {
+  position: relative;
+  z-index: 1;
+}
+
+.set-sheet .set-row-btn {
+  padding: 11px 0;
+}
+
+.set-check {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  padding: 5px 0;
+}
+
+.set-check-ok {
+  color: var(--pt-text);
+}
+
+.set-check-wait {
+  animation: set-pulse 600ms var(--ease-out) infinite alternate;
+}
+
+.set-impact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.set-impact-line {
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  line-height: 1.55;
+}
+
+.set-sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+/* Primary confirm: inverse fill, same language as the rail's active
+   nav / on segment. */
+.set-sheet-confirm {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-inv-text);
+  background: var(--pt-inv-bg);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 8px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity var(--dur-micro) var(--ease-out);
+}
+
+.set-sheet-confirm:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .set-sheet-confirm:hover:not(:disabled) {
+    opacity: 0.85;
+  }
+}
+
+.set-sheet-body > .set-sheet-confirm {
+  margin-top: 14px;
+  width: 100%;
+}
+
+.set-newdir {
+  font-size: 12px;
+  color: var(--pt-text);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-line);
+  padding: 4px 0;
+  outline: none;
+  min-width: 0;
+}
+
+.set-newdir:focus {
+  border-bottom-color: var(--pt-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .set-pending,
+  .set-check-wait {
+    animation: none;
+    opacity: 0.5;
+  }
+}
