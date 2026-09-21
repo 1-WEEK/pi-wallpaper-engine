@@ -24,12 +24,6 @@
   }
 }
 
-/* Basic keyboard cursor; the full 1-bit focus band lands with ticket 06. */
-.ledger-row.is-cursor {
-  background: var(--pt-fill);
-  box-shadow: inset 2px 0 0 var(--pt-dim);
-}
-
 .ledger-no {
   width: 42px;
   flex: none;
@@ -38,6 +32,8 @@
   color: var(--pt-faint);
 }
 
+/* Keyboard cursor (ticket 06): the shared FocusRing draws the 1-bit band
+   around the row; the row itself only brightens its N°. */
 .ledger-row.is-cursor .ledger-no {
   color: var(--pt-text);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { flushSync } from "react-dom"
 import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
@@ -9,6 +9,7 @@ import { WallpaperCard } from "../components/WallpaperCard.js"
 import { ContactCard } from "../components/ContactCard.js"
 import { FocusView, resolutionTag } from "../components/FocusView.js"
 import { LedgerList, LedgerRow } from "../components/LedgerList.js"
+import { FocusRing, FOCUS_CONFIRM_MS } from "../components/FocusRing.js"
 import { GridOverlay } from "../components/GridOverlay.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { appIcons } from "../icons.js"
@@ -91,6 +92,12 @@ export const Browse = () => {
   const headRef = useRef<HTMLElement | null>(null)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const gridRef = useRef<HTMLElement | null>(null)
+  // Stable callback ref: an inline closure would detach (null) and re-attach
+  // on every render, and child layout effects (FocusRing placement) read the
+  // ref inside that null window.
+  const setGridRef = useCallback((el: HTMLElement | null) => {
+    gridRef.current = el
+  }, [])
   const columnsPerRow = useColumnsPerRow(gridRef, MIN_CARD_WIDTH, GRID_GAP)
   // Smallest multiple of columnsPerRow that's >= PAGE_SIZE; ensures every
   // page loads enough items to fill complete rows, no orphan cards at the end.
@@ -257,6 +264,10 @@ export const Browse = () => {
   const [view, setView] = useState<"grid" | "list">("grid")
   const [cursor, setCursor] = useState(0)
   const [focusIdx, setFocusIdx] = useState<number | null>(null)
+  // Enter confirm beat (ticket 06, spec §4.1): true during the ~120ms
+  // dither-out / XOR-in flip before the open transition runs.
+  const [commit, setCommit] = useState(false)
+  const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // True while the focus view arrived via a View Transition — its chrome
   // enters on a delay so the media morph leads (spec §5 F3).
   const [focusVt, setFocusVt] = useState(false)
@@ -318,12 +329,34 @@ export const Browse = () => {
       f === null || items.length === 0 ? f : (f + dir + items.length) % items.length
     )
 
+  // Enter confirm beat (ticket 06, spec §4.1): the ring's checkerboard band
+  // ("uncommitted") fades out while a full-card XOR block ("committed") fades
+  // in over ~120ms, THEN the open transition (VT, ticket 05) runs. Reduced
+  // motion: no beat — focus state just IS, the open is instant.
+  const openWithConfirm = (i: number) => {
+    if (commitTimer.current !== null) return
+    if (prefersReducedMotion()) {
+      openFocus(i)
+      return
+    }
+    setCommit(true)
+    commitTimer.current = setTimeout(() => {
+      commitTimer.current = null
+      openFocus(i)
+    }, FOCUS_CONFIRM_MS)
+  }
+
   // Close direction = FLIP ghost (spec §5 F6), the mirror of the VT open: the
   // focus media flies back into its source cell (border-radius 20 → 0, the
   // image-pair's 0 → 20 in reverse) while the chrome plays the 150ms exit
   // beat (F1). Reduced motion: no ghost, instant cut.
   const requestClose = () => {
     if (focusIdx === null || focusClosing) return
+    // Drop the commit state and park the cursor on the closing item while the
+    // scrim still covers the grid: the XOR fades and the ring re-seats under
+    // cover, so the card the ghost lands on is clean and already focused.
+    setCommit(false)
+    setCursor(focusIdx)
     if (!prefersReducedMotion()) {
       const detailMedia = document.querySelector<HTMLElement>(".pfocus-media")
       const target = sourceMediaEl(focusIdx)
@@ -350,14 +383,15 @@ export const Browse = () => {
   useEffect(
     () => () => {
       if (focusCloseTimer.current) clearTimeout(focusCloseTimer.current)
+      if (commitTimer.current) clearTimeout(commitTimer.current)
     },
     []
   )
 
   // Keyboard (desktop): V toggles grid ↔ density list; arrows roam (grid
-  // uses the measured column count, list steps row by row); Enter opens the
-  // focus view. While the focus view is open, ←/→ steps and Esc closes.
-  // Basic roaming only — the full 1-bit focus band is ticket 06.
+  // uses the measured column count, list steps row by row) with the shared
+  // 1-bit focus band (ticket 06); Enter plays the confirm beat, then opens
+  // the focus view. While the focus view is open, ←/→ steps and Esc closes.
   useEffect(() => {
     if (mobile) return
     const onKey = (e: KeyboardEvent) => {
@@ -407,7 +441,7 @@ export const Browse = () => {
           // Let a focused button/link keep its native Enter activation.
           if (t?.closest("button, a")) return
           e.preventDefault()
-          openFocus(clampedCursor)
+          openWithConfirm(clampedCursor)
           break
       }
     }
@@ -715,12 +749,19 @@ export const Browse = () => {
       )}
 
       {/* The wrapper owns gridRef in both views so column measurement
-          (useColumnsPerRow) keeps a live element across the V toggle. */}
-      <div
-        ref={(el) => {
-          gridRef.current = el
-        }}
-      >
+          (useColumnsPerRow) keeps a live element across the V toggle. It is
+          also the focus-ring host: positioned + isolating, the offsetParent
+          for both the ring and the roamed items. */}
+      <div className="focus-ring-host" ref={setGridRef}>
+        {items.length > 0 && (
+          <FocusRing
+            hostRef={gridRef}
+            selector={view === "grid" ? ".bws-card" : ".ledger-row"}
+            index={clampedCursor}
+            columns={view === "grid" ? columnsPerRow : 1}
+            commit={commit}
+          />
+        )}
         {view === "grid" ? (
           <section
             className="bws-grid"

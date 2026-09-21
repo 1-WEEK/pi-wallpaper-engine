@@ -350,13 +350,9 @@ button.bws-add.is-static {
   white-space: nowrap;
 }
 
-/* Basic keyboard cursor on the grid; the full 1-bit checkerboard focus
-   band lands with ticket 06. */
-.bws-card.bws-cursor .bws-media {
-  outline: 1px solid var(--pt-dim);
-  outline-offset: 2px;
-}
-
+/* Keyboard cursor (ticket 06, spec §4.1 Q 方案): the shared FocusRing owns
+   the focus language (checkerboard band + C·R readout); the card itself only
+   brightens its N° index. */
 .bws-card.bws-cursor .bws-card-index {
   color: var(--pt-text);
 }

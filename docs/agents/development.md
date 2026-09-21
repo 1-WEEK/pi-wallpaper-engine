@@ -128,6 +128,15 @@ causes a brief playback interruption. For removal, read [Uninstall](../uninstall
   and the shared three-state block
   ([StateBlock.tsx](../../packages/frontend/src/components/StateBlock.tsx)).
   The mobile branch keeps the legacy `.page`/`.wallpaper-card` layout.
+- The keyboard focus band (implementation ticket 06) is the reusable
+  [FocusRing.tsx](../../packages/frontend/src/components/FocusRing.tsx) +
+  [focusRing.css](../../packages/frontend/src/focusRing.css): one shared
+  element parked on the cursor item via pure offset geometry, FLIP slide
+  (250ms `--ease-slide`, re-trigger from the presented value), instant
+  ResizeObserver snap on reflow, and the Enter confirm beat (dither band
+  out / XOR `difference` block in, ~120ms). The host container must carry
+  `.focus-ring-host` (positioned + isolating); ticket 08 (Library) reuses
+  the same component.
 - Keep the existing plain CSS system for not-yet-migrated pages. Reuse
   controls and icons from
   [icons.tsx](../../packages/frontend/src/icons.tsx).

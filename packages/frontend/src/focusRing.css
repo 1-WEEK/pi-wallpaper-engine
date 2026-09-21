@@ -1,0 +1,77 @@
+/* ── Shared 1-bit focus band (implementation ticket 06) ────────────
+   spec §4.1 10 票 Q 方案 · §2.6 Kare vocabulary · §5 F4. One shared
+   element (FocusRing.tsx) parks on the keyboard cursor's item: a 2px
+   checkerboard dither band outside the card = "uncommitted"; Enter flips
+   it into a full-cover XOR difference block = "committed". The dither is
+   an SVG tile — repeating-conic-gradient produces moiré at this grain.
+   The layer never intercepts pointer events: hover and focus coexist. */
+
+/* Host contract: the measured container positions itself and isolates the
+   XOR blend so `difference` only inverts the host's own content. */
+.focus-ring-host {
+  position: relative;
+  isolation: isolate;
+}
+
+.focus-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+/* 2px band, 4px outside the item's frame (the mask keeps only the padding
+   belt). 50% 1-bit checker, 1px grain. */
+.focus-ring-dither {
+  position: absolute;
+  inset: -6px;
+  padding: 2px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='2'%3E%3Crect width='1' height='1' fill='%23FFFFFF' fill-opacity='0.6'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23FFFFFF' fill-opacity='0.6'/%3E%3C/svg%3E");
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  transition: opacity var(--dur-micro) linear;
+}
+
+html[data-theme="light"] .focus-ring-dither {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='2'%3E%3Crect width='1' height='1' fill='%23000000' fill-opacity='0.55'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23000000' fill-opacity='0.55'/%3E%3C/svg%3E");
+}
+
+/* Committed = true inversion (Mac 1984): a white block in difference mode
+   XORs whatever the card shows, in both themes. */
+.focus-ring-xor {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  mix-blend-mode: difference;
+  opacity: 0;
+  transition: opacity var(--dur-micro) linear;
+}
+
+.focus-ring.commit .focus-ring-dither {
+  opacity: 0;
+}
+
+.focus-ring.commit .focus-ring-xor {
+  opacity: 1;
+}
+
+/* Coordinate readout (mono, column·row) riding the frame's top-right
+   corner; appears with the band, slides with it. Solid chip background
+   keeps it legible over imagery — and above the XOR block's blend. */
+.focus-ring-coord {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  transform: translateY(-100%);
+  padding: 2px 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--pt-text);
+  background: var(--pt-bg);
+}
+
+/* Reduced motion (spec §5 F5): the slide is gated in TS (instant snap);
+   the band itself is static — nothing here animates on focus move. */

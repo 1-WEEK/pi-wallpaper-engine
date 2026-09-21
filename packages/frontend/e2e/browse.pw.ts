@@ -677,3 +677,289 @@ test.describe("Browse views: reduced motion (ticket 05)", () => {
     )
   })
 })
+
+/* ── Ticket 06: keyboard roaming & the 1-bit card focus band (Q 方案) ── */
+
+/** Ring vs the cursor item: max edge delta (client rects, same frame) plus
+ *  the ring's in-flight WAAPI animation count. */
+const measureRing = (
+  page: Page,
+  itemSelector: string,
+  index: number
+): Promise<{ d: number; anims: number } | null> =>
+  page.evaluate(
+    ({ sel, i }) => {
+      const ring = document.querySelector(".focus-ring")
+      const item = document.querySelectorAll(sel)[i]
+      if (!ring || !item) return null
+      const r = ring.getBoundingClientRect()
+      const c = item.getBoundingClientRect()
+      const d = Math.max(
+        Math.abs(r.x - c.x),
+        Math.abs(r.y - c.y),
+        Math.abs(r.width - c.width),
+        Math.abs(r.height - c.height)
+      )
+      return { d, anims: ring.getAnimations().length }
+    },
+    { sel: itemSelector, i: index }
+  )
+
+/** Poll until the ring hugs item `index` exactly and nothing is animating. */
+const expectRingOn = async (page: Page, itemSelector: string, index: number) => {
+  await expect
+    .poll(
+      async () => {
+        const m = await measureRing(page, itemSelector, index)
+        return m !== null && m.d <= 1.5 && m.anims === 0
+      },
+      { timeout: 3000 }
+    )
+    .toBe(true)
+}
+
+test.describe("Browse focus band: keyboard roaming (ticket 06)", () => {
+  test("arrows roam by the measured column count; the band hugs the cursor card", async ({
+    page,
+  }) => {
+    await bootBrowse(page)
+    const cols = computeColumns(1600)
+    expect(cols).toBe(4)
+
+    // The Q focus language: SVG-tile checkerboard dither band (no conic
+    // gradient), an XOR difference block for the commit flip, and the mono
+    // C·R coordinate readout riding the frame.
+    const ring = page.locator(".focus-ring")
+    await expect(ring).toBeVisible()
+    await expect(ring.locator(".focus-ring-dither")).toHaveCSS(
+      "background-image",
+      /data:image\/svg\+xml/
+    )
+    await expect(ring.locator(".focus-ring-xor")).toHaveCSS("mix-blend-mode", "difference")
+    await expect(ring.locator(".focus-ring-coord")).toHaveText("C1·R1")
+    await expect(page.locator(".bws-card").nth(0)).toHaveClass(/bws-cursor/)
+    await expectRingOn(page, ".bws-card", 0)
+
+    // Down jumps a full measured row; right/left step within it.
+    await page.keyboard.press("ArrowDown")
+    await expect(page.locator(".bws-card").nth(cols)).toHaveClass(/bws-cursor/)
+    await expect(ring.locator(".focus-ring-coord")).toHaveText("C1·R2")
+    await expectRingOn(page, ".bws-card", cols)
+
+    await page.keyboard.press("ArrowRight")
+    await expect(page.locator(".bws-card").nth(cols + 1)).toHaveClass(/bws-cursor/)
+    await expect(ring.locator(".focus-ring-coord")).toHaveText("C2·R2")
+    await page.keyboard.press("ArrowUp")
+    await expect(page.locator(".bws-card").nth(1)).toHaveClass(/bws-cursor/)
+    await expectRingOn(page, ".bws-card", 1)
+    // Clamped at the left edge.
+    await page.keyboard.press("ArrowLeft")
+    await page.keyboard.press("ArrowLeft")
+    await expect(page.locator(".bws-card").nth(0)).toHaveClass(/bws-cursor/)
+  })
+
+  test("the band follows the cursor into the density list, row by row", async ({ page }) => {
+    await bootBrowse(page)
+    await page.keyboard.press("v")
+    const rows = page.locator(".ledger-row")
+    await expect(rows).toHaveCount(28)
+    // The view toggle is a reflow, not a focus move: snap, never slide.
+    await expectRingOn(page, ".ledger-row", 0)
+
+    await page.keyboard.press("ArrowDown")
+    await expect(rows.nth(1)).toHaveClass(/is-cursor/)
+    await expect(page.locator(".focus-ring-coord")).toHaveText("C1·R2")
+    await expectRingOn(page, ".ledger-row", 1)
+  })
+
+  test("the 250ms slide re-triggers from the presented value, never the old target", async ({
+    page,
+  }) => {
+    await bootBrowse(page)
+    const cols = computeColumns(1600)
+    const cardLeft = (i: number) =>
+      page.locator(".bws-card").nth(i).evaluate((el) => el.getBoundingClientRect().left)
+    const x0 = await cardLeft(0)
+    const x1 = await cardLeft(1)
+
+    await page.keyboard.press("ArrowRight")
+    await page.waitForTimeout(60) // ~25% into the 250ms slide
+    await page.keyboard.press("ArrowDown") // re-target mid-flight
+    const x = await page.locator(".focus-ring").evaluate((el) => el.getBoundingClientRect().x)
+    // §5 F4: the new slide continues from wherever the ring was visibly
+    // mid-flight — restarting from the old target would put it at x1, and
+    // restarting from the origin would put it back at x0.
+    expect(x).toBeGreaterThan(x0 + 4)
+    expect(x).toBeLessThan(x1 - 4)
+
+    await expect(page.locator(".bws-card").nth(cols + 1)).toHaveClass(/bws-cursor/)
+    await expectRingOn(page, ".bws-card", cols + 1)
+  })
+
+  test("Enter plays the ~120ms commit beat (dither out, XOR in) before the focus view", async ({
+    page,
+  }) => {
+    await bootBrowse(page)
+    // Record WHEN the commit flip and the focus-view mount happen — the
+    // 120ms beat is too short to catch by polling after the fact.
+    await page.evaluate(() => {
+      const w = window as unknown as { __commitAt: number | null; __focusAt: number | null }
+      w.__commitAt = null
+      w.__focusAt = null
+      new MutationObserver(() => {
+        if (
+          w.__commitAt === null &&
+          document.querySelector(".focus-ring")?.classList.contains("commit")
+        )
+          w.__commitAt = performance.now()
+        if (w.__focusAt === null && document.querySelector(".pfocus"))
+          w.__focusAt = performance.now()
+      }).observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["class"],
+      })
+    })
+
+    await page.keyboard.press("Enter")
+    const focus = page.locator(".pfocus")
+    await expect(focus).toBeVisible()
+    await expect(focus.locator(".pfocus-title")).toHaveText("Wallpaper 1")
+
+    const t = await page.evaluate(() => {
+      const w = window as unknown as { __commitAt: number | null; __focusAt: number | null }
+      return { commitAt: w.__commitAt, focusAt: w.__focusAt }
+    })
+    expect(t.commitAt).not.toBeNull()
+    expect(t.focusAt).not.toBeNull()
+    const delta = (t.focusAt ?? 0) - (t.commitAt ?? 0)
+    expect(delta).toBeGreaterThanOrEqual(90) // the commit beat really played first
+    expect(delta).toBeLessThan(1000) // ~120ms beat + VT snapshot capture
+  })
+
+  test("hover coexists with focus and the band never eats pointer events", async ({ page }) => {
+    let postedTo: string | null = null
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await mockAllEndpoints(page, pagedSearch(200))
+    await page.route("**/api/download/3000000000", (r) => {
+      if (r.request().method() !== "POST") {
+        void r.fallback()
+        return
+      }
+      postedTo = r.request().url()
+      void r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
+      })
+    })
+    await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+    const grid = page.locator(".bws-grid")
+    await expect(grid.locator(".bws-card")).toHaveCount(28, { timeout: 15000 })
+
+    // Hovering another card moves nothing; the band stays on the cursor card.
+    await grid.locator(".bws-card").nth(2).hover()
+    await page.waitForTimeout(150)
+    await expect(grid.locator(".bws-card").nth(0)).toHaveClass(/bws-cursor/)
+    await expectRingOn(page, ".bws-card", 0)
+
+    // The band layers OVER the focused card (z-index) but is
+    // pointer-events: none — the ADD button beneath it still clicks.
+    const card0 = grid.locator(".bws-card").nth(0)
+    await card0.hover()
+    await card0.locator("button.bws-add", { hasText: "ADD" }).click()
+    await expect.poll(() => postedTo).toContain("/api/download/3000000000")
+  })
+})
+
+test.describe("Browse focus band: resize realignment (ticket 06)", () => {
+  test("resize snaps the band onto the same card — no slide, even mid-flight", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await mockAllEndpoints(page, pagedSearch(400))
+    await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+    const grid = page.locator(".bws-grid")
+    await expect(grid.locator(".bws-card")).toHaveCount(28, { timeout: 15000 })
+
+    await page.keyboard.press("ArrowRight")
+    await page.keyboard.press("ArrowRight")
+    await expect(grid.locator(".bws-card").nth(2)).toHaveClass(/bws-cursor/)
+    await expectRingOn(page, ".bws-card", 2) // slide settled
+
+    // Plain resize: 4 → 3 columns reflows (and refetches 27 cards); the band
+    // must keep hugging card N°003 with no in-flight animation.
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await expect(grid.locator(".bws-card")).toHaveCount(27, { timeout: 15000 })
+    await expect(grid.locator(".bws-card").nth(2)).toHaveClass(/bws-cursor/)
+    await expectRingOn(page, ".bws-card", 2)
+
+    // Mid-flight resize: start a slide, resize before it ends — the FLIP is
+    // cancelled and the band lands clean on the same cursor card.
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await expect(grid.locator(".bws-card")).toHaveCount(28, { timeout: 15000 })
+    await page.keyboard.press("ArrowDown") // cursor 2 → 6, slide starts
+    await page.waitForTimeout(80) // well inside the 250ms slide
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await expect(grid.locator(".bws-card")).toHaveCount(27, { timeout: 15000 })
+    await expect(grid.locator(".bws-card").nth(6)).toHaveClass(/bws-cursor/)
+    await expectRingOn(page, ".bws-card", 6)
+  })
+})
+
+test.describe("Browse focus band: reduced motion (ticket 06)", () => {
+  test.use({ reducedMotion: "reduce" })
+
+  test("static and instant: no slide, no commit beat, resize still hugs", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await mockAllEndpoints(page, pagedSearch(400))
+    await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+    const grid = page.locator(".bws-grid")
+    await expect(grid.locator(".bws-card")).toHaveCount(28, { timeout: 15000 })
+
+    await page.keyboard.press("ArrowDown")
+    await expect(grid.locator(".bws-card").nth(4)).toHaveClass(/bws-cursor/)
+    // Zero animation: the band is simply there, instantly.
+    const m = await measureRing(page, ".bws-card", 4)
+    expect(m).not.toBeNull()
+    expect(m?.anims).toBe(0)
+    expect(m?.d).toBeLessThanOrEqual(1.5)
+
+    // Enter: no commit beat — the focus view opens immediately.
+    await page.evaluate(() => {
+      const w = window as unknown as { __commitAt: number | null; __focusAt: number | null }
+      w.__commitAt = null
+      w.__focusAt = null
+      new MutationObserver(() => {
+        if (
+          w.__commitAt === null &&
+          document.querySelector(".focus-ring")?.classList.contains("commit")
+        )
+          w.__commitAt = performance.now()
+        if (w.__focusAt === null && document.querySelector(".pfocus"))
+          w.__focusAt = performance.now()
+      }).observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["class"],
+      })
+    })
+    await page.keyboard.press("Enter")
+    await expect(page.locator(".pfocus")).toBeVisible()
+    const t = await page.evaluate(() => {
+      const w = window as unknown as { __commitAt: number | null; __focusAt: number | null }
+      return { commitAt: w.__commitAt, focusAt: w.__focusAt }
+    })
+    expect(t.commitAt).toBeNull()
+    expect(t.focusAt).not.toBeNull()
+    await page.keyboard.press("Escape")
+    await expect(page.locator(".pfocus")).toHaveCount(0)
+
+    // Resize under RM: still an instant snap onto the same card.
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await expect(grid.locator(".bws-card")).toHaveCount(27, { timeout: 15000 })
+    await expectRingOn(page, ".bws-card", 4)
+  })
+})
