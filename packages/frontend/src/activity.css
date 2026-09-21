@@ -1,0 +1,344 @@
+/* ── Activity queue (implementation ticket 09) ─────────────────────
+   spec §4.3 (06 票定稿): ACTIVE / FINISHED sections, header
+   `n ACTIVE — m FINISHED — k FAILED`. Row = 64px thumb + title + TYPE
+   border pill + STAGE pill (300ms flip-in on every stage change) + mono
+   readout line + hairline progress — determinate fills via
+   `transform: scaleX` + `transform-origin: left` (§5 F8: no width
+   transitions), indeterminate runs the scan segment. Settle beat (§5
+   exception 700×2+1400): a newly terminal row holds in ACTIVE for 1.4s
+   while the COMPLETE pill flashes inverse twice, then drops into FINISHED.
+   Colors come exclusively from the --pt-* token layer; motion consumes the
+   token curves/durations. */
+
+.act {
+  position: relative;
+  /* Same bleed-over as .bws / .lib (see browse.css). */
+  margin: -18px -20px -14px;
+  padding: 46px 52px 174px;
+  background: var(--pt-bg);
+  color: var(--pt-text);
+  transition: background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+
+/* ── Header: Clash display title + mono queue counts ────────────── */
+.act-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.act-title {
+  margin: 0;
+  font-family: var(--pf-display);
+  font-size: clamp(40px, 4.5vw, 62px);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.022em;
+  text-transform: uppercase;
+}
+
+.act-title-slash {
+  color: var(--pt-faint);
+  font-weight: 400;
+}
+
+.act-count {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-dim);
+  white-space: nowrap;
+}
+
+/* ── Section heads ───────────────────────────────────────────────── */
+.act-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--pt-faint);
+  border-bottom: 1px solid var(--pt-line);
+  padding-bottom: 7px;
+  margin-bottom: 2px;
+}
+
+.act-sec-finished {
+  margin-top: 46px;
+}
+
+.act-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Task row: thumb | main | actions, hairline below ───────────── */
+.act-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  column-gap: 14px;
+  row-gap: 7px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--pt-line-soft);
+}
+
+.act-thumb {
+  grid-row: 1 / 3;
+  width: 64px;
+  height: 40px;
+  overflow: hidden;
+  background: var(--pt-fill);
+  display: grid;
+  place-items: center;
+}
+
+.act-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.act-thumb-swap {
+  color: var(--pt-faint);
+  font-size: 14px;
+}
+
+.act-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.act-line1 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.act-row-title {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* TYPE / 18+ border pills. */
+.act-type {
+  flex-shrink: 0;
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
+  border: 1px solid var(--pt-line);
+  border-radius: 2px;
+  padding: 2px 5px;
+}
+
+/* The stage pill remounts on every stage change — the 300ms flip-in marks
+   the state machine advancing. */
+.act-stage {
+  flex-shrink: 0;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--pt-text);
+  animation: act-stage-in var(--dur-base) var(--ease-out);
+}
+
+@keyframes act-stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.act-stage-done {
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.act-stage-err {
+  color: var(--pt-danger);
+}
+
+/* Mono readout line: ID · bytes · elapsed · percent. */
+.act-line2 {
+  margin-top: 3px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+}
+
+/* Migration phase readout: ● done / ◉ current / ○ not reached. */
+.act-phases {
+  margin-top: 6px;
+  display: flex;
+  gap: 16px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--pt-faint);
+}
+
+.act-phases .is-now {
+  color: var(--pt-text);
+}
+
+.act-phases .is-done {
+  color: var(--pt-dim);
+}
+
+/* Failure expands a red mono ERR line. */
+.act-errline {
+  margin-top: 6px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--pt-danger);
+  animation: act-err-in var(--dur-base) var(--ease-out);
+}
+
+@keyframes act-err-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* Hairline progress: inverse fill on a soft track. */
+.act-bar {
+  grid-column: 2 / 4;
+  position: relative;
+  height: 2px;
+  background: var(--pt-line-soft);
+  overflow: hidden;
+}
+
+.act-bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  background: var(--pt-inv-bg);
+  transform-origin: left;
+  transition: transform var(--dur-base) linear;
+}
+
+/* Indeterminate: an 18% scan segment sweeps the track (constant motion —
+   linear, same cadence as the StateBlock scanline). */
+.act-bar-indet::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 18%;
+  background: var(--pt-inv-bg);
+  opacity: 0.7;
+  animation: act-scan 1400ms linear infinite;
+}
+
+@keyframes act-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(660%);
+  }
+}
+
+/* Row actions: CANCEL (download/migration only) / RETRY / DISMISS. */
+.act-actions {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  align-self: start;
+  padding-top: 2px;
+}
+
+.act-act {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--pt-dim);
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  padding: 0 0 1px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .act-act:hover {
+    color: var(--pt-text);
+    border-bottom-color: var(--pt-text);
+  }
+}
+
+/* Settle beat (§5 exception 700×2+1400): while the row holds in ACTIVE the
+   landed COMPLETE pill flashes inverse twice. */
+.act-settle .act-stage-done {
+  animation: act-flash 700ms var(--ease-out) 2;
+}
+
+@keyframes act-flash {
+  0%,
+  100% {
+    background: var(--pt-inv-bg);
+    color: var(--pt-inv-text);
+  }
+  50% {
+    background: transparent;
+    color: var(--pt-text);
+  }
+}
+
+/* History pagination, ledger command grammar. */
+.act-more {
+  display: block;
+  margin: 14px auto 0;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-dim);
+  padding: 0 0 1px;
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .act-more:hover {
+    color: var(--pt-text);
+    border-bottom-color: var(--pt-text);
+  }
+}
+
+/* Reduced motion (spec §5 F5): the choreography degrades to instant cuts —
+   no pill flip, no ERR slide, no settle flash, the scan settles to a static
+   hairline. The settle hold itself is skipped in TS (Activity.tsx); terminal
+   states, error lines and counts render unchanged. */
+@media (prefers-reduced-motion: reduce) {
+  .act-stage,
+  .act-errline {
+    animation: none;
+  }
+  .act-settle .act-stage-done {
+    animation: none;
+  }
+  .act-bar-indet::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.3;
+  }
+}
