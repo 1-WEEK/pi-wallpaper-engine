@@ -224,8 +224,7 @@ a {
   letter-spacing: 0.02em;
 }
 
-.empty-state,
-.player-empty {
+.empty-state {
   padding: 24px;
   border: 1px dashed var(--border);
   border-radius: 10px;
@@ -459,7 +458,10 @@ a {
 .main {
   min-width: 0;
   min-height: 0;
-  padding: 18px 20px 14px;
+  /* The PlayerBar dock floats above the bottom of this scroller
+     (ticket 04); the generous bottom padding keeps the last content
+     reachable clear of the glass. */
+  padding: 18px 20px 110px;
   overflow-y: auto;
 }
 
@@ -510,123 +512,10 @@ a {
   font-size: 12px;
 }
 
-/* ── Bottom player ──────────────────────────────────────────────── */
-.player-dock {
-  grid-column: 2;
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
-  background: rgba(19, 24, 32, 0.98);
-  border-top: 1px solid var(--border);
-}
-
-.player-dock-inner {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-height: 76px;
-  padding: 10px 16px;
-}
-
-.player-media {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.player-preview {
-  width: 64px;
-  height: 58px;
-  border-radius: 8px;
-  object-fit: cover;
-  flex-shrink: 0;
-  background: #000;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
-.player-preview-placeholder {
-  background: linear-gradient(135deg, var(--ink-2), var(--ink-3));
-}
-
-.player-copy {
-  min-width: 0;
-}
-
-.player-title {
-  font-size: 15px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.player-subtitle {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--paper-faint);
-}
-
-.player-transport {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.player-control {
-  display: inline-flex;
-  white-space: nowrap;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--ink-2);
-  color: var(--paper);
-  cursor: pointer;
-  line-height: 0;
-}
-
-.player-control-icon {
-  width: 36px;
-  min-width: 36px;
-  padding: 0;
-}
-
-.player-control-icon svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-
-.player-control-primary {
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
-  color: var(--accent-2);
-}
-
-.player-codec {
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: var(--ink-2);
-  color: var(--paper-dim);
-  font-size: 11px;
-}
-
-.player-right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.player-segmented {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+/* ── Bottom player: rebuilt as the liquid-glass dock (ticket 04), see
+   playerBar.css. The legacy .player-dock block styles were removed; the
+   DisplayPowerToggle chrome below is still shared with the mobile mini
+   player. ─────────────────────────────────────────────────────────── */
 
 .display-toggle {
   display: inline-flex;
@@ -722,25 +611,6 @@ a {
   border-radius: 999px;
 }
 
-.player-segmented-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--paper-faint);
-}
-
-.player-mode-segmented .segmented-button {
-  min-width: 0;
-  padding: 6px 9px;
-  line-height: 0;
-}
-
-.player-mode-segmented .segmented-button svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-
 .library-rotation-actions {
   display: inline-flex;
   white-space: nowrap;
@@ -765,12 +635,6 @@ a {
   width: 15px;
   height: 15px;
   display: block;
-}
-
-.player-error {
-  padding: 0 18px 12px;
-  color: var(--danger);
-  font-size: 12px;
 }
 
 /* ── Browse ─────────────────────────────────────────────────────── */
@@ -2014,14 +1878,6 @@ a {
   .summary-stats,
   .settings-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .player-dock-inner {
-    flex-wrap: wrap;
-  }
-
-  .player-right {
-    margin-left: 0;
   }
 }
 

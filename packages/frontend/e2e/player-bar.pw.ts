@@ -37,15 +37,15 @@ const mockAllEndpoints = async (page: Page, summaryRef: { value: SystemSummary }
   )
 }
 
-test.describe("PlayerBar", () => {
+test.describe("PlayerBar glass dock", () => {
   test("shows the current wallpaper and transport state", async ({ page }) => {
     await mockAllEndpoints(page, { value: playingSummary() })
     await page.goto("/browse")
 
-    const dock = page.locator(".player-dock")
-    await expect(dock.locator(".player-title")).toHaveText("Neon City")
-    await expect(dock.locator(".player-subtitle")).toContainText("looping")
-    await expect(dock.locator(".player-codec")).toContainText("1920x1080 · hevc")
+    const dock = page.locator(".pbar")
+    await expect(dock.locator(".pbar-title")).toHaveText("Neon City")
+    await expect(dock.locator(".pbar-sub")).toContainText("looping")
+    await expect(dock.locator(".pbar-codec")).toContainText("1920x1080 · hevc")
     await expect(dock.getByRole("button", { name: "Pause playback" })).toBeEnabled()
   })
 
@@ -53,9 +53,8 @@ test.describe("PlayerBar", () => {
     await mockAllEndpoints(page, { value: mockSystemSummary() })
     await page.goto("/browse")
 
-    const dock = page.locator(".player-dock")
-    await expect(dock.locator(".player-title")).toHaveText("No wallpaper selected")
-    await expect(dock.getByRole("button", { name: "Stop playback" })).toBeDisabled()
+    const dock = page.locator(".pbar")
+    await expect(dock.locator(".pbar-title")).toHaveText("No wallpaper selected")
     await expect(dock.getByRole("button", { name: "Resume playback" })).toBeDisabled()
     // Next/prev drive rotation and stay usable without a current item.
     await expect(dock.getByRole("button", { name: "Next wallpaper" })).toBeEnabled()
@@ -80,10 +79,10 @@ test.describe("PlayerBar", () => {
     await expect.poll(() => pausePosted).toBe(true)
     // onRefresh refetches the summary, which now reports paused.
     await expect(page.getByRole("button", { name: "Resume playback" })).toBeVisible()
-    await expect(page.locator(".player-subtitle")).toContainText("paused")
+    await expect(page.locator(".pbar-sub")).toContainText("paused")
   })
 
-  test("display mode segmented posts the chosen mode", async ({ page }) => {
+  test("DISPLAY popover posts the chosen mode and stays open", async ({ page }) => {
     const summaryRef = { value: playingSummary() }
     await mockAllEndpoints(page, summaryRef)
 
@@ -97,10 +96,149 @@ test.describe("PlayerBar", () => {
     })
 
     await page.goto("/browse")
-    const segmented = page.locator(".player-right .segmented")
-    await segmented.getByRole("button", { name: "fit" }).click()
+    await page.getByRole("button", { name: "Display mode", exact: true }).click()
+    const pop = page.locator(".pbar-pop").filter({ hasText: "DISPLAY" })
+    await expect(pop).toBeVisible()
 
+    // Segmenter semantics: the popover stays open so modes can be compared.
+    await pop.getByRole("button", { name: "FIT" }).click()
     await expect.poll(() => postedMode).toBe("fit")
-    await expect(segmented.getByRole("button", { name: "fit" })).toHaveClass(/active/)
+    await expect(pop).toBeVisible()
+    await expect(pop.getByRole("button", { name: "FIT" })).toHaveClass(/is-on/)
+  })
+
+  test("popover bottom floats 12px above the glass top, right edge flush with the cluster", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page, { value: playingSummary() })
+    await page.goto("/browse")
+
+    await page.getByRole("button", { name: "Display mode", exact: true }).click()
+    const pop = page.locator(".pbar-pop").filter({ hasText: "DISPLAY" })
+    await expect(pop).toBeVisible()
+    // The 200ms enter transition shifts the transformed box; measure at rest.
+    await page.waitForTimeout(260)
+
+    const popBox = await pop.boundingBox()
+    const innerBox = await page.locator(".pbar-inner").boundingBox()
+    const clusterBox = await page.locator(".pbar-cluster").boundingBox()
+    if (!popBox || !innerBox || !clusterBox) throw new Error("missing bounding boxes")
+
+    expect(popBox.y + popBox.height).toBeCloseTo(innerBox.y - 12, 0)
+    expect(popBox.x + popBox.width).toBeCloseTo(clusterBox.x + clusterBox.width, 0)
+  })
+
+  test("display → sleep quick-switch lets the old popover exit while the new one enters", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page, { value: playingSummary() })
+    await page.goto("/browse")
+
+    await page.getByRole("button", { name: "Display mode", exact: true }).click()
+    const displayPop = page.locator(".pbar-pop").filter({ hasText: "DISPLAY" })
+    await expect(displayPop).toBeVisible()
+
+    await page.getByRole("button", { name: "Sleep timer" }).click()
+    const sleepPop = page.locator(".pbar-pop").filter({ hasText: "SLEEP" })
+    await expect(sleepPop).toBeVisible()
+    // The display popover leaves on its mirrored 150ms exit instead of
+    // vanishing in the same frame (the mid-exit window is too short to
+    // assert without races); it always ends up unmounted.
+    await expect(displayPop).toHaveCount(0)
+  })
+
+  test("SLEEP popover posts the chosen minutes and the subtitle reports sleep Nm", async ({
+    page,
+  }) => {
+    const summaryRef = { value: playingSummary() }
+    await mockAllEndpoints(page, summaryRef)
+
+    let postedMinutes: number | null = null
+    await page.route("**/api/player/sleep", (r) => {
+      postedMinutes = (r.request().postDataJSON() as { minutes: number }).minutes
+      const next = playingSummary()
+      next.status.sleep = { active: true, deadline: Date.now() + 30 * 60_000 }
+      summaryRef.value = next
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ active: true, deadline: Date.now() + 30 * 60_000 }),
+      })
+    })
+
+    await page.goto("/browse")
+    await page.getByRole("button", { name: "Sleep timer" }).click()
+    const pop = page.locator(".pbar-pop").filter({ hasText: "SLEEP" })
+    await expect(pop).toBeVisible()
+    await expect(pop.getByRole("button", { name: "OFF" })).toHaveClass(/is-on/)
+
+    await pop.getByRole("button", { name: "30M" }).click()
+    await expect.poll(() => postedMinutes).toBe(30)
+    // Selection commits and closes the popover (after its mirrored exit).
+    await expect(pop).toHaveCount(0)
+    await expect(page.locator(".pbar-sub")).toContainText("sleep 30m")
+  })
+
+  test("display power is a direct toggle against the API", async ({ page }) => {
+    const summaryRef = { value: playingSummary() }
+    summaryRef.value.status.display = {
+      configured: true,
+      state: "on",
+      source: "probed",
+      error_kind: null,
+    }
+    await mockAllEndpoints(page, summaryRef)
+
+    let offPosted = false
+    await page.route("**/api/display/off", (r) => {
+      offPosted = true
+      const next = playingSummary()
+      next.status.display = { configured: true, state: "off", source: "probed", error_kind: null }
+      summaryRef.value = next
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, state: "off" }),
+      })
+    })
+
+    await page.goto("/browse")
+    await page.getByRole("button", { name: "Turn display off" }).click()
+    await expect.poll(() => offPosted).toBe(true)
+    await expect(page.getByRole("button", { name: "Turn display on" })).toBeVisible()
+  })
+
+  test("dock tucks on downward scroll, recalls on upward, and drops an open popover", async ({
+    page,
+  }) => {
+    // Reduced motion keeps lenis off (spec §5 F5), so the scroller moves
+    // natively and the direction test is deterministic.
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await mockAllEndpoints(page, { value: playingSummary() })
+    await page.goto("/browse")
+
+    const dock = page.locator(".pbar")
+    await expect(dock.locator(".pbar-title")).toHaveText("Neon City")
+
+    await page.getByRole("button", { name: "Display mode", exact: true }).click()
+    await expect(page.locator(".pbar-pop")).toHaveCount(1)
+
+    // Give .main something to scroll, then scroll down: the dock tucks and
+    // the popover state is explicitly nulled — no ghost popover (F2).
+    await page.evaluate(() => {
+      const main = document.querySelector<HTMLElement>(".main")
+      if (!main) throw new Error(".main not found")
+      const spacer = document.createElement("div")
+      spacer.style.height = "3000px"
+      main.appendChild(spacer)
+      main.scrollTop = 600
+    })
+    await expect(dock).toHaveClass(/pbar-tucked/)
+    await expect(page.locator(".pbar-pop")).toHaveCount(0)
+
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>(".main")!.scrollTop = 0
+    })
+    await expect(dock).not.toHaveClass(/pbar-tucked/)
   })
 })
