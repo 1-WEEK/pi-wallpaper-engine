@@ -14,6 +14,7 @@ import { FocusRing, FOCUS_CONFIRM_MS } from "../components/FocusRing.js"
 import { LedgerList, LedgerRow } from "../components/LedgerList.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { prefersReducedMotion } from "../reducedMotion.js"
+import { sounds } from "../sound.js"
 import { canViewTransition, withViewTransition } from "../viewTransition.js"
 import { flyGhost } from "../ghost.js"
 import { flyPlayGhost } from "../crossPageGhosts.js"
@@ -108,6 +109,9 @@ const useIntents = (
   setNotice: (n: string | null) => void
 ): Intents => ({
   play: (id, fromEl, src) => {
+    // Wallpaper selected (ticket 13): nav family ×1.5 pitch, on the
+    // NOW PLAYING chip's appearance intent.
+    sounds.trigger("select")
     // The media ghost flies to the PlayerBar thumb as playback starts; the
     // now-playing switch itself runs on the existing API/SWR path.
     flyPlayGhost(fromEl, src)
@@ -198,6 +202,8 @@ const HoverActions = ({
             setConfirming(false)
             intents.remove(row.workshop_id)
           } else {
+            // Destructive confirm armed (ticket 13): warn family, light variant.
+            sounds.trigger("armed")
             setConfirming(true)
             timer.current = setTimeout(() => setConfirming(false), 2200)
           }
@@ -365,6 +371,8 @@ const LibraryDesktop = ({ nowPlayingId, onSystemRefresh }: Props) => {
   // plays the 150ms exit beat (F1). Reduced motion: instant cut.
   const requestClose = () => {
     if (detailIdx === null || detailClosing) return
+    // Interface sound (ticket 13): nav dismiss variant, exit-beat first frame.
+    sounds.trigger("dismiss")
     setCommit(false)
     setCursor(detailIdx)
     if (!prefersReducedMotion()) {
@@ -744,7 +752,11 @@ const LibraryDesktop = ({ nowPlayingId, onSystemRefresh }: Props) => {
                 }
                 meta={playableMeta(row)}
                 cursor={i === clampedCursor}
-                onSelect={() => setCursor(i)}
+                onSelect={() => {
+                  // Ledger row select (ticket 13): nav family tick.
+                  sounds.trigger("nav")
+                  setCursor(i)
+                }}
                 onOpen={() => openDetail(i)}
                 action={
                   <>
@@ -788,7 +800,16 @@ const LibraryDesktop = ({ nowPlayingId, onSystemRefresh }: Props) => {
         />
       )}
 
-      {previewItem && <VideoPreview item={previewItem} onClose={() => setPreviewItem(null)} />}
+      {previewItem && (
+        <VideoPreview
+          item={previewItem}
+          onClose={() => {
+            // Interface sound (ticket 13): nav dismiss variant.
+            sounds.trigger("dismiss")
+            setPreviewItem(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -923,6 +944,8 @@ const LibraryDetail = ({
                   if (timer.current) clearTimeout(timer.current)
                   onDelete(row.workshop_id)
                 } else {
+                  // Destructive confirm armed (ticket 13): warn family.
+                  sounds.trigger("armed")
                   setConfirming(true)
                   timer.current = setTimeout(() => setConfirming(false), 2200)
                 }

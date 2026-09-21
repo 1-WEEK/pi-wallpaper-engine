@@ -247,3 +247,37 @@
   background: var(--pt-inv-bg);
   color: var(--pt-inv-text);
 }
+
+/* ── Interface-sound quick mute (ticket 13, spec §6) ───────────────────
+   Persistent round dot at the shell's bottom-right, floating above the
+   PlayerBar dock's right end: the dock owns wallpaper audio, this dot owns
+   interface sounds only — separate position (outside the glass), separate
+   shape (dot vs the dock's square icon cluster), separate semantics (no
+   shared mute state). Rendered only while the master switch is ON. */
+.sound-dot {
+  position: fixed;
+  right: 20px;
+  bottom: 104px;
+  z-index: 61;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--pt-line);
+  background: var(--pt-bg);
+  color: var(--pt-faint);
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.sound-dot:hover {
+  color: var(--pt-text);
+  border-color: var(--pt-faint);
+}
+
+.sound-dot.is-muted {
+  color: var(--pt-text);
+}

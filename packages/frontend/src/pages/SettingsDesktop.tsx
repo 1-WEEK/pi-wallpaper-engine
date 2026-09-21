@@ -32,6 +32,7 @@ import {
 import { RailControls } from "../components/RailShell.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { getInterfaceSounds, setInterfaceSounds } from "../interfaceSounds.js"
+import { sounds } from "../sound.js"
 
 interface Props {
   summary: SystemSummary | null
@@ -726,7 +727,11 @@ const StorageSec = ({
           currentRoot={storage.data_root}
           defaultRoot={storage.default_root}
           libraryTotal={libraryTotal}
-          onClose={() => setSheetOpen(false)}
+          onClose={() => {
+            // Interface sound (ticket 13): nav dismiss variant on sheet exit.
+            sounds.trigger("dismiss")
+            setSheetOpen(false)
+          }}
           onConfirm={confirmTarget}
         />
       )}
@@ -776,6 +781,8 @@ const AccessSec = () => {
   const atLimit = count >= cap
 
   const arm = (id: string) => {
+    // Destructive confirm armed (ticket 13): warn family, light variant.
+    sounds.trigger("armed")
     setArming(id)
     if (armTimer.current) clearTimeout(armTimer.current)
     armTimer.current = setTimeout(() => setArming((a) => (a === id ? null : a)), 2200)

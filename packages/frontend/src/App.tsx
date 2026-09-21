@@ -14,6 +14,7 @@ import { Setup } from "./pages/Setup.js"
 import { Settings } from "./pages/Settings.js"
 import { PlayerBar } from "./components/PlayerBar.js"
 import { RailShell } from "./components/RailShell.js"
+import { SoundMuteDot } from "./components/SoundMuteDot.js"
 import { useLenis } from "./useLenis.js"
 import {
   LayoutProvider,
@@ -187,6 +188,7 @@ const DesktopShell = ({
         <Routes summary={summary ?? undefined} onRefresh={onRefresh} />
       </main>
       <PlayerBar summary={summary} onRefresh={onRefresh} />
+      <SoundMuteDot />
     </RailShell>
   )
 }

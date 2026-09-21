@@ -17,6 +17,7 @@ import { RailRow } from "../components/RailRow.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { appIcons } from "../icons.js"
 import { prefersReducedMotion, useReducedMotion } from "../reducedMotion.js"
+import { sounds } from "../sound.js"
 import { canViewTransition, withViewTransition } from "../viewTransition.js"
 import { flyGhost } from "../ghost.js"
 import { duration } from "../motionTokens.js"
@@ -368,6 +369,8 @@ export const Browse = () => {
   // beat (F1). Reduced motion: no ghost, instant cut.
   const requestClose = () => {
     if (focusIdx === null || focusClosing) return
+    // Interface sound (ticket 13): nav dismiss variant, exit-beat first frame.
+    sounds.trigger("dismiss")
     // Drop the commit state and park the cursor on the closing item while the
     // scrim still covers the grid: the XOR fades and the ring re-seats under
     // cover, so the card the ghost lands on is clean and already focused.
@@ -836,7 +839,11 @@ export const Browse = () => {
                 title={it.title}
                 meta={listMeta(it)}
                 cursor={i === clampedCursor}
-                onSelect={() => setCursor(i)}
+                onSelect={() => {
+                  // Ledger row select (ticket 13): nav family tick.
+                  sounds.trigger("nav")
+                  setCursor(i)
+                }}
                 onOpen={() => openFocus(i)}
               />
             ))}

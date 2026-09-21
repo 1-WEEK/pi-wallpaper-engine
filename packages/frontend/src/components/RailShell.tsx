@@ -35,6 +35,7 @@ import { getActiveTaskCount } from "../activeTaskCount.js"
 import { useTheme, type ThemeChoice } from "../theme.js"
 import { duration, easeSlide } from "../motionTokens.js"
 import { prefersReducedMotion } from "../reducedMotion.js"
+import { sounds } from "../sound.js"
 
 const RailControlsContext = createContext<HTMLElement | null>(null)
 
@@ -235,6 +236,8 @@ export const RailShell = ({
     // over the plain left click. Clicking the current page is a no-op.
     e.preventDefault()
     if (item.active) return
+    // Interface sound (ticket 13): nav family, with the active state.
+    sounds.trigger("nav")
     const target = linkRefs.current[item.key]
     if (!target || prefersReducedMotion()) {
       navigate(item.href)

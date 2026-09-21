@@ -10,6 +10,7 @@ import { RailControls } from "../components/RailShell.js"
 import { RailRow } from "../components/RailRow.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { useReducedMotion } from "../reducedMotion.js"
+import { sounds } from "../sound.js"
 
 const REFRESH_MS = 1000
 const PAGE_SIZE = 50
@@ -215,6 +216,24 @@ const ActivityDesktop = () => {
     },
     []
   )
+
+  // Interface sound (ticket 13, spec §6): a row crossing running → terminal
+  // is the state-receipt trigger — complete lands the transition family on
+  // the settle beat, failed lands warn on the error-line expand. Rows that
+  // arrive already terminal (history pages) never fire, and the engine
+  // itself drops these while hidden / under reduced motion (transition only).
+  const prevRowState = useRef(new Map<string, "running" | "done" | "failed">())
+  useEffect(() => {
+    const prev = prevRowState.current
+    for (const row of rows) {
+      const state = !row.terminal ? "running" : row.failed ? "failed" : "done"
+      const was = prev.get(row.id)
+      prev.set(row.id, state)
+      if (was !== "running") continue
+      if (state === "done") sounds.trigger("done")
+      else if (state === "failed") sounds.trigger("fail")
+    }
+  }, [rows])
 
   const activeRows = rows.filter((r) => !r.terminal || settling.has(r.id))
   const finishedRows = rows.filter((r) => r.terminal && !settling.has(r.id))

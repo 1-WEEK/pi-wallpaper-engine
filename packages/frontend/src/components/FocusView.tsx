@@ -11,6 +11,7 @@ import { useRef, useState } from "react"
 import type { ActivityTask, WorkshopItem } from "@pwe/shared"
 import { api } from "../api.js"
 import { flyDownloadReceipt } from "../crossPageGhosts.js"
+import { sounds } from "../sound.js"
 import { isTaskFinished, taskStageLabel } from "../taskDisplay.js"
 import { RESOLUTION_TAGS } from "../workshopTags.js"
 
@@ -77,6 +78,8 @@ export const FocusView = ({
       .download(item.publishedfileid)
       .then(() => {
         setQueued(true)
+        // Download accepted (ticket 13): commit family, on the ghost takeoff.
+        sounds.trigger("download")
         // Download receipt (ticket 12, spec §4.5) — same flight as the card.
         if (mediaRef.current) {
           flyDownloadReceipt(mediaRef.current, item.preview_url || undefined)

@@ -174,4 +174,16 @@ export const appIcons = {
       <path d="M10.3 10 a2.2 2.2 0 1 0 3.4 0" />
     </AppIcon>
   ),
+  soundOn: (
+    <AppIcon size={14}>
+      <path d="M11 5 L6 9 H3 V15 H6 L11 19 Z" />
+      <path d="M15 9 a4.2 4.2 0 0 1 0 6" />
+    </AppIcon>
+  ),
+  soundOff: (
+    <AppIcon size={14}>
+      <path d="M11 5 L6 9 H3 V15 H6 L11 19 Z" />
+      <path d="M15 9 L21 15 M21 9 L15 15" />
+    </AppIcon>
+  ),
 }

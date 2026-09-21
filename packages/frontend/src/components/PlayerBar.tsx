@@ -11,6 +11,7 @@ import type { SystemSummary } from "../api.js"
 import { appIcons } from "../icons.js"
 import { duration } from "../motionTokens.js"
 import { useReducedMotion } from "../reducedMotion.js"
+import { sounds } from "../sound.js"
 import { DisplayPowerToggle } from "./DisplayPowerToggle.js"
 
 interface Props {
@@ -80,6 +81,8 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const closePop = () => {
     const p = popoverRef.current
     if (!p) return
+    // Interface sound (ticket 13): nav dismiss variant on the exit first frame.
+    sounds.trigger("dismiss")
     setPop(null)
     setClosingPop(p)
     if (closeAnimTimer.current) clearTimeout(closeAnimTimer.current)
@@ -127,6 +130,9 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
 
   const togglePower = async () => {
     if (!display || !display.configured) return
+    // Interface sound (ticket 13): transition family ×0.7 gain, on the
+    // status-dot flip.
+    sounds.trigger("display")
     setDisplayPending(true)
     setError(null)
     try {
@@ -345,6 +351,8 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
             aria-label="Previous wallpaper"
             disabled={pending}
             onClick={() => {
+              // Interface sound (ticket 13): commit family, icon-swap frame.
+              sounds.trigger("transport")
               void runAction(() => api.playerPrev())
             }}
           >
@@ -356,6 +364,7 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
             aria-label={player.playing ? "Pause playback" : "Resume playback"}
             disabled={!hasCurrent || pending}
             onClick={() => {
+              sounds.trigger("transport")
               void runAction(() => (player.playing ? api.pause() : api.resume()))
             }}
           >
@@ -366,6 +375,7 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
             aria-label="Next wallpaper"
             disabled={pending}
             onClick={() => {
+              sounds.trigger("transport")
               void runAction(() => api.playerNext())
             }}
           >

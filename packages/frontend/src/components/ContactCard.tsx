@@ -8,6 +8,7 @@ import type { CSSProperties } from "react"
 import type { ActivityTask, WorkshopItem } from "@pwe/shared"
 import { api } from "../api.js"
 import { flyDownloadReceipt } from "../crossPageGhosts.js"
+import { sounds } from "../sound.js"
 import { isTaskFinished, taskStageLabel } from "../taskDisplay.js"
 
 const formatFileSize = (raw: WorkshopItem["file_size"]): string | null => {
@@ -64,6 +65,8 @@ export const ContactCard = ({
       .download(item.publishedfileid)
       .then(() => {
         setQueued(true)
+        // Download accepted (ticket 13): commit family, on the ghost takeoff.
+        sounds.trigger("download")
         // Download receipt (ticket 12, spec §4.5): the thumbnail flies to the
         // Library nav item; the landing pulses the nav label.
         if (mediaRef.current) {
