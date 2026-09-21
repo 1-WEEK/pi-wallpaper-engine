@@ -4,6 +4,7 @@ import { App } from "./App.js"
 import "./tokens.css"
 import "./styles.css"
 import "./railShell.css"
+import "./browse.css"
 
 const root = document.getElementById("root")
 if (!root) throw new Error("#root not found")

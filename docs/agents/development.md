@@ -119,6 +119,15 @@ causes a brief playback interruption. For removal, read [Uninstall](../uninstall
   shared VT/ghost/lenis helpers in `viewTransition.ts` / `ghost.ts` /
   `useLenis.ts`. New styles must use the `--ease-*`/`--dur-*` tokens, never
   bare `ease`/`ease-in`/`ease-out` keywords.
+- The redesigned Browse page (implementation ticket 02) lives in
+  [browse.css](../../packages/frontend/src/browse.css) (`.bws-*` classes):
+  desktop renders the measured coordinate grid
+  ([GridOverlay.tsx](../../packages/frontend/src/components/GridOverlay.tsx),
+  offset geometry only), the contact-sheet card
+  ([ContactCard.tsx](../../packages/frontend/src/components/ContactCard.tsx)),
+  and the shared three-state block
+  ([StateBlock.tsx](../../packages/frontend/src/components/StateBlock.tsx)).
+  The mobile branch keeps the legacy `.page`/`.wallpaper-card` layout.
 - Keep the existing plain CSS system for not-yet-migrated pages. Reuse
   controls and icons from
   [icons.tsx](../../packages/frontend/src/icons.tsx).

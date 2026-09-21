@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
 import { useLocation, useSearch } from "wouter"
 import type { WorkshopItem } from "@pwe/shared"
 import { api, type ActivityTask, type WorkshopSearchResult } from "../api.js"
 import { WallpaperCard } from "../components/WallpaperCard.js"
+import { ContactCard } from "../components/ContactCard.js"
+import { GridOverlay } from "../components/GridOverlay.js"
+import { StateBlock } from "../components/StateBlock.js"
 import { appIcons } from "../icons.js"
+import { prefersReducedMotion } from "../reducedMotion.js"
 import { useLayout } from "../components/mobile/index.js"
 import { useColumnsPerRow } from "../useColumnsPerRow.js"
 import { MobileSheet } from "../components/mobile/index.js"
@@ -18,7 +22,7 @@ import {
 } from "../workshopTags.js"
 
 const MIN_CARD_WIDTH = 248
-const GRID_GAP = 14
+const GRID_GAP = 16
 const PAGE_SIZE = 25
 
 // URL search params are the source of truth. localStorage is only consulted
@@ -77,7 +81,10 @@ export const Browse = () => {
   const selectedTags = parseTags(params.get("tags"))
   const sort = parseSort(params.get("sort"))
 
-  const gridRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const headRef = useRef<HTMLElement | null>(null)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const gridRef = useRef<HTMLElement | null>(null)
   const columnsPerRow = useColumnsPerRow(gridRef, MIN_CARD_WIDTH, GRID_GAP)
   // Smallest multiple of columnsPerRow that's >= PAGE_SIZE; ensures every
   // page loads enough items to fill complete rows, no orphan cards at the end.
@@ -142,17 +149,18 @@ export const Browse = () => {
     return ["workshop-search", submittedQuery, tagKey, sort, cursor, pageSize] as const
   }
 
-  const { data, error, isLoading, isValidating, size, setSize } = useSWRInfinite(
-    getKey,
-    ([, q, tags, s, cursor, currentPageSize]) =>
-      api.workshopSearch(q, {
-        cursor,
-        pageSize: currentPageSize,
-        tags: tags ? tags.split(",") : [],
-        sort: s as WorkshopSort,
-      }),
-    { revalidateFirstPage: false }
-  )
+  const { data, error, isLoading, isValidating, size, setSize, mutate: mutateSearch } =
+    useSWRInfinite(
+      getKey,
+      ([, q, tags, s, cursor, currentPageSize]) =>
+        api.workshopSearch(q, {
+          cursor,
+          pageSize: currentPageSize,
+          tags: tags ? tags.split(",") : [],
+          sort: s as WorkshopSort,
+        }),
+      { revalidateFirstPage: false }
+    )
 
   const { data: libraryRows = [] } = useSWR("library-list", api.libraryList, {
     refreshInterval: 5000,
@@ -190,6 +198,54 @@ export const Browse = () => {
     !!lastPage && !!lastPage.nextCursor && lastPage.items.length >= PAGE_SIZE
   const isLoadingMore = isValidating && pages.length > 0 && pages.length < size
 
+  // Header parallax fade (spec §2.5): the page head drifts up slower than the
+  // content and fades early. Driven from the scroller's native scroll events
+  // (lenis writes scrollTop, so plain scroll listeners stay in sync); inline
+  // style writes only, no React state per frame. Reduced motion: skipped.
+  useEffect(() => {
+    if (mobile || prefersReducedMotion()) return
+    const head = headRef.current
+    const scroller = head?.closest(".main")
+    if (!head || !scroller) return
+    let raf = 0
+    const update = () => {
+      raf = 0
+      const s = scroller.scrollTop
+      const p = Math.min(1, Math.max(0, s / 320))
+      head.style.transform = `translateY(${(-s * 0.12).toFixed(1)}px)`
+      head.style.opacity = String(1 - p * 0.85)
+    }
+    const onScroll = () => {
+      if (raf === 0) raf = requestAnimationFrame(update)
+    }
+    scroller.addEventListener("scroll", onScroll, { passive: true })
+    return () => {
+      scroller.removeEventListener("scroll", onScroll)
+      if (raf !== 0) cancelAnimationFrame(raf)
+      head.style.transform = ""
+      head.style.opacity = ""
+    }
+  }, [mobile])
+
+  // Infinite scroll (spec §4.1): the sentinel replaces the Load-more button.
+  // rootMargin 600px prefetches ahead of the fold; appends grow the content
+  // below the viewport, so the scroll position never jumps.
+  useEffect(() => {
+    if (mobile) return
+    const el = sentinelRef.current
+    if (!el || !hasMore) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && !isLoadingMore) {
+          void setSize((s) => s + 1)
+        }
+      },
+      { rootMargin: "600px 0px" }
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [mobile, hasMore, isLoadingMore, setSize])
+
   const toggleTag = (tag: string) => {
     const next = selectedTags.includes(tag)
       ? selectedTags.filter((t) => t !== tag)
@@ -223,24 +279,24 @@ export const Browse = () => {
     </label>
   )
 
-  return (
-    <div className="page">
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Browse</h1>
-        </div>
-        <div className="page-header-meta mono">
-          {total > 0 ? `${total.toLocaleString()} results` : "Search ready"}
-        </div>
-      </header>
+  if (mobile) {
+    return (
+      <div className="page">
+        <header className="page-header">
+          <div>
+            <h1 className="page-title">Browse</h1>
+          </div>
+          <div className="page-header-meta mono">
+            {total > 0 ? `${total.toLocaleString()} results` : "Search ready"}
+          </div>
+        </header>
 
-      <form
-        className="command-bar"
-        action={() => {
-          writeParams({ query: queryDraft })
-        }}
-      >
-        {mobile ? (
+        <form
+          className="command-bar"
+          action={() => {
+            writeParams({ query: queryDraft })
+          }}
+        >
           <div className="browse-mobile-search-row">
             {searchInput}
             <button
@@ -258,186 +314,265 @@ export const Browse = () => {
               )}
             </button>
           </div>
-        ) : (
-          <>
-            {searchInput}
-            <button type="submit" className="btn btn-primary command-bar-submit">
-              Search
-            </button>
-            <div className="command-bar-sort">
-              <span className="mono">sort</span>
-              <div className="segmented segmented-compact command-bar-sort-toggle" role="tablist" aria-label="Sort results">
-                {SORT_OPTIONS.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    className={`segmented-button ${sort === o.value ? "active" : ""}`}
-                    aria-pressed={sort === o.value}
-                    onClick={() => writeParams({ sort: o.value })}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <span className="kbd mono">⌘K</span>
-          </>
-        )}
-      </form>
+        </form>
 
-      {mobile && selectedTags.length > 0 && (
-        <div className="browse-mobile-selected-row">
-          {selectedTags.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className="chip chip-active"
-              onClick={() => toggleTag(t)}
-            >
-              {t}
-              <span className="chip-remove" aria-hidden="true">✕</span>
-            </button>
+        {selectedTags.length > 0 && (
+          <div className="browse-mobile-selected-row">
+            {selectedTags.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className="chip chip-active"
+                onClick={() => toggleTag(t)}
+              >
+                {t}
+                <span className="chip-remove" aria-hidden="true">✕</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isLoading && <div className="empty-state">Loading workshop results…</div>}
+        {error && <div className="error-banner">Error: {(error as Error).message}</div>}
+
+        <div ref={(el) => { gridRef.current = el }} className="grid browse-grid">
+          {items.map((it) => (
+            <WallpaperCard
+              key={it.publishedfileid}
+              item={it}
+              isInLibrary={libraryIds.has(it.publishedfileid)}
+              downloadTask={downloadTasksById.get(it.publishedfileid)}
+              onDownloadQueued={() => {
+                void mutateDownloadTasks()
+              }}
+              onOpen={() => setCardItem(it)}
+            />
           ))}
         </div>
-      )}
 
-      {!mobile && (
-        <div className="filter-stack">
-          <div className="filter-group">
-            <span className="filter-group-label mono">Genre</span>
-            <div className="filter-chips">
-              {GENRE_TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
-                  onClick={() => toggleTag(tag)}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
+        {!isLoading && items.length === 0 && !error && (
+          <div className="empty-state">No results. Try a different search or fewer filters.</div>
+        )}
+
+        {hasMore && (
+          <div className="load-more load-more-spaced">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={isLoadingMore}
+              onClick={() => setSize(size + 1)}
+            >
+              {isLoadingMore ? "Loading..." : "Load more"}
+            </button>
           </div>
-          <div className="filter-group">
-            <span className="filter-group-label mono">Resolution</span>
-            <div className="filter-chips">
-              {RESOLUTION_TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
-                  onClick={() => toggleTag(tag)}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="filter-group">
-            <span className="filter-group-label mono">Age</span>
-            <div className="filter-chips">
-              {AGE_TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
-                  onClick={() => toggleTag(tag)}
-                >
-                  {tag}
-                </button>
-              ))}
-              {selectedTags.length > 0 && (
-                <button type="button" className="chip chip-clear" onClick={clearTags}>
-                  Clear {selectedTags.length}
-                </button>
-              )}
-            </div>
+        )}
+
+        {/* Mobile filters sheet */}
+        <MobileSheet
+          open={filtersOpen}
+          onClose={() => setFiltersOpen(false)}
+          title="Filters"
+          action={
+            selectedTags.length > 0 ? (
+              <button
+                type="button"
+                className="filters-sheet-reset"
+                onClick={() => {
+                  clearTags()
+                }}
+              >
+                Reset
+              </button>
+            ) : null
+          }
+        >
+          <FiltersSheetBody
+            selectedTags={selectedTags}
+            sort={sort}
+            onToggle={toggleTag}
+            onSort={(s) => writeParams({ sort: s })}
+            total={total}
+            onApply={() => setFiltersOpen(false)}
+          />
+        </MobileSheet>
+
+        {/* Mobile card detail sheet */}
+        <MobileSheet
+          open={!!cardItem}
+          onClose={() => setCardItem(null)}
+          height="94%"
+        >
+          {cardItem && (
+            <CardDetailBody
+              item={cardItem}
+              isInLibrary={libraryIds.has(cardItem.publishedfileid)}
+              downloadTask={downloadTasksById.get(cardItem.publishedfileid)}
+              onClose={() => setCardItem(null)}
+              onDownloadQueued={() => {
+                void mutateDownloadTasks()
+              }}
+            />
+          )}
+        </MobileSheet>
+      </div>
+    )
+  }
+
+  const sortLabel = SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "Trending"
+
+  return (
+    <div className="bws" ref={rootRef}>
+      <GridOverlay rootRef={rootRef} gridRef={gridRef} itemCount={items.length} />
+
+      <header className="bws-head pt-enter" ref={headRef}>
+        <h1 className="bws-title">
+          Results<span className="bws-title-slash"> / </span>
+          {sortLabel}
+        </h1>
+        <span className="bws-count mono">
+          {total > 0 ? `${total.toLocaleString("en-US")} ITEMS` : "SEARCH READY"}
+        </span>
+      </header>
+
+      {/* Interim query/sort/filter controls in the content column; ticket 03
+          moves them into the rail control slot (spec §4.1). */}
+      <form
+        className="command-bar pt-enter"
+        style={{ "--pt-i": 1 } as CSSProperties}
+        action={() => {
+          writeParams({ query: queryDraft })
+        }}
+      >
+        {searchInput}
+        <button type="submit" className="btn btn-primary command-bar-submit">
+          Search
+        </button>
+        <div className="command-bar-sort">
+          <span className="mono">sort</span>
+          <div className="segmented segmented-compact command-bar-sort-toggle" role="tablist" aria-label="Sort results">
+            {SORT_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                className={`segmented-button ${sort === o.value ? "active" : ""}`}
+                aria-pressed={sort === o.value}
+                onClick={() => writeParams({ sort: o.value })}
+              >
+                {o.label}
+              </button>
+            ))}
           </div>
         </div>
+        <span className="kbd mono">⌘K</span>
+      </form>
+
+      <div className="filter-stack pt-enter" style={{ "--pt-i": 2 } as CSSProperties}>
+        <div className="filter-group">
+          <span className="filter-group-label mono">Genre</span>
+          <div className="filter-chips">
+            {GENRE_TAGS.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
+                onClick={() => toggleTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="filter-group">
+          <span className="filter-group-label mono">Resolution</span>
+          <div className="filter-chips">
+            {RESOLUTION_TAGS.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
+                onClick={() => toggleTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="filter-group">
+          <span className="filter-group-label mono">Age</span>
+          <div className="filter-chips">
+            {AGE_TAGS.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
+                onClick={() => toggleTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+            {selectedTags.length > 0 && (
+              <button type="button" className="chip chip-clear" onClick={clearTags}>
+                Clear {selectedTags.length}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {isLoading && <StateBlock kind="loading" text="FETCHING INDEX…" />}
+      {/* Page-level error only when the whole page failed to load (spec §3.3);
+          routine pagination errors sit at the sentinel with their own RETRY. */}
+      {error != null && items.length === 0 && (
+        <StateBlock
+          kind="error"
+          text={`ERR — ${(error as Error).message}`}
+          onRetry={() => void mutateSearch()}
+        />
       )}
 
-      {isLoading && <div className="empty-state">Loading workshop results…</div>}
-      {error && <div className="error-banner">Error: {(error as Error).message}</div>}
-
-      <div ref={gridRef} className="grid browse-grid">
-        {items.map((it) => (
-          <WallpaperCard
+      <section
+        ref={(el) => { gridRef.current = el }}
+        className="bws-grid"
+        style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}
+      >
+        {items.map((it, i) => (
+          <ContactCard
             key={it.publishedfileid}
             item={it}
+            index={i}
             isInLibrary={libraryIds.has(it.publishedfileid)}
             downloadTask={downloadTasksById.get(it.publishedfileid)}
             onDownloadQueued={() => {
               void mutateDownloadTasks()
             }}
-            onOpen={mobile ? () => setCardItem(it) : undefined}
           />
         ))}
-      </div>
+      </section>
 
       {!isLoading && items.length === 0 && !error && (
-        <div className="empty-state">No results. Try a different search or fewer filters.</div>
+        <StateBlock kind="empty" text="0 RESULTS — WIDEN QUERY OR CLEAR FILTERS" />
       )}
 
-      {hasMore && (
-        <div className="load-more load-more-spaced">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={isLoadingMore}
-            onClick={() => setSize(size + 1)}
-          >
-            {isLoadingMore ? "Loading..." : "Load more"}
-          </button>
+      {items.length > 0 && (
+        <div ref={sentinelRef} className="bws-sentinel">
+          {error ? (
+            <StateBlock
+              kind="error"
+              text={`ERR — ${(error as Error).message}`}
+              onRetry={() => void mutateSearch()}
+            />
+          ) : hasMore ? (
+            isLoadingMore && (
+              <StateBlock
+                kind="loading"
+                text={`FETCHING — ${total.toLocaleString("en-US")} TOTAL…`}
+              />
+            )
+          ) : (
+            <StateBlock kind="end" text={`END — ${items.length} SHOWN`} />
+          )}
         </div>
       )}
-
-      {/* Mobile filters sheet */}
-      <MobileSheet
-        open={mobile && filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        title="Filters"
-        action={
-          selectedTags.length > 0 ? (
-            <button
-              type="button"
-              className="filters-sheet-reset"
-              onClick={() => {
-                clearTags()
-              }}
-            >
-              Reset
-            </button>
-          ) : null
-        }
-      >
-        <FiltersSheetBody
-          selectedTags={selectedTags}
-          sort={sort}
-          onToggle={toggleTag}
-          onSort={(s) => writeParams({ sort: s })}
-          total={total}
-          onApply={() => setFiltersOpen(false)}
-        />
-      </MobileSheet>
-
-      {/* Mobile card detail sheet */}
-      <MobileSheet
-        open={mobile && !!cardItem}
-        onClose={() => setCardItem(null)}
-        height="94%"
-      >
-        {cardItem && (
-          <CardDetailBody
-            item={cardItem}
-            isInLibrary={libraryIds.has(cardItem.publishedfileid)}
-            downloadTask={downloadTasksById.get(cardItem.publishedfileid)}
-            onClose={() => setCardItem(null)}
-            onDownloadQueued={() => {
-              void mutateDownloadTasks()
-            }}
-          />
-        )}
-      </MobileSheet>
     </div>
   )
 }

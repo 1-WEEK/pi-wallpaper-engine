@@ -98,7 +98,7 @@ export const mockDownloadTasks = (page: Page, tasks: unknown[]) => {
  *  Mirrors computeFitColumns from useColumnsPerRow.ts. */
 export const computeColumns = (viewportWidth: number): number => {
   // .app grid: 300px rail + 1fr content
-  // .main padding: 18px 20px, so 20px left + 20px right
-  const contentWidth = viewportWidth - 300 - 40
-  return Math.max(1, Math.floor((contentWidth + 14) / (248 + 14)))
+  // .main padding: 20px per side; .bws contact-sheet padding: 32px per side
+  const contentWidth = viewportWidth - 300 - 40 - 64
+  return Math.max(1, Math.floor((contentWidth + 16) / (248 + 16)))
 }

@@ -56,6 +56,8 @@
   --pt-inv-text: #000000;
   /* Signal amber: status / activation only, weight ≤10% (spec §2.1). */
   --pt-accent: oklch(0.72 0.15 55);
+  /* Error readings (state blocks, inline card errors). */
+  --pt-danger: rgba(255, 124, 124, 0.85);
 
   /* Type layers: Clash Display for display sizes, Geist Sans for UI text,
      Geist Mono (tabular-nums) for coordinates/readouts/ledger values. */
@@ -99,6 +101,7 @@ html[data-theme="light"] {
   --pt-fill: rgba(0, 0, 0, 0.045);
   --pt-inv-bg: rgba(0, 0, 0, 0.88);
   --pt-inv-text: #fbfaf4;
+  --pt-danger: rgba(178, 44, 44, 0.9);
 
   --pt-scrollbar: rgba(0, 0, 0, 0.18);
   --pt-scrollbar-hover: rgba(0, 0, 0, 0.3);
