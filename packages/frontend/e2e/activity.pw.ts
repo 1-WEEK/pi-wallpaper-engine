@@ -32,7 +32,7 @@ test.describe("Activity routing", () => {
     await page.goto("/activity", { waitUntil: "networkidle" })
     await expect(page).toHaveURL(/\/activity$/)
     await expect(page.locator("h1.page-title")).toHaveText("Activity")
-    await expect(page.locator(".sidebar-link", { hasText: "Activity" })).toHaveClass(/active/)
+    await expect(page.locator(".rail-nav-link", { hasText: "Activity" })).toHaveClass(/is-here/)
   })
 
   test("legacy /downloads redirects to /activity", async ({ page }) => {

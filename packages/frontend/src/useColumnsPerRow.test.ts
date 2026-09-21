@@ -21,21 +21,21 @@ describe("computeFitColumns", () => {
   })
 
   test("known columns at specific widths (1280px content area)", () => {
-    // Container width is about 1280 - 228 (sidebar) - 40 (main padding) = 1012px
-    // columns = floor((1012 + 14) / (248 + 14)) = floor(1026/262) = floor(3.92) = 3
-    expect(computeFitColumns(1012, MIN_CARD_WIDTH, GRID_GAP)).toBe(3)
+    // Container width is about 1280 - 300 (rail) - 40 (main padding) = 940px
+    // columns = floor((940 + 14) / (248 + 14)) = floor(954/262) = floor(3.64) = 3
+    expect(computeFitColumns(940, MIN_CARD_WIDTH, GRID_GAP)).toBe(3)
   })
 
   test("known columns at wider content area (1600px viewport)", () => {
-    // Container width is about 1600 - 228 - 40 = 1332px
-    // columns = floor((1332 + 14) / 262) = floor(5.13) = 5
-    expect(computeFitColumns(1332, MIN_CARD_WIDTH, GRID_GAP)).toBe(5)
+    // Container width is about 1600 - 300 - 40 = 1260px
+    // columns = floor((1260 + 14) / 262) = floor(4.86) = 4
+    expect(computeFitColumns(1260, MIN_CARD_WIDTH, GRID_GAP)).toBe(4)
   })
 
   test("known columns at 1920px viewport", () => {
-    // Container width is about 1920 - 228 - 40 = 1652px
-    // columns = floor((1652 + 14) / 262) = floor(6.35) = 6
-    expect(computeFitColumns(1652, MIN_CARD_WIDTH, GRID_GAP)).toBe(6)
+    // Container width is about 1920 - 300 - 40 = 1580px
+    // columns = floor((1580 + 14) / 262) = floor(6.08) = 6
+    expect(computeFitColumns(1580, MIN_CARD_WIDTH, GRID_GAP)).toBe(6)
   })
 
   test("pageSize multiples: ceil(25/col) * col at various column counts", () => {

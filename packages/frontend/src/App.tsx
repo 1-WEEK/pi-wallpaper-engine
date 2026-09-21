@@ -1,12 +1,11 @@
 import { useEffect, useRef } from "react"
-import type { CSSProperties, ReactNode } from "react"
-import { Link, Redirect, Route, Switch, useLocation, useSearch } from "wouter"
+import { Redirect, Route, Switch, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
 import { SWRConfig, useSWRConfig } from "swr"
+import { LazyMotion, domMax } from "motion/react"
 import { api, onAuthChange } from "./api.js"
 import type { PlayerStatus, SystemSummary } from "@pwe/shared"
 import { fetchSession, fetchSetupState } from "./auth.js"
-import { appIcons } from "./icons.js"
 import { Browse } from "./pages/Browse.js"
 import { Activity } from "./pages/Activity.js"
 import { Library } from "./pages/Library.js"
@@ -14,6 +13,8 @@ import { Login } from "./pages/Login.js"
 import { Setup } from "./pages/Setup.js"
 import { Settings } from "./pages/Settings.js"
 import { PlayerBar } from "./components/PlayerBar.js"
+import { RailShell } from "./components/RailShell.js"
+import { useLenis } from "./useLenis.js"
 import {
   LayoutProvider,
   MobileMiniPlayer,
@@ -22,43 +23,6 @@ import {
   useContainerWidth,
   useLayout,
 } from "./components/mobile/index.js"
-import { getActiveTaskCount } from "./activeTaskCount.js"
-
-const formatStorageUsage = (
-  usedBytes: number | null | undefined,
-  totalBytes: number | null | undefined
-): string => {
-  if (usedBytes === null || usedBytes === undefined || totalBytes === null || totalBytes === undefined) {
-    return "Unavailable"
-  }
-  const used = usedBytes / (1024 * 1024 * 1024)
-  const total = totalBytes / (1024 * 1024 * 1024)
-  return `${used.toFixed(1)} / ${total.toFixed(1)} GB`
-}
-
-const ShellNavLink = ({
-  href,
-  label,
-  icon,
-  badge,
-  active,
-}: {
-  href: string
-  label: string
-  icon: ReactNode
-  badge?: number
-  active?: boolean
-}) => {
-  return (
-    <Link href={href} className={`sidebar-link ${active ? "active" : ""}`}>
-      <span className="sidebar-link-icon">{icon}</span>
-      <span className="sidebar-link-label">{label}</span>
-      {badge !== undefined && badge > 0 && (
-        <span className={`sidebar-badge ${href === "/activity" ? "hot" : ""}`}>{badge}</span>
-      )}
-    </Link>
-  )
-}
 
 const Routes = ({
   summary,
@@ -198,7 +162,6 @@ const ShellBody = () => {
       summary={summary ?? null}
       loc={loc}
       browseHref={browseHref}
-      browseActive={browseActive}
       onRefresh={refresh}
     />
   )
@@ -208,130 +171,23 @@ const DesktopShell = ({
   summary,
   loc,
   browseHref,
-  browseActive,
   onRefresh,
 }: {
   summary: SystemSummary | null
   loc: string
   browseHref: string
-  browseActive: boolean
   onRefresh: () => void
 }) => {
-  const screen = summary?.config.screen
-  const display = summary?.status.display
-  const storage = summary?.status.storage
-  const player = summary?.status.player
-  const storageUsage = storage
-    ? formatStorageUsage(storage.used_bytes, storage.total_bytes)
-    : "Loading…"
-  const displayStateLabel = display ? (display.configured ? display.state : "disabled") : "Loading…"
-  const displayStateTone =
-    display && display.configured && display.state === "on"
-      ? "on"
-      : display && (display.state === "off" || !display.configured)
-        ? "off"
-        : "unknown"
-
-  const navItems: ReadonlyArray<{
-    href: string
-    active: boolean
-    label: string
-    icon: ReactNode
-    badge?: number
-  }> = [
-    {
-      href: browseHref,
-      active: browseActive,
-      label: "Browse",
-      icon: appIcons.browse,
-    },
-    {
-      href: "/library",
-      active: loc === "/library",
-      label: "Library",
-      icon: appIcons.library,
-      badge: summary?.status.library.total,
-    },
-    {
-      href: "/activity",
-      active: loc === "/activity",
-      label: "Activity",
-      icon: appIcons.activity,
-      badge: getActiveTaskCount(summary),
-    },
-    {
-      href: "/settings",
-      active: loc === "/settings",
-      label: "Settings",
-      icon: appIcons.settings,
-    },
-  ]
-
-  const activeNavIndex = navItems.findIndex((item) => item.active)
-  const navStyle =
-    activeNavIndex >= 0
-      ? ({ "--sidebar-active-index": String(activeNavIndex) } as CSSProperties)
-      : undefined
+  const mainRef = useRef<HTMLElement | null>(null)
+  useLenis(mainRef)
 
   return (
-    <>
-      <aside className="shell-sidebar">
-        <div className="sidebar-brand">
-          <img src="/favicon.svg" alt="" className="sidebar-logo" width={40} height={40} />
-          <div className="sidebar-brand-copy">
-            <div className="sidebar-brand-title">Pi Wallpaper Engine</div>
-            <div className="sidebar-brand-subtitle mono">v0.1.0 · pi.local</div>
-          </div>
-        </div>
-        <nav className="sidebar-nav" style={navStyle}>
-          {activeNavIndex >= 0 && <span className="sidebar-nav-highlight" aria-hidden="true" />}
-          {navItems.map((item) => (
-            <ShellNavLink
-              key={item.label}
-              href={item.href}
-              active={item.active}
-              label={item.label}
-              icon={item.icon}
-              badge={item.badge}
-            />
-          ))}
-        </nav>
-
-        <div className="sidebar-status">
-          <div className="sidebar-status-title mono">Pi status</div>
-          <div className="sidebar-status-row">
-            <span>screen</span>
-            <span className="mono">{screen ? `${screen.width}×${screen.height}` : "Loading…"}</span>
-          </div>
-          <div className="sidebar-status-row">
-            <span>player</span>
-            <span className="mono">
-              {player ? (player.playing ? "playing" : player.current_workshop_id ? "paused" : "idle") : "Loading…"}
-            </span>
-          </div>
-          <div className="sidebar-status-row">
-            <span>display</span>
-            <span className={`mono sidebar-status-value sidebar-status-value-${displayStateTone}`}>
-              <span className="sidebar-status-indicator" aria-hidden="true" />
-              {displayStateLabel}
-            </span>
-          </div>
-          <div className="sidebar-status-row">
-            <span>storage</span>
-            <span className="mono">{storageUsage}</span>
-          </div>
-          {storage?.available === false && (storage.last_error || storage.error) && (
-            <div className="sidebar-status-note">{storage.last_error ?? storage.error}</div>
-          )}
-        </div>
-      </aside>
-
-      <main className="main">
+    <RailShell summary={summary} loc={loc} browseHref={browseHref}>
+      <main className="main" ref={mainRef}>
         <Routes summary={summary ?? undefined} onRefresh={onRefresh} />
       </main>
-
       <PlayerBar summary={summary} onRefresh={onRefresh} />
-    </>
+    </RailShell>
   )
 }
 
@@ -427,6 +283,8 @@ export const App = () => (
       shouldRetryOnError: false,
     }}
   >
-    <AuthGate />
+    <LazyMotion features={domMax} strict>
+      <AuthGate />
+    </LazyMotion>
   </SWRConfig>
 )

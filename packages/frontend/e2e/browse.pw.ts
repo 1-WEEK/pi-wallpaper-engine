@@ -51,10 +51,10 @@ test.describe("Browse grid pagination", () => {
     expect(27 % columns).toBe(0)
   })
 
-  test("useColumnsPerRow: column count matches at 1600px (5 cols)", async ({ page }) => {
+  test("useColumnsPerRow: column count matches at 1600px (4 cols)", async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 800 })
-    expect(computeColumns(1600)).toBe(5)
-    const expectedPageSize = Math.ceil(25 / 5) * 5
+    expect(computeColumns(1600)).toBe(4)
+    const expectedPageSize = Math.ceil(25 / 4) * 4
 
     await mockAllEndpoints(page, (r) => {
       r.fulfill({
@@ -71,7 +71,7 @@ test.describe("Browse grid pagination", () => {
     await page.goto("/browse?q=test", { waitUntil: "networkidle" })
     const grid = page.locator(".browse-grid")
     await expect(grid.locator(".wallpaper-card")).toHaveCount(expectedPageSize, { timeout: 15000 })
-    expect((await grid.locator(".wallpaper-card").count()) % 5).toBe(0)
+    expect((await grid.locator(".wallpaper-card").count()) % 4).toBe(0)
   })
 
   test("useColumnsPerRow: column count matches at 1920px (6 cols)", async ({ page }) => {

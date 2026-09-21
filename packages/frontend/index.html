@@ -6,6 +6,25 @@
     <title>Pi Wallpaper Engine</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
+    <script>
+      // Theme boot (kept in sync with src/theme.ts): resolves the stored
+      // choice — or the OS preference when AUTO — before first paint, so a
+      // theme switch or reload never flashes the wrong theme.
+      ;(function () {
+        try {
+          var c = localStorage.getItem("pwe-theme")
+          var t =
+            c === "light" || c === "dark"
+              ? c
+              : window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark"
+          var d = document.documentElement
+          d.setAttribute("data-theme", t)
+          d.style.colorScheme = t
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

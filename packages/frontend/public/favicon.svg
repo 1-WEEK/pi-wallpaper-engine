@@ -1,40 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <!-- background -->
-  <rect x="0" y="0" width="256" height="256" rx="64" fill="#0E1116"/>
-  <!-- pins: top -->
-  <rect x="72" y="32" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <rect x="96" y="32" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <rect x="120" y="32" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <rect x="144" y="32" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <rect x="168" y="32" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <!-- pins: bottom -->
-  <rect x="72" y="206" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <rect x="96" y="206" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <rect x="120" y="206" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <rect x="144" y="206" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <rect x="168" y="206" width="14" height="18" rx="2" fill="#F4EFE6"/>
-  <!-- pins: left -->
-  <rect x="32" y="72" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <rect x="32" y="96" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <rect x="32" y="120" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <rect x="32" y="144" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <rect x="32" y="168" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <!-- pins: right -->
-  <rect x="206" y="72" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <rect x="206" y="96" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <rect x="206" y="120" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <rect x="206" y="144" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <rect x="206" y="168" width="18" height="14" rx="2" fill="#F4EFE6"/>
-  <!-- chip body -->
-  <rect x="64" y="64" width="128" height="128" rx="10" fill="#F4EFE6"/>
-  <!-- corner divot (orientation mark) -->
-  <circle cx="78" cy="78" r="6" fill="#0E1116"/>
-  <!-- screen bezel -->
-  <rect x="84" y="92" width="88" height="62" rx="5" fill="#0E1116"/>
-  <!-- screen face -->
-  <rect x="92" y="100" width="72" height="46" rx="2" fill="#7C5CFF" opacity="0.85"/>
-  <!-- play triangle -->
-  <path d="M118 110 L142 123 L118 136 Z" fill="#0E1116"/>
-  <!-- label line -->
-  <rect x="88" y="168" width="80" height="6" rx="2" fill="#0E1116"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- pwe favicon: inverse rounded tile + lowercase Clash Display "p"
+       (spec §2.2). Follows the browser chrome scheme; both variants are the
+       pt-inv-bg / pt-inv-text token pair. -->
+  <style>
+    .tile { fill: #fbfaf4 }
+    .glyph { fill: #000000 }
+    @media (prefers-color-scheme: light) {
+      .tile { fill: #000000 }
+      .glyph { fill: #fbfaf4 }
+    }
+  </style>
+  <rect class="tile" width="64" height="64" rx="14"/>
+  <path class="glyph" transform="translate(12.146 42.058) scale(0.05848 -0.05848)" d="M218 -170H30V504H206V368H216Q228 443 275.0 478.5Q322 514 410 514Q525 514 587.0 444.5Q649 375 649 252Q649 128 588.5 59.0Q528 -10 418 -10Q253 -10 228 130H218ZM218 246Q218 195 246.5 178.0Q275 161 342 161Q407 161 433.0 181.5Q459 202 459.0 252.0Q459 302 433.0 322.0Q407 342 342 342Q275 342 246.5 323.5Q218 305 218 253Z"/>
 </svg>

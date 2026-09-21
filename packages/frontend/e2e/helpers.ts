@@ -97,8 +97,8 @@ export const mockDownloadTasks = (page: Page, tasks: unknown[]) => {
 /** Compute how many grid columns fit at the current viewport width.
  *  Mirrors computeFitColumns from useColumnsPerRow.ts. */
 export const computeColumns = (viewportWidth: number): number => {
-  // .app grid: 228px sidebar + 1fr content
+  // .app grid: 300px rail + 1fr content
   // .main padding: 18px 20px, so 20px left + 20px right
-  const contentWidth = viewportWidth - 228 - 40
+  const contentWidth = viewportWidth - 300 - 40
   return Math.max(1, Math.floor((contentWidth + 14) / (248 + 14)))
 }

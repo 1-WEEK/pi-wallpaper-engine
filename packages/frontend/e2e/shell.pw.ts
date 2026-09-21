@@ -6,7 +6,6 @@ import { mockAuthDisabled, mockLibraryList, mockSummary } from "./helpers.js"
 const mockAllEndpoints = async (page: Page) => {
   await mockAuthDisabled(page)
   const summary = mockSystemSummary()
-  summary.status.library.total = 7
   await mockSummary(page, summary)
   await mockLibraryList(page, [])
   await page.route("**/api/storage", (r) =>
@@ -40,32 +39,57 @@ const mockAllEndpoints = async (page: Page) => {
 }
 
 test.describe("Desktop shell", () => {
-  test("sidebar navigates between pages and marks the active link", async ({ page }) => {
+  test("rail navigates between pages and marks the active link", async ({ page }) => {
     await mockAllEndpoints(page)
     await page.goto("/browse")
 
-    const nav = page.locator(".sidebar-nav")
-    await expect(nav.locator(".sidebar-link")).toHaveCount(4)
-    await expect(nav.locator(".sidebar-link.active")).toHaveText(/Browse/)
+    const nav = page.locator(".rail-nav")
+    await expect(nav.locator(".rail-nav-link")).toHaveCount(4)
+    await expect(nav.locator(".rail-nav-link.is-here")).toHaveText(/Browse/)
 
     await nav.getByRole("link", { name: "Library" }).click()
     await expect(page).toHaveURL(/\/library$/)
     await expect(page.locator("h1.page-title")).toHaveText("Library")
-    await expect(nav.locator(".sidebar-link.active")).toHaveText(/Library/)
+    await expect(nav.locator(".rail-nav-link.is-here")).toHaveText(/Library/)
 
     await nav.getByRole("link", { name: "Settings" }).click()
     await expect(page.locator("h1.page-title")).toHaveText("Settings")
   })
 
-  test("sidebar shows Pi status and the library badge from the summary", async ({ page }) => {
-    await mockAllEndpoints(page)
+  test("rail shows the live activity task count", async ({ page }) => {
+    await mockAuthDisabled(page)
+    const summary = mockSystemSummary()
+    summary.status.downloads.active = 3
+    await mockSummary(page, summary)
+    await mockLibraryList(page, [])
     await page.goto("/browse")
 
-    const status = page.locator(".sidebar-status")
-    await expect(status.getByText("1920×1080")).toBeVisible()
-    await expect(status.getByText("idle")).toBeVisible()
-    // library.total = 7 surfaces as the nav badge.
-    await expect(page.locator(".sidebar-link", { hasText: "Library" }).locator(".sidebar-badge")).toHaveText("7")
+    await expect(
+      page.locator(".rail-nav-link", { hasText: "Activity" }).locator(".rail-nav-count")
+    ).toHaveText("3")
+  })
+
+  test("theme switch: AUTO follows the OS, manual choice overrides and persists", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "dark" })
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+
+    // Manual choice overrides the system …
+    await page.getByRole("button", { name: "[A]", exact: true }).click()
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
+
+    // … and persists across reloads (inline boot script, no flash).
+    await page.reload()
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
+
+    // Back to AUTO: follows the OS again, live.
+    await page.getByRole("button", { name: "[AUTO]", exact: true }).click()
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+    await page.emulateMedia({ colorScheme: "light" })
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
   })
 
   test("unknown routes land on Browse", async ({ page }) => {
@@ -79,12 +103,12 @@ test.describe("Desktop shell", () => {
 test.describe("Mobile shell", () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test("tab bar replaces the sidebar and navigates", async ({ page }) => {
+  test("tab bar replaces the rail and navigates", async ({ page }) => {
     await mockAllEndpoints(page)
     await page.goto("/browse")
 
     await expect(page.locator(".mobile-shell")).toBeVisible()
-    await expect(page.locator(".shell-sidebar")).toHaveCount(0)
+    await expect(page.locator(".rail")).toHaveCount(0)
 
     const tabBar = page.locator(".mobile-tab-bar")
     await expect(tabBar).toBeVisible()

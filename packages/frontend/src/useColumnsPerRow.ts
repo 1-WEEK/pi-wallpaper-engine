@@ -24,7 +24,8 @@ export const useColumnsPerRow = (
   const [columns, setColumns] = useState<number>(() => {
     if (typeof window === "undefined") return 4
     // Best-effort initial guess before ResizeObserver fires
-    const w = Math.max(320, window.innerWidth - 260) // 260 is about the sidebar width
+    // 340 ≈ 300px rail + 40px main padding
+    const w = Math.max(320, window.innerWidth - 340)
     return computeFitColumns(w, minCardWidth, gap)
   })
 

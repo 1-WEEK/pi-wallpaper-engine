@@ -1,0 +1,163 @@
+/* ── UI redesign foundation (implementation ticket 01) ─────────────
+   The `--pt-*` design-token layer of the new visual language
+   (spec: .scratch/ui-redesign/spec.md §2.1/§2.2/§2.5/§5). Tokens live on
+   :root so every later ticket consumes them; only new-design components
+   reference them, so legacy pages keep their current look until migrated.
+
+   Theme model: THEME[B] pure black is the :root default, THEME[A] cream is
+   the `html[data-theme="light"]` override set. The resolved theme attribute
+   is written by src/theme.ts (and the inline boot script in index.html) —
+   AUTO resolution happens in JS, not via CSS media queries, so manual
+   choice always wins and switches never flash. */
+
+/* ── Self-hosted fonts (OFL): Clash Display / Geist Sans / Geist Mono ── */
+@font-face {
+  font-family: "Clash Display";
+  src: url(/fonts/clash-500.woff2) format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Clash Display";
+  src: url(/fonts/clash-600.woff2) format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Clash Display";
+  src: url(/fonts/clash-700.woff2) format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url(/fonts/geist-0.woff2) format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url(/fonts/geistmono-0.woff2) format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  /* Color — THEME[B] pure black (default). CJK falls back to system fonts. */
+  --pt-bg: #000000;
+  --pt-text: rgba(255, 255, 255, 0.88);
+  --pt-dim: rgba(255, 255, 255, 0.46);
+  --pt-faint: rgba(255, 255, 255, 0.26);
+  --pt-line: rgba(255, 255, 255, 0.1);
+  --pt-line-soft: rgba(255, 255, 255, 0.055);
+  --pt-fill: rgba(255, 255, 255, 0.045);
+  /* Inverse pair: "filled" states flip to the opposite theme. */
+  --pt-inv-bg: rgba(255, 255, 255, 0.92);
+  --pt-inv-text: #000000;
+  /* Signal amber: status / activation only, weight ≤10% (spec §2.1). */
+  --pt-accent: oklch(0.72 0.15 55);
+
+  /* Type layers: Clash Display for display sizes, Geist Sans for UI text,
+     Geist Mono (tabular-nums) for coordinates/readouts/ledger values. */
+  --pf-display: "Clash Display", "Geist", -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+  --pf-sans: "Geist", -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+  --pf-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Motion tokens (spec §5). --ease-out is the only in/out curve sitewide;
+     --ease-slide is reserved for symmetric slide (09 mask / focus ring).
+     Duration scale: 120 micro feedback / 150 popover exit, chip /
+     180–250 hover, overlay enter / 300 VT & ghost baseline.
+     Registered exceptions (>300ms): 350 dock tuck · 380/420 long-range
+     ghost (420 also 09 mask slide) · 400 hover video crossfade ·
+     550 mount choreography · 600 ambient hover drift (hover:hover only) ·
+     700×2+1400 settle beat / nav pulse. lenis lerp 0.09 is scroll physics
+     and sits outside this budget. Never write bare ease/ease-in/ease-out
+     keywords in new styles — always consume these tokens. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-slide: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-micro: 120ms;
+  --dur-exit: 150ms;
+  --dur-hover: 200ms;
+  --dur-base: 300ms;
+  /* Stagger: 30–40ms per item, capped at 8 items. */
+  --stagger-step: 40ms;
+  --stagger-cap: 8;
+
+  /* Thin scrollbar (5px, no track), theme-aware. */
+  --pt-scrollbar: rgba(255, 255, 255, 0.14);
+  --pt-scrollbar-hover: rgba(255, 255, 255, 0.26);
+}
+
+/* ── THEME[A] cream — a pure token override set ──────────────────── */
+html[data-theme="light"] {
+  --pt-bg: #fbfaf4;
+  --pt-text: rgba(0, 0, 0, 0.86);
+  --pt-dim: rgba(0, 0, 0, 0.5);
+  --pt-faint: rgba(0, 0, 0, 0.32);
+  --pt-line: rgba(0, 0, 0, 0.12);
+  --pt-line-soft: rgba(0, 0, 0, 0.07);
+  --pt-fill: rgba(0, 0, 0, 0.045);
+  --pt-inv-bg: rgba(0, 0, 0, 0.88);
+  --pt-inv-text: #fbfaf4;
+
+  --pt-scrollbar: rgba(0, 0, 0, 0.18);
+  --pt-scrollbar-hover: rgba(0, 0, 0, 0.3);
+}
+
+/* ── Global thin scrollbar: 5px translucent thumb, no track ──────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pt-scrollbar) transparent;
+}
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--pt-scrollbar);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pt-scrollbar-hover);
+}
+
+/* ── Shared mono utility: readings render in Geist Mono ──────────── */
+.mono {
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Mount choreography (spec §2.5): 550ms expo-out, opacity +
+     translateY(12px) + blur(4px), 40ms stagger capped at 8 items.
+     Consumers set `--pt-i` to the item index. ────────────────────── */
+@keyframes pt-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(4px);
+  }
+}
+.pt-enter {
+  animation: pt-enter 550ms var(--ease-out) both;
+  animation-delay: calc(min(var(--pt-i, 0), var(--stagger-cap)) * var(--stagger-step));
+}
+
+/* Reduced-motion gate (spec §5 F5 — per-element degradation, reduce ≠
+   remove): opacity/color transitions stay; the entrance degrades to a
+   0.2s pure fade. lenis, ghosts and view transitions are gated in TS
+   (src/useLenis.ts, src/ghost.ts, src/viewTransition.ts). */
+@keyframes pt-enter-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pt-enter {
+    animation-name: pt-enter-fade;
+    animation-duration: 200ms;
+    animation-delay: 0ms;
+  }
+}

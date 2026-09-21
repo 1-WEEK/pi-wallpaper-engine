@@ -1,0 +1,169 @@
+/* ── RailShell (spec §2.3 / §3.1) ──────────────────────────────────
+   300px sticky instrument rail: wordmark → plain-text nav → per-page
+   control slot → THEME tri-state. Colors come exclusively from the
+   --pt-* token layer (tokens.css). Row baseline: 12px / padding 5px. */
+.rail {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  overflow-y: auto;
+  /* Reserve the thin scrollbar's gutter so expanding control sections
+     never squeeze the rail's content width. */
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px 24px 20px;
+  background: var(--pt-bg);
+  color: var(--pt-text);
+  border-right: 1px solid var(--pt-line);
+  font-family: var(--pf-sans);
+  font-size: 12px;
+  transition: background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out);
+}
+
+.rail button {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* ── Brand: pure-typography wordmark + hairline + annotation ─────── */
+.rail-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rail-wordmark {
+  font-family: var(--pf-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.rail-wordmark-mark {
+  font-family: var(--pf-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--pt-dim);
+}
+
+.rail-brand-rule {
+  height: 1px;
+  background: var(--pt-line);
+}
+
+.rail-brand-note {
+  font-family: var(--pf-mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  color: var(--pt-dim);
+}
+
+/* ── Nav: plain text, inverse fill marks the active page ─────────── */
+.rail-nav {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--pt-line-soft);
+}
+
+.rail-nav-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 7px 8px;
+  margin: 0 -8px;
+  font-size: 14px;
+  color: var(--pt-dim);
+  text-decoration: none;
+  border-bottom: 1px solid var(--pt-line-soft);
+  transition: color var(--dur-exit) var(--ease-out),
+    background-color var(--dur-exit) var(--ease-out);
+}
+
+.rail-nav-link:hover {
+  color: var(--pt-text);
+}
+
+.rail-nav-link.is-here,
+.rail-nav-link.is-here:hover {
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+}
+
+.rail-nav-count {
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--pt-accent);
+}
+
+.rail-nav-link.is-here .rail-nav-count {
+  color: inherit;
+}
+
+/* ── Per-page control slot (filled via <RailControls> portals) ────── */
+.rail-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rail-controls:empty {
+  display: none;
+}
+
+/* ── Bottom: THEME tri-state ─────────────────────────────────────── */
+.rail-foot {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--pt-line-soft);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.rail-label {
+  font-family: var(--pf-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--pt-faint);
+}
+
+.rail-theme {
+  display: flex;
+  gap: 2px;
+}
+
+.rail-theme-option {
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 5px 7px;
+  border-radius: 2px;
+  color: var(--pt-dim);
+  transition: color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out);
+}
+
+.rail-theme-option:hover {
+  color: var(--pt-text);
+}
+
+.rail-theme-option.is-on,
+.rail-theme-option.is-on:hover {
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+}

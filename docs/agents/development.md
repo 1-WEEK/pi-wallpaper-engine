@@ -105,15 +105,30 @@ causes a brief playback interruption. For removal, read [Uninstall](../uninstall
 
 ## Frontend
 
-- Keep the existing plain CSS system. Reuse tokens from
-  [styles.css](../../packages/frontend/src/styles.css); colors belong in CSS
-  custom properties, not component literals. Reuse controls and icons from
+- The redesign foundation (implementation ticket 01) lives in
+  [tokens.css](../../packages/frontend/src/tokens.css) (`--pt-*` colors,
+  `--pf-*` font layers, motion tokens, thin scrollbar, `pt-enter`
+  choreography), [railShell.css](../../packages/frontend/src/railShell.css),
+  and [RailShell.tsx](../../packages/frontend/src/components/RailShell.tsx).
+  New-design components consume only `--pt-*` variables; legacy pages keep
+  the older `--ink`/`--paper`/`--accent` tokens until their own tickets.
+  Theme state is owned by [theme.ts](../../packages/frontend/src/theme.ts)
+  (`<html data-theme>`, localStorage `pwe-theme`, inline boot script in
+  index.html); reduced-motion gates live in
+  [reducedMotion.ts](../../packages/frontend/src/reducedMotion.ts), with
+  shared VT/ghost/lenis helpers in `viewTransition.ts` / `ghost.ts` /
+  `useLenis.ts`. New styles must use the `--ease-*`/`--dur-*` tokens, never
+  bare `ease`/`ease-in`/`ease-out` keywords.
+- Keep the existing plain CSS system for not-yet-migrated pages. Reuse
+  controls and icons from
   [icons.tsx](../../packages/frontend/src/icons.tsx).
 - Keep mobile and desktop workflows consistent with the existing shell. Verify
   layout and interactions at both sizes using the browser suite and screenshots
   appropriate to the change.
 - Logo assets are [favicon.svg](../../packages/frontend/public/favicon.svg) and
-  [favicon.ico](../../packages/frontend/public/favicon.ico). Regenerate the ICO
-  from the SVG using `@resvg/resvg-js` in a temporary tooling directory
-  (SVG to PNG to ICO), retaining 16/32/48px sizes. This avoids depending on a
-  system `rsvg-convert` installation.
+  [favicon.ico](../../packages/frontend/public/favicon.ico) (inverse rounded
+  tile + lowercase Clash Display "p", spec §2.2; the SVG embeds the glyph
+  outline, extracted from the self-hosted woff2 with fontTools). Regenerate
+  the ICO from the SVG using `@resvg/resvg-js` in a temporary tooling
+  directory (SVG to PNG to ICO), retaining 16/32/48px sizes. This avoids
+  depending on a system `rsvg-convert` installation.
