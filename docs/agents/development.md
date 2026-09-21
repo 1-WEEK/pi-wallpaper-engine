@@ -148,6 +148,20 @@ causes a brief playback interruption. For removal, read [Uninstall](../uninstall
   wrapper === content, `useLenis` also observes the page root and calls
   `lenis.resize()` so appends never leave `lenis.limit` stale. Reduced
   motion never mounts the component and keeps the native thin scrollbar.
+- Ticket 14 (spec §9) covered the auth pages and the mobile fallbacks:
+  Login/Setup are typographic skeleton pages in
+  [auth.css](../../packages/frontend/src/auth.css) (Clash title + mono
+  ledger readings on `--pt-*`, glass only for the passkey focused overlay,
+  [AuthFocus.tsx](../../packages/frontend/src/components/AuthFocus.tsx)).
+  The mobile chrome (`styles.css` `.mobile-*` blocks) consumes the `--pt-*`
+  tokens with ≥44px touch targets; the PlayerBar degrades to MiniPlayer +
+  Sheet ([MobileMiniPlayer.tsx](../../packages/frontend/src/components/mobile/MobileMiniPlayer.tsx)),
+  and Settings degrades to a section-list → detail flow
+  ([SettingsMobile.tsx](../../packages/frontend/src/pages/SettingsMobile.tsx))
+  that reuses the desktop section bodies exported from
+  `SettingsDesktop.tsx`. The legacy `DirectoryPickerDialog` is gone — the
+  glass directory-change focused flow (`DirectorySheet` in
+  `SettingsDesktop.tsx`) serves both layouts.
 - Keep the existing plain CSS system for not-yet-migrated pages. Reuse
   controls and icons from
   [icons.tsx](../../packages/frontend/src/icons.tsx).

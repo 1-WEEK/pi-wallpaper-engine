@@ -10,6 +10,11 @@
 // construction. The directory-change focused flow is the page's only glass
 // surface (§2.4); the migration itself is handed to Activity (§4.3), which
 // owns phases, errors and cancel.
+//
+// The section bodies (PlaybackSec / StorageSec / AccessSec / SystemSec) and
+// the row grammar (SpecRow / Block / Note) are shared with SettingsMobile
+// (ticket 14): the mobile layout degrades the rail navigation to a
+// section-list → detail two-layer structure over the same content.
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
@@ -39,9 +44,9 @@ interface Props {
   onRefresh: () => void
 }
 
-type Sec = "playback" | "storage" | "access" | "system"
+export type Sec = "playback" | "storage" | "access" | "system"
 
-const normalizeSec = (raw: string | null): Sec =>
+export const normalizeSec = (raw: string | null): Sec =>
   raw === "storage" || raw === "access" || raw === "system" ? raw : "playback"
 
 const HEAD_TITLE: Record<Sec, string> = {
@@ -55,7 +60,7 @@ const HEAD_TITLE: Record<Sec, string> = {
    leader + mono value right (11px) + hairline below. Identities: command
    rows carry → and a hover band; read-only rows stay quiet. ─────────── */
 
-const SpecRow = ({
+export const SpecRow = ({
   name,
   val,
   cmd = false,
@@ -105,7 +110,7 @@ const SpecRow = ({
   )
 }
 
-const Note = ({ warn = false, children }: { warn?: boolean; children: ReactNode }) => (
+export const Note = ({ warn = false, children }: { warn?: boolean; children: ReactNode }) => (
   <div className={`set-note mono${warn ? " set-warn" : ""}`}>{children}</div>
 )
 
@@ -119,7 +124,7 @@ const CapBar = ({ pct }: { pct: number }) => (
   </div>
 )
 
-const Block = ({
+export const Block = ({
   label,
   action,
   children,
@@ -137,7 +142,7 @@ const Block = ({
   </section>
 )
 
-const gbFree = (bytes: number): string => {
+export const gbFree = (bytes: number): string => {
   const gb = bytes / 2 ** 30
   return gb >= 1 ? `${Math.round(gb)} GB FREE` : `${Math.round(bytes / 2 ** 20)} MB FREE`
 }
@@ -161,7 +166,7 @@ const MODE_LABEL: Record<string, string> = {
   shuffle: "SHUFFLE",
 }
 
-const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; onRefresh: () => void }) => {
+export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; onRefresh: () => void }) => {
   const player = summary.status.player
   const playMode = player?.play_mode ?? "single"
   const serverSec = player?.rotation_interval_sec ?? null
@@ -622,7 +627,7 @@ const DirectorySheet = ({
   )
 }
 
-const StorageSec = ({
+export const StorageSec = ({
   summary,
   storage,
   mutateStorage,
@@ -756,7 +761,7 @@ const formatPasskeyDate = (value: string): string => {
   return passkeyDateFmt.format(date)
 }
 
-const AccessSec = () => {
+export const AccessSec = () => {
   const { data: setupState } = useSWR("auth-setup-state", fetchSetupState)
   const enabled = setupState?.enabled ?? false
   const cap = setupState?.max_passkeys ?? 3
@@ -910,7 +915,7 @@ interface HealthItem {
   params: string[]
 }
 
-const buildHealthItems = (summary: SystemSummary): HealthItem[] => {
+export const buildHealthItems = (summary: SystemSummary): HealthItem[] => {
   const { config, status } = summary
   const signedIn = !!config.steam.username
   const display = status.display
@@ -956,7 +961,7 @@ const buildHealthItems = (summary: SystemSummary): HealthItem[] => {
   ]
 }
 
-const SystemSec = ({ summary }: { summary: SystemSummary }) => {
+export const SystemSec = ({ summary }: { summary: SystemSummary }) => {
   const items = buildHealthItems(summary)
   const [open, setOpen] = useState<ReadonlySet<string>>(
     () => new Set(items.filter((h) => h.warn).map((h) => h.key))

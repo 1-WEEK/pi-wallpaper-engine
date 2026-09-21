@@ -375,4 +375,86 @@ test.describe("Mobile shell", () => {
     await tabBar.getByRole("link", { name: /Library/ }).click()
     await expect(page).toHaveURL(/\/library$/)
   })
+
+  test("hover preview and the coordinate grid stay desktop-only (no mobile substitute)", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+
+    // The measured coordinate grid (spec §2.3) is a desktop signature — on
+    // mobile it is simply absent, not degraded.
+    await expect(page.locator(".bws-gridlines")).toHaveCount(0)
+    await expect(page.locator(".focus-ring")).toHaveCount(0)
+  })
+
+  test("mini player opens the sheet with the PlayerBar's instant controls", async ({ page }) => {
+    await mockAllEndpoints(page)
+    let postedMode: string | null = null
+    await page.route("**/api/player/mode", (r) => {
+      postedMode = (r.request().postDataJSON() as { mode: string }).mode
+      return r.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+    })
+    await page.goto("/browse")
+
+    // PlayerBar degrades to MiniPlayer + Sheet (spec §9).
+    await expect(page.locator(".pbar")).toHaveCount(0)
+    await page.getByRole("button", { name: "Open player controls" }).click()
+
+    const sheet = page.locator(".mobile-sheet.open")
+    await expect(sheet).toBeVisible()
+    await expect(sheet.getByRole("radiogroup", { name: "Play mode", exact: true })).toBeVisible()
+    await expect(
+      sheet.getByRole("radiogroup", { name: "Display mode", exact: true })
+    ).toBeVisible()
+    await expect(sheet.getByRole("radiogroup", { name: "Sleep timer" })).toBeVisible()
+
+    // The sheet controls commit against the same endpoints as the dock.
+    await sheet.getByRole("radio", { name: "SHUFFLE" }).click()
+    await expect.poll(() => postedMode).toBe("shuffle")
+
+    await sheet.getByRole("button", { name: "Close" }).click()
+    await expect(page.locator(".mobile-sheet.open")).toHaveCount(0)
+  })
+
+  test("touch targets are ≥44px across the mobile chrome", async ({ page }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+
+    for (const item of await page.locator(".mobile-tab-bar-item").all()) {
+      const box = (await item.boundingBox())!
+      expect(box.height).toBeGreaterThanOrEqual(44)
+    }
+    for (const btn of await page.locator(".mobile-mini-player-btn").all()) {
+      const box = (await btn.boundingBox())!
+      expect(box.width).toBeGreaterThanOrEqual(44)
+      expect(box.height).toBeGreaterThanOrEqual(44)
+    }
+    const open = await page.locator(".mobile-mini-player-open").boundingBox()
+    expect(open!.height).toBeGreaterThanOrEqual(44)
+
+    await page.getByRole("button", { name: "Open player controls" }).click()
+    const close = await page.locator(".mobile-sheet.open .mobile-sheet-close").boundingBox()
+    expect(close!.width).toBeGreaterThanOrEqual(44)
+    expect(close!.height).toBeGreaterThanOrEqual(44)
+  })
+})
+
+test.describe("Desktop no-leak (ticket 14)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } })
+
+  test("no mobile degradation leaks into the wide desktop shell", async ({ page }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/settings")
+
+    await expect(page.locator(".mobile-shell")).toHaveCount(0)
+    await expect(page.locator(".mobile-tab-bar")).toHaveCount(0)
+    await expect(page.locator(".mobile-mini-player")).toHaveCount(0)
+    await expect(page.locator(".mobile-sheet")).toHaveCount(0)
+    await expect(page.locator(".setm-list")).toHaveCount(0)
+
+    await expect(page.locator(".rail")).toBeVisible()
+    await expect(page.locator(".pbar")).toBeVisible()
+    await expect(page.locator(".set-title")).toContainText("Settings")
+  })
 })

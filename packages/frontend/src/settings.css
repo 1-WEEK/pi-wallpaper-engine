@@ -644,3 +644,145 @@ html[data-theme="light"] .set-sheet-panel {
     opacity: 0.5;
   }
 }
+
+/* ── Mobile (implementation ticket 14, spec §9): the rail section
+     navigation degrades to a section-list → detail two-layer flow. The
+     section bodies and row grammar above are reused unchanged; only the
+     chrome (list rows, back command, touch targets) is mobile-specific. ── */
+
+.setm {
+  min-height: 100%;
+  padding: 20px 18px 40px;
+  background: var(--pt-bg);
+  color: var(--pt-text);
+  font-family: var(--pf-sans);
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+
+.setm-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.setm-title {
+  margin: 0;
+  font-family: var(--pf-display);
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.022em;
+  text-transform: uppercase;
+}
+
+.setm-title-sub {
+  font-size: 30px;
+}
+
+.setm-count {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-faint);
+  white-space: nowrap;
+}
+
+/* Layer one: the section list — same ledger grammar as .set-row, but every
+   row is a command and every row is a ≥44px touch target. */
+.setm-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.setm-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--pt-line-soft);
+  color: var(--pt-text);
+  text-decoration: none;
+  min-width: 0;
+}
+
+.setm-row-name {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.setm-row-dots {
+  flex: 1;
+  min-width: 16px;
+  margin: 0 4px;
+  border-bottom: 1px dotted var(--pt-faint);
+  transform: translateY(-3px);
+}
+
+.setm-row-val {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  white-space: nowrap;
+}
+
+.setm-row-arrow {
+  font-size: 10px;
+  color: var(--pt-faint);
+}
+
+/* Detail layer: back command + the shared section bodies. */
+.setm-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-dim);
+  text-decoration: none;
+}
+
+.setm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+/* Touch targets (spec §9): every interactive element in the mobile detail
+   layer reaches ≥44px. */
+.setm .set-seg button {
+  min-height: 44px;
+  padding: 5px 13px;
+}
+
+.setm .set-chip,
+.setm .set-label-act {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.setm .set-sheet-close {
+  width: 46px;
+  height: 46px;
+  top: 9px;
+  right: 9px;
+}
+
+.setm .set-sheet .set-row-btn {
+  min-height: 44px;
+}
+
+/* The focused directory flow becomes a near-full-width glass panel on
+   narrow screens. */
+.setm .set-sheet-panel {
+  width: calc(100vw - 24px);
+  max-height: 92vh;
+  max-height: 92dvh;
+}

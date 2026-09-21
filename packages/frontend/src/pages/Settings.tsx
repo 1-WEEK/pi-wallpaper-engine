@@ -1,6 +1,6 @@
-// Settings entry — desktop gets the ticket-10 spec-ledger redesign; the
-// mobile layout stays on the pre-redesign page until ticket 14 (mobile
-// degradation pass), same split as Library.
+// Settings entry — desktop gets the ticket-10 spec-ledger redesign; mobile
+// gets the ticket-14 two-layer degradation (section list → detail) over the
+// same section bodies, same split as Library.
 import type { SystemSummary } from "@pwe/shared"
 import { useLayout } from "../components/mobile/index.js"
 import { SettingsDesktop } from "./SettingsDesktop.js"

@@ -1,0 +1,334 @@
+/* ── Auth pages: Login / Setup (implementation ticket 14) ─────────────
+   spec §9: pure reuse of the existing material set — a typographic
+   skeleton page (Clash display title + mono ledger readings on --pt-bg,
+   no card, no new material), and glass only for the passkey focused
+   overlay (§2.4 recipe, copy-faithful to settings.css / playerBar.css).
+   Colors come exclusively from the --pt-* token layer (dual theme);
+   motion consumes the token curves/durations. */
+
+.auth-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--pt-bg);
+  color: var(--pt-text);
+  font-family: var(--pf-sans);
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+
+/* ── Skeleton page: brand reading → Clash title → ledger → command ── */
+.auth-page {
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-brand {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--pt-faint);
+  margin-bottom: 20px;
+}
+
+.auth-title {
+  margin: 0 0 18px;
+  font-family: var(--pf-display);
+  font-size: clamp(40px, 9vw, 58px);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.022em;
+  text-transform: uppercase;
+}
+
+.auth-sub {
+  margin: 0 0 26px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--pt-dim);
+  text-wrap: pretty;
+}
+
+.auth-sub code {
+  font-family: var(--pf-mono);
+  font-size: 11px;
+  color: var(--pt-text);
+}
+
+/* Ledger readings — same grammar as the settings spec-ledger row:
+   sans name left + dotted leader + mono value right + hairline below. */
+.auth-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--pt-line-soft);
+  font-size: 13px;
+}
+
+.auth-row-dots {
+  flex: 1;
+  min-width: 16px;
+  margin: 0 4px;
+  border-bottom: 1px dotted var(--pt-faint);
+  transform: translateY(-3px);
+}
+
+.auth-row-val {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  white-space: nowrap;
+}
+
+/* Form fields: mono label above a hairline input — no boxed inputs. */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 26px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pt-faint);
+}
+
+.auth-field input {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-line);
+  border-radius: 0;
+  padding: 6px 0;
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--pt-text);
+  outline: none;
+  transition: border-color var(--dur-micro) var(--ease-out);
+}
+
+.auth-field input:focus {
+  outline: none;
+  border-bottom-color: var(--pt-text);
+}
+
+/* Commands: inverse-fill primary (same language as the settings sheet
+   confirm / rail active state), hairline secondary. ≥44px touch target. */
+.auth-cmd {
+  width: 100%;
+  min-height: 48px;
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--pt-inv-text);
+  background: var(--pt-inv-bg);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity var(--dur-micro) var(--ease-out);
+}
+
+.auth-cmd:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .auth-cmd:hover:not(:disabled) {
+    opacity: 0.85;
+  }
+}
+
+.auth-cmd-secondary {
+  margin-top: 10px;
+  color: var(--pt-dim);
+  background: none;
+  border: 1px solid var(--pt-line);
+}
+
+.auth-cmd-secondary:disabled {
+  opacity: 0.45;
+}
+
+.auth-error {
+  margin: 18px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  color: var(--pt-danger);
+  overflow-wrap: anywhere;
+}
+
+/* Fail-closed backend-unreachable state (AuthGate) — same skeleton. */
+.auth-shell-error {
+  max-width: 440px;
+  text-align: left;
+}
+
+.auth-shell-error h1 {
+  margin: 0 0 14px;
+  font-family: var(--pf-display);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+
+.auth-shell-error p {
+  margin: 0 0 22px;
+  color: var(--pt-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.auth-shell-error code {
+  font-family: var(--pf-mono);
+  font-size: 11px;
+  color: var(--pt-text);
+}
+
+.auth-shell-error button {
+  min-height: 44px;
+  padding: 0 18px;
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--pt-inv-text);
+  background: var(--pt-inv-bg);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity var(--dur-micro) var(--ease-out);
+}
+
+/* ── Passkey focused overlay: the only glass on these pages (§9/§2.4).
+     Recipe copy-faithful to .set-sheet-panel — near-clear fill, heavy
+     blur+saturate, refracting top rim, lens shadow, faint grain. ────── */
+.auth-focus {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-focus-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: auth-focus-in var(--dur-hover) var(--ease-out) both;
+}
+
+.auth-focus-panel {
+  position: relative;
+  width: min(360px, 100%);
+  overflow: hidden;
+  border-radius: 20px;
+  padding: 26px 24px 24px;
+  background: rgba(255, 255, 255, 0.07);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 40px 120px rgba(0, 0, 0, 0.65);
+  /* No blur in the keyframes (backdrop-filter repaint ghosts, §8.5). */
+  animation: auth-focus-in 280ms var(--ease-out) both;
+}
+
+@keyframes auth-focus-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.auth-focus-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+html[data-theme="light"] .auth-focus-panel {
+  background: rgba(255, 255, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.25),
+    0 40px 120px rgba(60, 50, 30, 0.35);
+}
+
+.auth-focus-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.auth-focus-title {
+  margin: 0 0 6px;
+  font-family: var(--pf-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.auth-focus-reading {
+  margin: 0 0 20px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--pt-dim);
+  animation: auth-pulse 600ms var(--ease-out) infinite alternate;
+}
+
+@keyframes auth-pulse {
+  to {
+    opacity: 0.25;
+  }
+}
+
+/* Cancel chip: hairline border, quiet — matches .set-chip. */
+.auth-focus-cancel {
+  min-height: 44px;
+  padding: 4px 14px;
+  font-family: var(--pf-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
+  background: none;
+  border: 1px solid var(--pt-line);
+  border-radius: 3px;
+  cursor: pointer;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .auth-focus-cancel:hover {
+    color: var(--pt-text);
+    border-color: var(--pt-text);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-focus-reading {
+    animation: none;
+    opacity: 0.6;
+  }
+}

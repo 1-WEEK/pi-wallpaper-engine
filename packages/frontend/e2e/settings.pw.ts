@@ -340,3 +340,68 @@ test.describe("Settings page", () => {
     await expect(page.getByText("WEB API KEY abc***")).toBeVisible()
   })
 })
+
+test.describe("Settings mobile (ticket 14)", () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  test("degrades to a section list → detail two-layer flow", async ({ page }) => {
+    await mockBase(page)
+    await page.goto("/settings")
+
+    // Layer one: the section list with mono live readings; the desktop rail
+    // navigation and page title are absent.
+    await expect(page.locator(".set-rc")).toHaveCount(0)
+    await expect(page.locator(".setm-title")).toHaveText("Settings")
+    const rows = page.locator(".setm-row")
+    await expect(rows).toHaveCount(4)
+    await expect(rows.nth(0)).toContainText("Playback")
+    await expect(rows.nth(0)).toContainText("MODE — SINGLE")
+    await expect(rows.nth(1)).toContainText("Storage")
+    await expect(rows.nth(1)).toContainText("954 MB FREE")
+    // Every list row is a ≥44px touch target.
+    for (const row of await rows.all()) {
+      expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    }
+
+    // Layer two: a row opens its section, URL-addressable for back support.
+    await rows.nth(0).click()
+    await expect(page).toHaveURL(/\/settings\?sec=playback/)
+    await expect(page.locator(".setm-back")).toBeVisible()
+    await expect(page.getByText("Duration per wallpaper")).toBeVisible()
+    await expect(page.locator(".setm-list")).toHaveCount(0)
+
+    await page.goBack()
+    await expect(page).toHaveURL(/\/settings$/)
+    await expect(page.locator(".setm-list")).toBeVisible()
+
+    // The same shared section bodies render in the detail layer.
+    await page.locator(".setm-row", { hasText: "System" }).click()
+    await expect(page.getByText("Steam connection")).toBeVisible()
+  })
+
+  test("detail layer keeps the glass directory-change focused flow", async ({ page }) => {
+    await mockBase(page)
+    await page.route("**/api/storage/locations", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          { id: "default", label: "Default", path: "/mock/data", display_path: "/mock/data" },
+        ]),
+      })
+    )
+
+    await page.goto("/settings?sec=storage")
+    await page.getByRole("button", { name: /Change directory/ }).click()
+
+    const dialog = page.getByRole("dialog", { name: "Change media directory" })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole("button", { name: /Default/ })).toBeVisible()
+    // Glass on mobile too: the focused overlay keeps the §2.4 recipe.
+    const backdrop = await dialog.evaluate((el) => getComputedStyle(el).backdropFilter)
+    expect(backdrop).toContain("blur(28px)")
+    // The sheet close is a ≥44px touch target on mobile.
+    const close = await dialog.page().locator(".set-sheet-close").boundingBox()
+    expect(close!.width).toBeGreaterThanOrEqual(44)
+  })
+})

@@ -12,6 +12,7 @@ import "./functionalScrollbar.css"
 import "./library.css"
 import "./settings.css"
 import "./activity.css"
+import "./auth.css"
 
 const root = document.getElementById("root")
 if (!root) throw new Error("#root not found")

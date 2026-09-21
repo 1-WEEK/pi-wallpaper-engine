@@ -122,12 +122,6 @@ export const appIcons = {
       <path d="M6 6 L18 18 M18 6 L6 18" />
     </AppIcon>
   ),
-  folder: (
-    <AppIcon>
-      <path d="M3 7.5 H9 L11 10 H21 V18.5 A1.5 1.5 0 0 1 19.5 20 H4.5 A1.5 1.5 0 0 1 3 18.5 Z" />
-      <path d="M3 7.5 V6 A1.5 1.5 0 0 1 4.5 4.5 H8 L10 7.5" />
-    </AppIcon>
-  ),
   chevLeft: (
     <AppIcon>
       <path d="M15 6 L9 12 L15 18" />
