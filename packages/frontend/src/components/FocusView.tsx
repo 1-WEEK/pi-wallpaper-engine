@@ -7,9 +7,10 @@
 // surface. The `.pfocus-media` element carries `view-transition-name:
 // card-media` (browse.css); scrim and stage stay unnamed (spec §5 F3: nested
 // named snapshots are the mid-morph white-block artifact source).
-import { useState } from "react"
+import { useRef, useState } from "react"
 import type { ActivityTask, WorkshopItem } from "@pwe/shared"
 import { api } from "../api.js"
+import { flyDownloadReceipt } from "../crossPageGhosts.js"
 import { isTaskFinished, taskStageLabel } from "../taskDisplay.js"
 import { RESOLUTION_TAGS } from "../workshopTags.js"
 
@@ -63,6 +64,7 @@ export const FocusView = ({
   const [starting, setStarting] = useState(false)
   const [queued, setQueued] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const mediaRef = useRef<HTMLDivElement | null>(null)
 
   const activeTask = downloadTask && !isTaskFinished(downloadTask) ? downloadTask : null
   const taskError = downloadTask?.stage === "error" ? downloadTask.message : null
@@ -75,6 +77,10 @@ export const FocusView = ({
       .download(item.publishedfileid)
       .then(() => {
         setQueued(true)
+        // Download receipt (ticket 12, spec §4.5) — same flight as the card.
+        if (mediaRef.current) {
+          flyDownloadReceipt(mediaRef.current, item.preview_url || undefined)
+        }
         onDownloadQueued?.()
       })
       .catch((e: Error) => setError(e.message))
@@ -109,7 +115,7 @@ export const FocusView = ({
         ←
       </button>
       <figure className={stageClass}>
-        <div className="pfocus-media">
+        <div className="pfocus-media" ref={mediaRef}>
           {item.preview_url ? (
             <img src={item.preview_url} alt={item.title} />
           ) : (

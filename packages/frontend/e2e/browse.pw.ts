@@ -360,6 +360,110 @@ test.describe("Browse contact sheet: download intent", () => {
   })
 })
 
+/** Boot Browse with every download POST accepted (ticket 12 receipt tests). */
+const bootWithDownload = async (page: Page) => {
+  let posted = 0
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await mockAllEndpoints(page, pagedSearch(200))
+  await page.route("**/api/download/3*", (r) => {
+    if (r.request().method() !== "POST") {
+      void r.fallback()
+      return
+    }
+    posted += 1
+    void r.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' })
+  })
+  await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+  await expect(page.locator(".bws-grid .bws-card")).toHaveCount(28, { timeout: 15000 })
+  return { posted: () => posted }
+}
+
+const addCard = async (page: Page, index: number) => {
+  const card = page.locator(".bws-card").nth(index)
+  await card.hover()
+  await card.locator("button.bws-add", { hasText: "ADD" }).click()
+}
+
+/** Ghost start pose (static inline style = the from rect) plus the running
+ *  animation's final keyframe and duration. */
+const ghostSnapshot = (page: Page) =>
+  page.locator("body > img").last().evaluate((el) => {
+    const style = (el as HTMLElement).style
+    const effect = el.getAnimations()[0]?.effect as KeyframeEffect | undefined
+    const kfs = effect?.getKeyframes() ?? []
+    const last = (kfs[kfs.length - 1] ?? {}) as Record<string, unknown>
+    return {
+      left: parseFloat(style.left),
+      top: parseFloat(style.top),
+      lastTransform: String(last.transform ?? ""),
+      duration: Number(effect?.getComputedTiming().duration),
+    }
+  })
+
+test.describe("Browse download receipt ghost (ticket 12)", () => {
+  test("ADD flies the thumbnail into the Library nav item, then navpulse fires", async ({
+    page,
+  }) => {
+    await bootWithDownload(page)
+    const mediaBox = (await page.locator(".bws-card").first().locator(".bws-media").boundingBox())!
+    const navBox = (await page.locator('[data-nav="library"]').boundingBox())!
+
+    await addCard(page, 0)
+    const ghosts = page.locator("body > img")
+    await expect(ghosts).toHaveCount(1)
+
+    // Start pose = the card media rect; the final keyframe lands on a 48×30
+    // chip centered in the Library nav item; the flight is the registered
+    // 420ms §5 exception on --ease-out.
+    const g = await ghostSnapshot(page)
+    expect(g.duration).toBe(420)
+    expect(g.left).toBeCloseTo(mediaBox.x, 0)
+    expect(g.top).toBeCloseTo(mediaBox.y, 0)
+    const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(g.lastTransform)
+    expect(m).not.toBeNull()
+    expect(g.left + parseFloat(m![1])).toBeCloseTo(navBox.x + navBox.width / 2 - 24, 0)
+    expect(g.top + parseFloat(m![2])).toBeCloseTo(navBox.y + navBox.height / 2 - 15, 0)
+
+    // The ghost lands (~420ms) → the nav label flashes inverse once (~1.4s),
+    // on the label so it never fights the XOR mask's covered state.
+    const navLink = page.locator('[data-nav="library"]')
+    await expect(navLink).toHaveClass(/nav-pulse/, { timeout: 2000 })
+    await expect(navLink.locator(".rail-nav-label")).toHaveCSS("animation-name", "navpulse")
+    // …and the pulse retires instead of sticking.
+    await expect(navLink).not.toHaveClass(/nav-pulse/, { timeout: 4000 })
+    await expect(ghosts).toHaveCount(0)
+  })
+
+  test("rapid repeated ADDs replace the ghost — never stack", async ({ page }) => {
+    await bootWithDownload(page)
+    await addCard(page, 0)
+    await expect(page.locator("body > img")).toHaveCount(1)
+    await addCard(page, 1)
+    // Mid-flight of the second ghost: the first was killed, nothing queued.
+    await page.waitForTimeout(150)
+    expect(await page.locator("body > img").count()).toBe(1)
+    await expect(page.locator("body > img")).toHaveCount(0, { timeout: 2000 })
+    // Exactly one receipt pulse — the surviving flight's landing beat.
+    await expect(page.locator('[data-nav="library"]')).toHaveClass(/nav-pulse/, { timeout: 2000 })
+  })
+})
+
+test.describe("Browse download receipt ghost: reduced motion (ticket 12)", () => {
+  test.use({ reducedMotion: "reduce" })
+
+  test("instant receipt: no ghost, no pulse; the queue state still lands", async ({ page }) => {
+    const { posted } = await bootWithDownload(page)
+    const card = page.locator(".bws-card").first()
+    await card.hover()
+    await card.locator("button.bws-add", { hasText: "ADD" }).click()
+    await expect.poll(() => posted()).toBe(1)
+    await expect(card.locator(".bws-add.is-static")).toHaveText("QUEUED")
+    await page.waitForTimeout(600)
+    expect(await page.locator("body > img").count()).toBe(0)
+    await expect(page.locator('[data-nav="library"]')).not.toHaveClass(/nav-pulse/)
+  })
+})
+
 test.describe("Browse contact sheet: state blocks", () => {
   test("skeleton (pulsing cross + scanline) shows while the first page loads", async ({
     page,

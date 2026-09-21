@@ -13,6 +13,8 @@ export const duration = {
   hover: 200,
   /** View Transition / ghost baseline. */
   base: 300,
+  /** Cross-page play ghost: Library → PlayerBar thumb (registered §5 exception). */
+  ghostPlayer: 380,
   /** Long-range cross-page ghost (also the 09 nav mask slide). */
   ghostLong: 420,
 } as const

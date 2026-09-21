@@ -140,6 +140,25 @@
   color: var(--pt-accent);
 }
 
+/* navpulse (ticket 12, spec §4.5 — registered §5 exception 700×2+1400): the
+   download receipt's inverse flash once the receipt ghost lands. It hangs on
+   the label, not the link, so it never fights the XOR mask's covered state. */
+.rail-nav-link.nav-pulse > .rail-nav-label {
+  animation: navpulse 1.4s var(--ease-out);
+}
+
+@keyframes navpulse {
+  0%,
+  100% {
+    background: transparent;
+    color: inherit;
+  }
+  18% {
+    background: var(--pt-inv-bg);
+    color: var(--pt-inv-text);
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
   /* Hover = uncommitted (§2.6): a 1px 50% checker dither band, background
      only, instant (no transition — the 1984 inversion was instant too). */

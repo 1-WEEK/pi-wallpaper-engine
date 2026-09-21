@@ -15,6 +15,7 @@ import { StateBlock } from "../components/StateBlock.js"
 import { prefersReducedMotion } from "../reducedMotion.js"
 import { canViewTransition, withViewTransition } from "../viewTransition.js"
 import { flyGhost } from "../ghost.js"
+import { flyPlayGhost } from "../crossPageGhosts.js"
 import { duration } from "../motionTokens.js"
 import { useColumnsPerRow } from "../useColumnsPerRow.js"
 
@@ -86,7 +87,9 @@ const canPreview = (row: LibraryItem): boolean => row.transcode_status === "comp
 /* ── Shared backend intents (identical behavior on desktop + mobile) ── */
 
 interface Intents {
-  play: (id: string) => void
+  /** fromEl/src feed the cross-page play ghost (ticket 12, spec §4.5);
+   *  omitted on mobile and other no-ghost triggers. */
+  play: (id: string, fromEl?: HTMLElement | null, src?: string) => void
   remove: (id: string) => void
   transcode: (id: string) => void
 }
@@ -103,14 +106,18 @@ const useIntents = (
   setError: (e: string | null) => void,
   setNotice: (n: string | null) => void
 ): Intents => ({
-  play: (id) =>
+  play: (id, fromEl, src) => {
+    // The media ghost flies to the PlayerBar thumb as playback starts; the
+    // now-playing switch itself runs on the existing API/SWR path.
+    flyPlayGhost(fromEl, src)
     api
       .play(id)
       .then(() => {
         setError(null)
         onSystemRefresh()
       })
-      .catch((e: Error) => setError(e.message)),
+      .catch((e: Error) => setError(e.message))
+  },
   // Two-step confirm lives in the UI (DELETE → SURE?); this fires the delete.
   remove: (id) =>
     api
@@ -140,10 +147,13 @@ const HoverActions = ({
   row,
   intents,
   onPreview,
+  mediaEl,
 }: {
   row: LibraryItem
   intents: Intents
   onPreview: (row: LibraryItem) => void
+  /** The media element the play ghost flies out of (card media / row thumb). */
+  mediaEl?: () => HTMLElement | null
 }) => {
   const [confirming, setConfirming] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -164,7 +174,7 @@ const HoverActions = ({
       <button
         type="button"
         className="lib-act lib-act-primary mono"
-        onClick={() => intents.play(row.workshop_id)}
+        onClick={() => intents.play(row.workshop_id, mediaEl?.(), row.preview_url || undefined)}
       >
         PLAY
       </button>
@@ -732,7 +742,12 @@ const LibraryDesktop = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     {row.title}
                   </span>
                   <span className="lib-caption-meta mono">{playableMeta(row)}</span>
-                  <HoverActions row={row} intents={intents} onPreview={setPreviewItem} />
+                  <HoverActions
+                    row={row}
+                    intents={intents}
+                    onPreview={setPreviewItem}
+                    mediaEl={() => sourceMediaEl(i)}
+                  />
                 </div>
               </article>
             ))}
@@ -759,7 +774,12 @@ const LibraryDesktop = ({ nowPlayingId, onSystemRefresh }: Props) => {
                 action={
                   <>
                     <TxPill row={row} inline />
-                    <HoverActions row={row} intents={intents} onPreview={setPreviewItem} />
+                    <HoverActions
+                      row={row}
+                      intents={intents}
+                      onPreview={setPreviewItem}
+                      mediaEl={() => sourceMediaEl(i)}
+                    />
                   </>
                 }
               />
@@ -891,7 +911,13 @@ const LibraryDetail = ({
             <button
               type="button"
               className="ldet-play mono"
-              onClick={() => intents.play(row.workshop_id)}
+              onClick={() =>
+                intents.play(
+                  row.workshop_id,
+                  document.querySelector<HTMLElement>(".ldet-media"),
+                  row.preview_url || undefined
+                )
+              }
             >
               PLAY
             </button>

@@ -262,6 +262,7 @@ export const RailShell = ({
             <Link
               key={item.key}
               href={item.href}
+              data-nav={item.key}
               className={`rail-nav-link ${item.active ? "is-here" : ""} ${
                 coveredKey === item.key ? "is-covered" : ""
               }`}

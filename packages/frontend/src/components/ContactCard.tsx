@@ -3,10 +3,11 @@
 // that triggers the existing download intent (same api.download flow as the
 // legacy WallpaperCard). Hover reveals ADD; committed states (queued /
 // working / in library / failed) stay visible.
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { CSSProperties } from "react"
 import type { ActivityTask, WorkshopItem } from "@pwe/shared"
 import { api } from "../api.js"
+import { flyDownloadReceipt } from "../crossPageGhosts.js"
 import { isTaskFinished, taskStageLabel } from "../taskDisplay.js"
 
 const formatFileSize = (raw: WorkshopItem["file_size"]): string | null => {
@@ -50,6 +51,7 @@ export const ContactCard = ({
   const [starting, setStarting] = useState(false)
   const [queued, setQueued] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const mediaRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (downloadTask || isInLibrary) setQueued(false)
@@ -62,6 +64,11 @@ export const ContactCard = ({
       .download(item.publishedfileid)
       .then(() => {
         setQueued(true)
+        // Download receipt (ticket 12, spec §4.5): the thumbnail flies to the
+        // Library nav item; the landing pulses the nav label.
+        if (mediaRef.current) {
+          flyDownloadReceipt(mediaRef.current, item.preview_url || undefined)
+        }
         onDownloadQueued?.()
       })
       .catch((e: Error) => setError(e.message))
@@ -81,7 +88,7 @@ export const ContactCard = ({
       onClick={onSelect}
     >
       <div className="bws-card-index mono">N°{String(index + 1).padStart(3, "0")}</div>
-      <div className="bws-media" onDoubleClick={onOpen}>
+      <div className="bws-media" onDoubleClick={onOpen} ref={mediaRef}>
         {item.preview_url ? (
           <img className="bws-media-img" src={item.preview_url} alt={item.title} loading="lazy" />
         ) : (

@@ -377,6 +377,132 @@ test.describe("Library rail QUEUE commands (ticket 08)", () => {
   })
 })
 
+test.describe("Library → PlayerBar play ghost (ticket 12)", () => {
+  const previewA = "https://example.com/preview/neon.jpg"
+  const previewB = "https://example.com/preview/rainy.jpg"
+  const itemA = mockLibraryItem({ preview_url: previewA })
+  const itemB = mockLibraryItem({ workshop_id: "222", title: "Rainy Window", preview_url: previewB })
+
+  /** Boot Library with a summary that flips to now-playing once PLAY posts. */
+  const bootWithPlayback = async (page: Page) => {
+    let played: string | null = null
+    await mockAuthDisabled(page)
+    await page.route("**/api/system/summary", (r) => {
+      const s = mockSystemSummary()
+      if (played) {
+        s.status.player.current_workshop_id = itemA.workshop_id
+        s.status.player.playing = true
+        s.status.player.current_title = itemA.title
+        s.status.player.current_preview_url = previewA
+      }
+      void r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(s) })
+    })
+    await mockLibraryList(page, [itemA, itemB])
+    await page.route("**/api/player/play/*", (r) => {
+      played = r.request().url()
+      void r.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+    })
+    await page.goto("/library")
+    await expect(page.locator(".lib-card")).toHaveCount(2)
+    return { played: () => played }
+  }
+
+  const playCard = async (page: Page, title: string) => {
+    const card = page.locator(".lib-card", { hasText: title })
+    await card.hover()
+    await card.locator(".lib-act-primary", { hasText: "PLAY" }).click()
+  }
+
+  const ghostSnapshot = (page: Page) =>
+    page.locator("body > img").last().evaluate((el) => {
+      const style = (el as HTMLElement).style
+      const effect = el.getAnimations()[0]?.effect as KeyframeEffect | undefined
+      const kfs = effect?.getKeyframes() ?? []
+      const last = (kfs[kfs.length - 1] ?? {}) as Record<string, unknown>
+      return {
+        left: parseFloat(style.left),
+        top: parseFloat(style.top),
+        lastTransform: String(last.transform ?? ""),
+        duration: Number(effect?.getComputedTiming().duration),
+      }
+    })
+
+  test("PLAY flies the card media into the PlayerBar thumb; now-playing switches", async ({
+    page,
+  }) => {
+    const { played } = await bootWithPlayback(page)
+    const card = page.locator(".lib-card", { hasText: "Neon City" })
+    const mediaBox = (await card.locator(".lib-media").boundingBox())!
+    const thumbBox = (await page.locator(".pbar-thumb").boundingBox())!
+
+    await playCard(page, "Neon City")
+    const ghosts = page.locator("body > img")
+    await expect(ghosts).toHaveCount(1)
+
+    // Start pose = the card media rect; the final keyframe lands exactly on
+    // the PlayerBar thumb slot; 380ms — the registered §5 exception.
+    const g = await ghostSnapshot(page)
+    expect(g.duration).toBe(380)
+    expect(g.left).toBeCloseTo(mediaBox.x, 0)
+    expect(g.top).toBeCloseTo(mediaBox.y, 0)
+    const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(g.lastTransform)
+    expect(m).not.toBeNull()
+    expect(g.left + parseFloat(m![1])).toBeCloseTo(thumbBox.x, 0)
+    expect(g.top + parseFloat(m![2])).toBeCloseTo(thumbBox.y, 0)
+
+    // PlayerBar switches to now-playing and the card lights NOW PLAYING.
+    await expect.poll(() => played()).toContain(`/api/player/play/${itemA.workshop_id}`)
+    await expect(page.locator(".pbar-title")).toHaveText("Neon City")
+    await expect(card.locator(".lib-now")).toHaveText("NOW PLAYING")
+    await expect(ghosts).toHaveCount(0, { timeout: 2000 })
+  })
+
+  test("rapid repeated PLAYs replace the ghost — never stack", async ({ page }) => {
+    await bootWithPlayback(page)
+    await playCard(page, "Neon City")
+    await expect(page.locator("body > img")).toHaveCount(1)
+    await playCard(page, "Rainy Window")
+    // Mid-flight of the second ghost: the first was killed, nothing queued.
+    await page.waitForTimeout(150)
+    expect(await page.locator("body > img").count()).toBe(1)
+    await expect(page.locator("body > img")).toHaveCount(0, { timeout: 2000 })
+  })
+})
+
+test.describe("Library play ghost: reduced motion (ticket 12)", () => {
+  test.use({ reducedMotion: "reduce" })
+
+  test("no ghost; the play intent and now-playing switch still land", async ({ page }) => {
+    const preview = "https://example.com/preview/neon.jpg"
+    const item = mockLibraryItem({ preview_url: preview })
+    let played: string | null = null
+    await mockAuthDisabled(page)
+    await page.route("**/api/system/summary", (r) => {
+      const s = mockSystemSummary()
+      if (played) {
+        s.status.player.current_workshop_id = item.workshop_id
+        s.status.player.playing = true
+        s.status.player.current_title = item.title
+      }
+      void r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(s) })
+    })
+    await mockLibraryList(page, [item])
+    await page.route("**/api/player/play/*", (r) => {
+      played = r.request().url()
+      void r.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+    })
+    await page.goto("/library")
+    const card = page.locator(".lib-card", { hasText: "Neon City" })
+    await card.hover()
+    await card.locator(".lib-act-primary", { hasText: "PLAY" }).click()
+    await expect.poll(() => played).toContain(`/api/player/play/${item.workshop_id}`)
+    await expect(page.locator(".pbar-title")).toHaveText("Neon City")
+    await expect(card.locator(".lib-now")).toHaveText("NOW PLAYING")
+    await page.waitForTimeout(500)
+    expect(await page.locator("body > img").count()).toBe(0)
+  })
+})
+
 test.describe("Library focus band: keyboard roaming (ticket 06, same language)", () => {
   test("arrows roam the grid; the 1-bit band hugs the cursor card", async ({ page }) => {
     const items = [completed, failed, running, pending].map((it, i) => ({

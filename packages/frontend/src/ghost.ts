@@ -7,6 +7,11 @@
 import { easeOut, duration } from "./motionTokens.js"
 import { prefersReducedMotion } from "./reducedMotion.js"
 
+// Ghost channels (ticket 12): one flight per channel at a time. Re-triggering
+// a channel kills its in-flight ghost instantly (cancel + remove, its onDone
+// suppressed) instead of queueing — rapid repeated ADDs/PLAYs never stack.
+const inflight = new Map<string, { ghost: HTMLElement; kill: () => void }>()
+
 export const flyGhost = ({
   from,
   to,
@@ -14,6 +19,7 @@ export const flyGhost = ({
   duration: ms = duration.base,
   fromRadius = "0px",
   toRadius = "0px",
+  channel,
   onDone,
 }: {
   from: DOMRect
@@ -22,6 +28,8 @@ export const flyGhost = ({
   duration?: number
   fromRadius?: string
   toRadius?: string
+  /** Dedup key: spawning on a live channel replaces the old ghost. */
+  channel?: string
   onDone?: () => void
 }): void => {
   if (
@@ -34,6 +42,7 @@ export const flyGhost = ({
     onDone?.()
     return
   }
+  if (channel) inflight.get(channel)?.kill()
   const sx = to.width / from.width
   const sy = to.height / from.height
   const k = (sx + sy) / 2
@@ -56,19 +65,32 @@ export const flyGhost = ({
     willChange: "transform",
   })
   document.body.appendChild(ghost)
-  ghost
-    .animate(
-      [
-        { transform: "translate(0px, 0px) scale(1, 1)", borderRadius: fromRadius },
-        {
-          transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${sx}, ${sy})`,
-          borderRadius: scaleRadius(toRadius),
-        },
-      ],
-      { duration: ms, easing: easeOut, fill: "forwards" }
-    )
-    .finished.finally(() => {
-      ghost.remove()
-      onDone?.()
+  let killed = false
+  const anim = ghost.animate(
+    [
+      { transform: "translate(0px, 0px) scale(1, 1)", borderRadius: fromRadius },
+      {
+        transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${sx}, ${sy})`,
+        borderRadius: scaleRadius(toRadius),
+      },
+    ],
+    { duration: ms, easing: easeOut, fill: "forwards" }
+  )
+  anim.finished.finally(() => {
+    ghost.remove()
+    if (channel && inflight.get(channel)?.ghost === ghost) inflight.delete(channel)
+    // A channel-killed ghost is replaced, not completed — only the surviving
+    // flight may run the landing beat (e.g. the navpulse receipt).
+    if (!killed) onDone?.()
+  })
+  if (channel) {
+    inflight.set(channel, {
+      ghost,
+      kill: () => {
+        killed = true
+        anim.cancel()
+        ghost.remove()
+      },
     })
+  }
 }
