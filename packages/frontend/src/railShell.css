@@ -13,6 +13,12 @@
   /* Reserve the thin scrollbar's gutter so expanding control sections
      never squeeze the rail's content width. */
   scrollbar-gutter: stable;
+  /* The nav mask's difference blend is contained to the rail — and the
+     isolation sits here, not on .rail-nav, so the blend's backdrop
+     includes the rail's own background: the mask bleeds ±8px past the
+     nav's box, and with a transparent backdrop the XOR block would
+     collapse to plain white (invisible text in the light theme). */
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -71,35 +77,60 @@
   color: var(--pt-dim);
 }
 
-/* ── Nav: plain text, inverse fill marks the active page ─────────── */
+/* ── Nav: plain text; the active item wears a true XOR inversion mask ──
+   (spec §3.1, ticket 11 — 09 票 N 方案, Mac 1984 selection). The mask is
+   one shared white block in mix-blend-mode: difference parked above the
+   content layer; RailShell.tsx FLIP-slides it between items in 420ms on
+   the symmetric --ease-slide. Geometry: no left indent — labels sit on the
+   same column as the ledger rows — and the mask bleeds ±8px so the
+   in-block text gaps stay a symmetric 8px. */
 .rail-nav {
+  position: relative; /* offsetParent for the shared mask */
+  /* No isolation here — it lives on .rail so the mask's blend backdrop
+     includes the rail background across the mask's ±8px bleed. */
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--pt-line-soft);
 }
 
 .rail-nav-link {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 7px 8px;
-  margin: 0 -8px;
+  padding: 7px 0;
   font-size: 14px;
   color: var(--pt-dim);
   text-decoration: none;
   border-bottom: 1px solid var(--pt-line-soft);
-  transition: color var(--dur-exit) var(--ease-out),
-    background-color var(--dur-exit) var(--ease-out);
+  transition: color var(--dur-exit) var(--ease-out);
 }
 
-.rail-nav-link:hover {
+.rail-nav-mask {
+  position: absolute;
+  top: 0;
+  left: -8px;
+  width: calc(100% + 16px);
+  height: 0; /* parked by RailShell.tsx before first paint */
+  z-index: 2; /* a mask above the content layer, not a backing plate */
+  pointer-events: none;
+  background: #fff;
+  mix-blend-mode: difference;
+}
+
+/* Rows the mask physically covers — settled (.is-covered) or passing over
+   mid-flight (.is-masked, toggled per frame from the mask's rect) — brighten
+   toward white so the XOR inversion reads as near-black; ink-46 would only
+   invert to mid-gray (honest difference math, bad contrast). */
+.rail-nav-link.is-covered,
+.rail-nav-link.is-masked {
   color: var(--pt-text);
 }
 
-.rail-nav-link.is-here,
-.rail-nav-link.is-here:hover {
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
+.rail-nav-link.is-covered .rail-nav-count,
+.rail-nav-link.is-masked .rail-nav-count {
+  color: var(--pt-dim);
 }
 
 .rail-nav-count {
@@ -109,8 +140,38 @@
   color: var(--pt-accent);
 }
 
-.rail-nav-link.is-here .rail-nav-count {
-  color: inherit;
+@media (hover: hover) and (pointer: fine) {
+  /* Hover = uncommitted (§2.6): a 1px 50% checker dither band, background
+     only, instant (no transition — the 1984 inversion was instant too). */
+  .rail-nav-link:hover:not(.is-covered) {
+    color: var(--pt-text);
+    transition: none;
+  }
+  .rail-nav-link:hover:not(.is-covered)::after {
+    content: "";
+    position: absolute;
+    inset: 0 -8px; /* same bleed as the committed mask */
+    z-index: -1;
+    background-image: var(--pt-dither);
+  }
+  /* Glyphs are carved out on chips of page color — the checker never
+     touches a glyph, so legibility is absolute in both themes. */
+  .rail-nav-link:hover:not(.is-covered) .rail-nav-label,
+  .rail-nav-link:hover:not(.is-covered) .rail-nav-count {
+    background: var(--pt-bg);
+    box-shadow: 0 0 0 2px var(--pt-bg);
+    border-radius: 1px;
+  }
+  .rail-nav-link:hover:not(.is-covered) .rail-nav-count {
+    color: var(--pt-dim);
+  }
+  /* hover → committed handoff: while the mask sweeps this row, its leading
+     edge clips the dither away in lockstep (--pt-sweep is rewritten per
+     frame from the mask's rect), so the swept region is solid white from
+     the first pixel — never an inverted-checker texture. */
+  .rail-nav-link.is-sweeping:hover:not(.is-covered)::after {
+    clip-path: var(--pt-sweep, none);
+  }
 }
 
 /* ── Per-page control slot (filled via <RailControls> portals) ────── */

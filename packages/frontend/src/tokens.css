@@ -59,6 +59,11 @@
   /* Error readings (state blocks, inline card errors). */
   --pt-danger: rgba(255, 124, 124, 0.85);
 
+  /* 1-bit 50% checker dither (spec §2.6 "uncommitted" — 09 nav hover, rail
+     ledger hover). SVG tile at 1px grain: repeating-conic-gradient moirés
+     at this size. Same ink as the focus ring's dither band. */
+  --pt-dither: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='2'%3E%3Crect width='1' height='1' fill='%23FFFFFF' fill-opacity='0.6'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23FFFFFF' fill-opacity='0.6'/%3E%3C/svg%3E");
+
   /* Type layers: Clash Display for display sizes, Geist Sans for UI text,
      Geist Mono (tabular-nums) for coordinates/readouts/ledger values. */
   --pf-display: "Clash Display", "Geist", -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
@@ -102,6 +107,7 @@ html[data-theme="light"] {
   --pt-inv-bg: rgba(0, 0, 0, 0.88);
   --pt-inv-text: #fbfaf4;
   --pt-danger: rgba(178, 44, 44, 0.9);
+  --pt-dither: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='2'%3E%3Crect width='1' height='1' fill='%23000000' fill-opacity='0.55'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23000000' fill-opacity='0.55'/%3E%3C/svg%3E");
 
   --pt-scrollbar: rgba(0, 0, 0, 0.18);
   --pt-scrollbar-hover: rgba(0, 0, 0, 0.3);

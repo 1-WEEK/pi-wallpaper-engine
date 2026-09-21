@@ -138,12 +138,24 @@
 }
 
 .lib-rc-row.is-on {
-  color: var(--pt-text);
+  /* Selection stays accent text — never an inversion block (spec §3.1). */
+  color: var(--pt-accent);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .lib-rc-row:hover {
+  /* Same language as the nav (spec §3.1, ticket 11): hover = uncommitted
+     1-bit checker band, instant, glyphs carved out on chips of page color. */
+  .lib-rc-row:hover:not(.is-on) {
+    background-image: var(--pt-dither);
     color: var(--pt-text);
+    transition: none;
+  }
+  .lib-rc-row:hover:not(.is-on) .lib-rc-row-name,
+  .lib-rc-row:hover:not(.is-on) .lib-rc-row-mark,
+  .lib-rc-row:hover:not(.is-on) .lib-rc-cmd-mark {
+    background: var(--pt-bg);
+    box-shadow: 0 0 0 2px var(--pt-bg);
+    border-radius: 1px;
   }
 }
 
