@@ -31,12 +31,21 @@ export const ContactCard = ({
   isInLibrary = false,
   downloadTask,
   onDownloadQueued,
+  cursor = false,
+  onSelect,
+  onOpen,
 }: {
   item: WorkshopItem
   index: number
   isInLibrary?: boolean
   downloadTask?: ActivityTask
   onDownloadQueued?: () => void
+  /** True while the keyboard cursor sits on this card (ticket 05 basic
+   *  roaming; the full 1-bit focus band lands with ticket 06). */
+  cursor?: boolean
+  onSelect?: () => void
+  /** Opens the immersive focus view (double-click on the media). */
+  onOpen?: () => void
 }) => {
   const [starting, setStarting] = useState(false)
   const [queued, setQueued] = useState(false)
@@ -66,9 +75,13 @@ export const ContactCard = ({
   const tag = pickTag(item)
 
   return (
-    <article className="bws-card pt-enter" style={{ "--pt-i": index } as CSSProperties}>
+    <article
+      className={`bws-card pt-enter${cursor ? " bws-cursor" : ""}`}
+      style={{ "--pt-i": index } as CSSProperties}
+      onClick={onSelect}
+    >
       <div className="bws-card-index mono">N°{String(index + 1).padStart(3, "0")}</div>
-      <div className="bws-media">
+      <div className="bws-media" onDoubleClick={onOpen}>
         {item.preview_url ? (
           <img className="bws-media-img" src={item.preview_url} alt={item.title} loading="lazy" />
         ) : (

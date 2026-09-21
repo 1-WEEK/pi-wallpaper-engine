@@ -1,0 +1,75 @@
+/* ── Density list (implementation ticket 05) ───────────────────────
+   Ledger row grammar (spec §2.3 / §4.1): N° + 56px thumb + title left +
+   dotted leader + mono metadata right, hairline separators. Shared by
+   Browse (V-key view) and, from ticket 08, the Library List view. Colors
+   come exclusively from the --pt-* token layer. */
+
+.ledger-list {
+  border-top: 1px solid var(--pt-line);
+}
+
+.ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--pt-line-soft);
+  cursor: pointer;
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ledger-row:hover {
+    background: var(--pt-fill);
+  }
+}
+
+/* Basic keyboard cursor; the full 1-bit focus band lands with ticket 06. */
+.ledger-row.is-cursor {
+  background: var(--pt-fill);
+  box-shadow: inset 2px 0 0 var(--pt-dim);
+}
+
+.ledger-no {
+  width: 42px;
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-faint);
+}
+
+.ledger-row.is-cursor .ledger-no {
+  color: var(--pt-text);
+}
+
+.ledger-thumb {
+  width: 56px;
+  height: 35px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 3px;
+  background: var(--pt-fill);
+}
+
+.ledger-title {
+  min-width: 0;
+  max-width: 38%;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ledger-leader {
+  flex: 1;
+  min-width: 20px;
+  border-bottom: 1px dotted var(--pt-faint);
+  transform: translateY(-3px);
+}
+
+.ledger-meta {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  white-space: nowrap;
+}

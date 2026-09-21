@@ -439,3 +439,241 @@ test.describe("Browse contact sheet: reduced motion", () => {
     expectAligned(await measureGrid(page))
   })
 })
+
+/** Boot a desktop Browse page with 28 cards (1600px → 4 columns). */
+const bootBrowse = async (page: Page) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await mockAllEndpoints(page, pagedSearch(200))
+  await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+  await expect(page.locator(".bws-grid .bws-card")).toHaveCount(28, { timeout: 15000 })
+}
+
+test.describe("Browse views: density list (ticket 05)", () => {
+  test("V toggles grid ↔ density list with the ledger row grammar", async ({ page }) => {
+    await bootBrowse(page)
+    await expect(page.locator(".bws-view-hint")).toHaveText("V — GRID")
+
+    await page.keyboard.press("v")
+    await expect(page.locator(".bws-view-hint")).toHaveText("V — LIST")
+    await expect(page.locator(".bws-grid")).toHaveCount(0)
+    const rows = page.locator(".ledger-row")
+    await expect(rows).toHaveCount(28)
+
+    // Ledger grammar: N° + 56px thumb + title + dotted leader + mono meta.
+    const first = rows.first()
+    await expect(first.locator(".ledger-no")).toHaveText("N°001")
+    await expect(first.locator(".ledger-thumb")).toHaveCSS("width", "56px")
+    await expect(first.locator(".ledger-title")).toHaveText("Wallpaper 1")
+    await expect(first.locator(".ledger-leader")).toBeAttached()
+    await expect(first.locator(".ledger-meta")).toContainText("5.0 MB")
+    // Hairline separators between rows.
+    await expect(first).toHaveCSS("border-bottom-width", "1px")
+
+    await page.keyboard.press("v")
+    await expect(page.locator(".bws-view-hint")).toHaveText("V — GRID")
+    await expect(page.locator(".bws-grid .bws-card")).toHaveCount(28)
+    await expect(page.locator(".ledger-list")).toHaveCount(0)
+  })
+
+  test("arrow keys roam rows one by one", async ({ page }) => {
+    await bootBrowse(page)
+    await page.keyboard.press("v")
+    const rows = page.locator(".ledger-row")
+    await expect(rows.nth(0)).toHaveClass(/is-cursor/)
+
+    await page.keyboard.press("ArrowDown")
+    await expect(rows.nth(1)).toHaveClass(/is-cursor/)
+    await page.keyboard.press("ArrowDown")
+    await expect(rows.nth(2)).toHaveClass(/is-cursor/)
+    await page.keyboard.press("ArrowUp")
+    await expect(rows.nth(1)).toHaveClass(/is-cursor/)
+    // Clamped at the top edge.
+    await page.keyboard.press("ArrowUp")
+    await page.keyboard.press("ArrowUp")
+    await expect(rows.nth(0)).toHaveClass(/is-cursor/)
+  })
+})
+
+test.describe("Browse views: immersive focus view (ticket 05)", () => {
+  test("Enter opens from the grid with a media View Transition", async ({ page }) => {
+    await bootBrowse(page)
+
+    // §5 F3: in Chromium the open is a card-media View Transition. Install a
+    // watcher BEFORE pressing Enter — the pseudo animations live only ~300ms,
+    // so polling after the fact races the finished transition.
+    const hasVtApi = await page.evaluate(
+      () => typeof document.startViewTransition === "function"
+    )
+    if (hasVtApi) {
+      await page.evaluate(() => {
+        const w = window as unknown as {
+          __vtPseudos: Set<string>
+          __vtDone: boolean
+        }
+        w.__vtPseudos = new Set()
+        w.__vtDone = false
+        const orig = document.startViewTransition.bind(document)
+        document.startViewTransition = ((cb: () => void | Promise<unknown>) => {
+          const vt = orig(cb)
+          const watch = () => {
+            for (const a of document.getAnimations()) {
+              const p = (a.effect as KeyframeEffect | null)?.pseudoElement
+              if (p) w.__vtPseudos.add(p)
+            }
+            if (!w.__vtDone) requestAnimationFrame(watch)
+          }
+          watch()
+          vt.finished.finally(() => {
+            w.__vtDone = true
+          })
+          return vt
+        }) as typeof document.startViewTransition
+      })
+    }
+
+    await page.keyboard.press("Enter")
+    const focus = page.locator(".pfocus")
+    await expect(focus).toBeVisible()
+    await expect(focus.locator(".pfocus-title")).toHaveText("Wallpaper 1")
+    await expect(focus.locator(".pfocus-no")).toHaveText("N°001")
+    await expect(focus.locator(".pfocus-meta")).toContainText("ID 3000000000")
+    // Pure download semantics: DOWNLOAD + STEAM, no PLAY anywhere.
+    await expect(focus.locator(".pfocus-primary")).toHaveText("DOWNLOAD ↓")
+    await expect(focus.locator(".pfocus-cmd")).toContainText("STEAM")
+    await expect(focus).not.toContainText("PLAY")
+
+    if (hasVtApi) {
+      // The delayed live-DOM chrome entrance is marked on the stage.
+      await expect(focus.locator(".pfocus-stage")).toHaveClass(/pfocus-vt/)
+      // The transition ran and the media morph (group/old/new pseudos) existed.
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __vtDone: boolean }).__vtDone))
+        .toBe(true)
+      const pseudos = await page.evaluate(() => [
+        ...(window as unknown as { __vtPseudos: Set<string> }).__vtPseudos,
+      ])
+      expect(pseudos).toContain("::view-transition-group(card-media)")
+      expect(pseudos).toContain("::view-transition-new(card-media)")
+    }
+  })
+
+  test("←/→ steps through items and wraps; Esc closes with a ghost flight", async ({
+    page,
+  }) => {
+    await bootBrowse(page)
+
+    await page.keyboard.press("Enter")
+    const focus = page.locator(".pfocus")
+    await expect(focus.locator(".pfocus-title")).toHaveText("Wallpaper 1")
+
+    await page.keyboard.press("ArrowRight")
+    await expect(focus.locator(".pfocus-title")).toHaveText("Wallpaper 2")
+    await expect(focus.locator(".pfocus-no")).toHaveText("N°002")
+
+    // Wrap-around: 0 ← 1 → step left twice from N°002 lands on the last item.
+    await page.keyboard.press("ArrowLeft")
+    await page.keyboard.press("ArrowLeft")
+    await expect(focus.locator(".pfocus-title")).toHaveText("Wallpaper 28")
+
+    await page.keyboard.press("Escape")
+    // §5 F6: the close direction flies a fixed-position ghost of the media
+    // back to the card while the chrome plays its 150ms exit beat.
+    await expect
+      .poll(
+        () => page.evaluate(() => document.body.querySelectorAll(":scope > img").length),
+        { timeout: 2000 }
+      )
+      .toBeGreaterThan(0)
+    await expect(focus).toHaveCount(0)
+  })
+
+  test("Enter opens from the density list; scrim click closes", async ({ page }) => {
+    await bootBrowse(page)
+    await page.keyboard.press("v")
+    await page.keyboard.press("ArrowDown")
+    await page.keyboard.press("Enter")
+
+    const focus = page.locator(".pfocus")
+    await expect(focus).toBeVisible()
+    await expect(focus.locator(".pfocus-title")).toHaveText("Wallpaper 2")
+
+    await focus.locator(".pfocus-scrim").click({ position: { x: 20, y: 20 } })
+    await expect(focus).toHaveCount(0)
+  })
+
+  test("DOWNLOAD queues via the API and the action flips to the live stage", async ({
+    page,
+  }) => {
+    const firstId = "3000000000"
+    const activeDownload: ActivityTask = {
+      task_id: "task-dl-focus",
+      task_type: "download",
+      workshop_id: firstId,
+      title: "Wallpaper 1",
+      preview_url: "",
+      content_rating: "Everyone",
+      rating_sex: null,
+      adult_hint: 0,
+      stage: "downloading",
+      message: "Downloading",
+      started_at: Date.now(),
+      finished_at: null,
+      percent: 12,
+      bytes_done: null,
+      bytes_total: null,
+    }
+    let queued = false
+    let postedTo: string | null = null
+
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await mockAllEndpoints(page, pagedSearch(200), (r) =>
+      void r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ items: queued ? [activeDownload] : [], total: queued ? 1 : 0 }),
+      })
+    )
+    await page.route(`**/api/download/${firstId}`, (r) => {
+      if (r.request().method() !== "POST") {
+        void r.fallback()
+        return
+      }
+      postedTo = r.request().url()
+      queued = true
+      void r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
+      })
+    })
+    await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+    await expect(page.locator(".bws-grid .bws-card")).toHaveCount(28, { timeout: 15000 })
+
+    await page.keyboard.press("Enter")
+    const focus = page.locator(".pfocus")
+    await focus.locator(".pfocus-primary", { hasText: "DOWNLOAD" }).click()
+
+    await expect.poll(() => postedTo).toContain(`/api/download/${firstId}`)
+    await expect(focus.locator(".pfocus-static")).toHaveText("DOWNLOADING")
+  })
+})
+
+test.describe("Browse views: reduced motion (ticket 05)", () => {
+  test.use({ reducedMotion: "reduce" })
+
+  test("focus view cuts instantly: no VT marker, no close ghost", async ({ page }) => {
+    await bootBrowse(page)
+
+    await page.keyboard.press("Enter")
+    const focus = page.locator(".pfocus")
+    await expect(focus).toBeVisible()
+    await expect(focus.locator(".pfocus-stage")).toHaveClass("pfocus-stage")
+
+    await page.keyboard.press("Escape")
+    await expect(focus).toHaveCount(0)
+    // No ghost was spawned for the close.
+    expect(await page.evaluate(() => document.body.querySelectorAll(":scope > img").length)).toBe(
+      0
+    )
+  })
+})

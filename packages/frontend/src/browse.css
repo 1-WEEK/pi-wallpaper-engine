@@ -35,7 +35,7 @@
     color var(--dur-hover) var(--ease-out);
 }
 
-.bws > *:not(.bws-gridlines) {
+.bws > *:not(.bws-gridlines):not(.pfocus) {
   position: relative;
   z-index: 1;
 }
@@ -334,4 +334,312 @@ button.bws-add.is-static {
 
 .bws-sentinel {
   min-height: 1px;
+}
+
+/* ── View dual-state (implementation ticket 05, spec §4.1 14 票) ──── */
+.bws-head-side {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+}
+
+.bws-view-hint {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-faint);
+  white-space: nowrap;
+}
+
+/* Basic keyboard cursor on the grid; the full 1-bit checkerboard focus
+   band lands with ticket 06. */
+.bws-card.bws-cursor .bws-media {
+  outline: 1px solid var(--pt-dim);
+  outline-offset: 2px;
+}
+
+.bws-card.bws-cursor .bws-card-index {
+  color: var(--pt-text);
+}
+
+/* ── Immersive focus view (ticket 05, spec §4.1) ───────────────────
+   Full-screen scrim + 16:9 media + Clash title + mono metadata +
+   DOWNLOAD/STEAM. The scrim surface is theme-decoupled: always dark with
+   light text (spec §2.1, scrims over imagery). */
+.pfocus {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+.pfocus-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: pfocus-scrim-in var(--dur-hover) var(--ease-out) both;
+}
+
+@keyframes pfocus-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Exit beat (spec §5 F1): scrim and stage exit together — same 150ms,
+   same curve, so the scrim never snaps off mid-fade. */
+.pfocus-scrim-out {
+  opacity: 0;
+  transition: opacity var(--dur-exit) var(--ease-out);
+}
+
+.pfocus-stage {
+  position: relative;
+  width: min(880px, 62vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: pfocus-in 280ms var(--ease-out) both;
+}
+
+/* Live-DOM chrome entrance during a VT (spec §5 F3): the stage and scrim
+   are deliberately NOT given view-transition-name — nested named snapshots
+   are the mid-morph white-block artifact source. The stage enters on a
+   delay so the root crossfade reveals it right as the media morph lands:
+   media leads, chrome settles. No blur in the keyframes (repaint ghosts). */
+@keyframes pfocus-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+}
+
+.pfocus-vt {
+  animation: pfocus-in 240ms var(--ease-out) 120ms both;
+}
+
+.pfocus-closing {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity var(--dur-exit) var(--ease-out),
+    transform var(--dur-exit) var(--ease-out);
+}
+
+/* The only VT-named element (spec §5 F3): card media ⇄ focus media. */
+.pfocus-media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  view-transition-name: card-media;
+}
+
+.pfocus-media img,
+.pfocus-media-empty {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pfocus-no {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.pfocus-cap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pfocus-title {
+  margin: 0;
+  font-family: var(--pf-display);
+  font-size: clamp(22px, 2.4vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.pfocus-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pfocus-creator {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.pfocus-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.pfocus-primary {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: #050506;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+.pfocus-primary:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.pfocus-cmd {
+  padding: 8px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: none;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.pfocus-cmd:hover {
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.pfocus-static {
+  padding: 8px 0;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pfocus-err {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pt-danger);
+}
+
+.pfocus-step {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 16px;
+  cursor: pointer;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.pfocus-step:hover {
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.pfocus-hint {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.38);
+  white-space: nowrap;
+}
+
+/* ── View Transition, open direction (spec §5 F3) ──────────────────
+   Same-image morph, 300ms on the single --ease-out curve so the open and
+   the ghost fly-back are true mirrors. The old snapshot (card crop) exits
+   fast, the new one (focus crop) fades in across the morph — no double
+   exposure. The UA default blends the pair with plus-lighter (additive),
+   which blows out to white mid-crossfade: force normal blending on all
+   three levels. The image-pair carries the SQUARE → ROUNDED motion: it
+   clips both snapshots to a frame whose border-radius animates 0 → 20px
+   across the morph (the close ghost runs 20 → 0). The pair gets no UA
+   geometry animation, so keyframes here are safe; the group keeps the UA
+   morph — keyframes there would override it. */
+::view-transition-group(card-media) {
+  animation-duration: 300ms;
+  animation-timing-function: var(--ease-out);
+}
+
+::view-transition-image-pair(card-media) {
+  mix-blend-mode: normal;
+  overflow: hidden;
+  animation: pfocus-media-radius 300ms var(--ease-out) both;
+}
+
+@keyframes pfocus-media-radius {
+  from {
+    border-radius: 0;
+  }
+  to {
+    border-radius: 20px;
+  }
+}
+
+::view-transition-old(card-media) {
+  animation: pfocus-vt-out 90ms var(--ease-out) both;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(card-media) {
+  animation: pfocus-vt-in 240ms var(--ease-out) both;
+  mix-blend-mode: normal;
+}
+
+@keyframes pfocus-vt-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes pfocus-vt-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion (spec §5 F5): VT and the ghost never initialize (gated in
+   TS); the stage entrance degrades to a pure fade. */
+@keyframes pfocus-in-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pfocus-stage {
+    animation: pfocus-in-fade 200ms var(--ease-out) both;
+  }
 }

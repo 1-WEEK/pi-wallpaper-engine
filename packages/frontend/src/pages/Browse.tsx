@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { flushSync } from "react-dom"
 import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
 import { useLocation, useSearch } from "wouter"
@@ -6,10 +7,15 @@ import type { WorkshopItem } from "@pwe/shared"
 import { api, type ActivityTask, type WorkshopSearchResult } from "../api.js"
 import { WallpaperCard } from "../components/WallpaperCard.js"
 import { ContactCard } from "../components/ContactCard.js"
+import { FocusView, resolutionTag } from "../components/FocusView.js"
+import { LedgerList, LedgerRow } from "../components/LedgerList.js"
 import { GridOverlay } from "../components/GridOverlay.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { appIcons } from "../icons.js"
 import { prefersReducedMotion } from "../reducedMotion.js"
+import { canViewTransition, withViewTransition } from "../viewTransition.js"
+import { flyGhost } from "../ghost.js"
+import { duration } from "../motionTokens.js"
 import { useLayout } from "../components/mobile/index.js"
 import { useColumnsPerRow } from "../useColumnsPerRow.js"
 import { MobileSheet } from "../components/mobile/index.js"
@@ -246,6 +252,179 @@ export const Browse = () => {
     return () => io.disconnect()
   }, [mobile, hasMore, isLoadingMore, setSize])
 
+  /* ── View dual-state + immersive focus view (ticket 05, spec §4.1) ── */
+
+  const [view, setView] = useState<"grid" | "list">("grid")
+  const [cursor, setCursor] = useState(0)
+  const [focusIdx, setFocusIdx] = useState<number | null>(null)
+  // True while the focus view arrived via a View Transition — its chrome
+  // enters on a delay so the media morph leads (spec §5 F3).
+  const [focusVt, setFocusVt] = useState(false)
+  const [focusClosing, setFocusClosing] = useState(false)
+  const focusCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clampedCursor = items.length > 0 ? Math.min(cursor, items.length - 1) : 0
+  const focusItem = focusIdx !== null ? items[focusIdx] : undefined
+
+  // The media element the focus view morphs out of, and the close ghost
+  // flies back to: the card still in grid view, the row thumb in list view.
+  const sourceMediaEl = (i: number): HTMLElement | null => {
+    const root = rootRef.current
+    if (!root) return null
+    const cell = root.querySelectorAll(view === "grid" ? ".bws-card" : ".ledger-row")[i]
+    return (
+      cell?.querySelector<HTMLElement>(view === "grid" ? ".bws-media" : ".ledger-thumb") ?? null
+    )
+  }
+
+  // Open direction = View Transition (spec §2.5 / §5 F3): only the media is
+  // named. The callback clears the card's name, mounts the focus view (whose
+  // .pfocus-media carries the name via CSS) and returns a promise that
+  // resolves once the detail <img> has decoded — the browser then captures a
+  // painted new snapshot instead of a blank box. The 400ms cap means a hung
+  // image can never freeze the page. No VT API (Safari) or reduced motion:
+  // the update runs immediately and the swap is instant.
+  const openFocus = (i: number) => {
+    const el = sourceMediaEl(i)
+    const useVt = el !== null && canViewTransition()
+    if (useVt && el) el.style.viewTransitionName = "card-media"
+    withViewTransition(() => {
+      if (useVt && el) el.style.viewTransitionName = ""
+      flushSync(() => {
+        setFocusVt(useVt)
+        setFocusIdx(i)
+      })
+      if (!useVt) return
+      const img = document.querySelector<HTMLImageElement>(".pfocus-media img")
+      if (!img) return
+      const decoded =
+        img.complete && img.naturalWidth > 0
+          ? img.decode().catch(() => {})
+          : new Promise<void>((resolve) => {
+              const done = () => resolve()
+              img.addEventListener(
+                "load",
+                () => void img.decode().then(done, done),
+                { once: true }
+              )
+              img.addEventListener("error", done, { once: true })
+            })
+      return Promise.race([decoded, new Promise<void>((r) => setTimeout(r, 400))])
+    })
+  }
+
+  const stepFocus = (dir: 1 | -1) =>
+    setFocusIdx((f) =>
+      f === null || items.length === 0 ? f : (f + dir + items.length) % items.length
+    )
+
+  // Close direction = FLIP ghost (spec §5 F6), the mirror of the VT open: the
+  // focus media flies back into its source cell (border-radius 20 → 0, the
+  // image-pair's 0 → 20 in reverse) while the chrome plays the 150ms exit
+  // beat (F1). Reduced motion: no ghost, instant cut.
+  const requestClose = () => {
+    if (focusIdx === null || focusClosing) return
+    if (!prefersReducedMotion()) {
+      const detailMedia = document.querySelector<HTMLElement>(".pfocus-media")
+      const target = sourceMediaEl(focusIdx)
+      const img = detailMedia?.querySelector("img")
+      if (detailMedia && target && img) {
+        const from = detailMedia.getBoundingClientRect()
+        const to = target.getBoundingClientRect()
+        if (to.width > 0 && to.height > 0) {
+          // The real media disappears instantly; only the ghost flies home.
+          detailMedia.style.opacity = "0"
+          flyGhost({ from, to, src: img.src, duration: duration.base, fromRadius: "20px" })
+        }
+      }
+    }
+    setFocusClosing(true)
+    focusCloseTimer.current = setTimeout(() => {
+      focusCloseTimer.current = null
+      setFocusClosing(false)
+      setFocusVt(false)
+      setFocusIdx(null)
+    }, duration.exit)
+  }
+
+  useEffect(
+    () => () => {
+      if (focusCloseTimer.current) clearTimeout(focusCloseTimer.current)
+    },
+    []
+  )
+
+  // Keyboard (desktop): V toggles grid ↔ density list; arrows roam (grid
+  // uses the measured column count, list steps row by row); Enter opens the
+  // focus view. While the focus view is open, ←/→ steps and Esc closes.
+  // Basic roaming only — the full 1-bit focus band is ticket 06.
+  useEffect(() => {
+    if (mobile) return
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t?.closest("input, textarea, [contenteditable]")) return
+      if (focusIdx !== null) {
+        if (e.key === "Escape") {
+          e.preventDefault()
+          requestClose()
+        } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault()
+          stepFocus(e.key === "ArrowLeft" ? -1 : 1)
+        }
+        return
+      }
+      if (e.key === "v" || e.key === "V") {
+        setView((v) => (v === "grid" ? "list" : "grid"))
+        return
+      }
+      if (items.length === 0) return
+      const cols = view === "grid" ? columnsPerRow : 1
+      const move = (dx: number, dy: number) => {
+        e.preventDefault()
+        setCursor((c) => {
+          const col = c % cols
+          const row = Math.floor(c / cols)
+          const lastRow = Math.ceil(items.length / cols) - 1
+          const nc = Math.min(cols - 1, Math.max(0, col + dx))
+          const nr = Math.min(lastRow, Math.max(0, row + dy))
+          return Math.min(items.length - 1, nr * cols + nc)
+        })
+      }
+      switch (e.key) {
+        case "ArrowLeft":
+          move(-1, 0)
+          break
+        case "ArrowRight":
+          move(1, 0)
+          break
+        case "ArrowUp":
+          move(0, -1)
+          break
+        case "ArrowDown":
+          move(0, 1)
+          break
+        case "Enter":
+          // Let a focused button/link keep its native Enter activation.
+          if (t?.closest("button, a")) return
+          e.preventDefault()
+          openFocus(clampedCursor)
+          break
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  })
+
+  // Keep the keyboard cursor visible while roaming.
+  useEffect(() => {
+    if (mobile || focusIdx !== null) return
+    const root = rootRef.current
+    const el = root?.querySelectorAll(view === "grid" ? ".bws-card" : ".ledger-row")[
+      clampedCursor
+    ]
+    ;(el as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" })
+  }, [mobile, view, clampedCursor, focusIdx])
+
   const toggleTag = (tag: string) => {
     const next = selectedTags.includes(tag)
       ? selectedTags.filter((t) => t !== tag)
@@ -422,16 +601,21 @@ export const Browse = () => {
 
   return (
     <div className="bws" ref={rootRef}>
-      <GridOverlay rootRef={rootRef} gridRef={gridRef} itemCount={items.length} />
+      {view === "grid" && (
+        <GridOverlay rootRef={rootRef} gridRef={gridRef} itemCount={items.length} />
+      )}
 
       <header className="bws-head pt-enter" ref={headRef}>
         <h1 className="bws-title">
           Results<span className="bws-title-slash"> / </span>
           {sortLabel}
         </h1>
-        <span className="bws-count mono">
-          {total > 0 ? `${total.toLocaleString("en-US")} ITEMS` : "SEARCH READY"}
-        </span>
+        <div className="bws-head-side">
+          <span className="bws-view-hint mono">V — {view === "grid" ? "GRID" : "LIST"}</span>
+          <span className="bws-count mono">
+            {total > 0 ? `${total.toLocaleString("en-US")} ITEMS` : "SEARCH READY"}
+          </span>
+        </div>
       </header>
 
       {/* Interim query/sort/filter controls in the content column; ticket 03
@@ -530,24 +714,51 @@ export const Browse = () => {
         />
       )}
 
-      <section
-        ref={(el) => { gridRef.current = el }}
-        className="bws-grid"
-        style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}
+      {/* The wrapper owns gridRef in both views so column measurement
+          (useColumnsPerRow) keeps a live element across the V toggle. */}
+      <div
+        ref={(el) => {
+          gridRef.current = el
+        }}
       >
-        {items.map((it, i) => (
-          <ContactCard
-            key={it.publishedfileid}
-            item={it}
-            index={i}
-            isInLibrary={libraryIds.has(it.publishedfileid)}
-            downloadTask={downloadTasksById.get(it.publishedfileid)}
-            onDownloadQueued={() => {
-              void mutateDownloadTasks()
-            }}
-          />
-        ))}
-      </section>
+        {view === "grid" ? (
+          <section
+            className="bws-grid"
+            style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))` }}
+          >
+            {items.map((it, i) => (
+              <ContactCard
+                key={it.publishedfileid}
+                item={it}
+                index={i}
+                isInLibrary={libraryIds.has(it.publishedfileid)}
+                downloadTask={downloadTasksById.get(it.publishedfileid)}
+                onDownloadQueued={() => {
+                  void mutateDownloadTasks()
+                }}
+                cursor={i === clampedCursor}
+                onSelect={() => setCursor(i)}
+                onOpen={() => openFocus(i)}
+              />
+            ))}
+          </section>
+        ) : (
+          <LedgerList>
+            {items.map((it, i) => (
+              <LedgerRow
+                key={it.publishedfileid}
+                no={String(i + 1).padStart(3, "0")}
+                thumb={it.preview_url}
+                title={it.title}
+                meta={listMeta(it)}
+                cursor={i === clampedCursor}
+                onSelect={() => setCursor(i)}
+                onOpen={() => openFocus(i)}
+              />
+            ))}
+          </LedgerList>
+        )}
+      </div>
 
       {!isLoading && items.length === 0 && !error && (
         <StateBlock kind="empty" text="0 RESULTS — WIDEN QUERY OR CLEAR FILTERS" />
@@ -573,8 +784,32 @@ export const Browse = () => {
           )}
         </div>
       )}
+
+      {focusItem !== undefined && focusIdx !== null && (
+        <FocusView
+          item={focusItem}
+          index={focusIdx}
+          vt={focusVt}
+          closing={focusClosing}
+          isInLibrary={libraryIds.has(focusItem.publishedfileid)}
+          downloadTask={downloadTasksById.get(focusItem.publishedfileid)}
+          onStep={stepFocus}
+          onRequestClose={requestClose}
+          onDownloadQueued={() => {
+            void mutateDownloadTasks()
+          }}
+        />
+      )}
     </div>
   )
+}
+
+/** Ledger-row metadata readout for the density list: RES · SIZE · GENRE. */
+const listMeta = (item: WorkshopItem): string => {
+  const size = formatFileSize(item.file_size)
+  const res = resolutionTag(item)
+  const tag = pickTagLabel(item)
+  return `${res ?? "—"} · ${size ?? "—"} · ${tag?.toUpperCase() ?? "—"}`
 }
 
 const FiltersSheetBody = ({
