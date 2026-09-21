@@ -8,6 +8,7 @@ import { appIcons } from "../icons.js"
 import { useLayout } from "../components/mobile/index.js"
 import { VideoPreview } from "../components/VideoPreview.js"
 import { RailControls } from "../components/RailShell.js"
+import { RailRow } from "../components/RailRow.js"
 import { GridOverlay } from "../components/GridOverlay.js"
 import { FocusRing, FOCUS_CONFIRM_MS } from "../components/FocusRing.js"
 import { LedgerList, LedgerRow } from "../components/LedgerList.js"
@@ -237,32 +238,6 @@ const matchesState = (row: LibraryItem, s: StateFilter): boolean =>
     : s === "source"
       ? row.transcode_status === "skipped"
       : row.transcode_status === "failed"
-
-/** One rail ledger row: name left, dotted leader, ●/○ (selection) or →
- *  (command) aligned to the rail's right edge. */
-const RailRow = ({
-  label,
-  mark,
-  on = false,
-  onClick,
-}: {
-  label: string
-  mark: string
-  on?: boolean
-  onClick: () => void
-}) => (
-  <button
-    type="button"
-    className={`lib-rc-row mono${on ? " is-on" : ""}`}
-    // Only selection rows are toggles; → command rows carry no pressed state.
-    {...(mark === "→" ? {} : { "aria-pressed": on })}
-    onClick={onClick}
-  >
-    <span className="lib-rc-row-name">{label}</span>
-    <span className="lib-rc-row-dots" aria-hidden="true" />
-    <span className={mark === "→" ? "lib-rc-cmd-mark" : "lib-rc-row-mark"}>{mark}</span>
-  </button>
-)
 
 const LibraryDesktop = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const [query, setQuery] = useState("")

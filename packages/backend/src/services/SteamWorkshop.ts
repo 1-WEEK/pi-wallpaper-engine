@@ -9,7 +9,7 @@ import { Config } from "./Config.js"
 
 const WE_APPID = 431960
 
-export type WorkshopSort = "trend" | "recent"
+export type WorkshopSort = "trend" | "rating" | "recent"
 
 export interface WorkshopSearchParams {
   readonly query: string
@@ -63,10 +63,11 @@ const fetchJson = (url: string): Effect.Effect<unknown, WorkshopApiError> =>
           }),
   })
 
-// Steam IPublishedFileService query_type — only 2 modes wired up here.
+// Steam IPublishedFileService query_type — 3 modes wired up here.
 // See https://partner.steamgames.com/doc/webapi/IPublishedFileService
 const QUERY_TYPE = {
   trend: 9, // ranked by trend (popular)
+  rating: 0, // ranked by vote
   recent: 1, // most recent
 } as const
 

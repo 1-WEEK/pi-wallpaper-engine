@@ -3,9 +3,10 @@
    §3.3 three-state blocks · §4.1 contact sheet · §8.6
    content-visibility. Colors come exclusively from the --pt-* token
    layer; motion uses the token curves/durations (linear only for the
-   constant scan/pulse loops, per §5). Legacy classes (.command-bar,
-   .filter-stack, …) rendered inside .bws are the interim query/filter
-   controls — ticket 03 moves them into the rail. */
+   constant scan/pulse loops, per §5). Page-level query/sort/filter
+   controls live in the rail via the RailControls portal (ticket 03);
+   their row styles are the shared rail language in library.css
+   (lib-rc-*), only the collapsible group header is local here. */
 
 .bws {
   position: relative;
@@ -16,21 +17,6 @@
   padding: 46px 52px 174px;
   background: var(--pt-bg);
   color: var(--pt-text);
-  /* Interim query/filter controls (relocated to the rail by ticket 03) are
-     legacy components; alias their tokens onto the --pt-* layer so they
-     follow the active theme instead of the legacy dark palette. */
-  --ink: var(--pt-bg);
-  --ink-1: var(--pt-bg);
-  --ink-2: var(--pt-fill);
-  --ink-3: var(--pt-line-soft);
-  --paper: var(--pt-text);
-  --paper-dim: var(--pt-dim);
-  --paper-faint: var(--pt-faint);
-  --border: var(--pt-line);
-  --accent-2: var(--pt-accent);
-  --accent-bg: color-mix(in oklab, var(--pt-accent) 14%, transparent);
-  --accent-border: color-mix(in oklab, var(--pt-accent) 30%, transparent);
-  --danger: var(--pt-danger);
   transition: background-color var(--dur-hover) var(--ease-out),
     color var(--dur-hover) var(--ease-out);
 }
@@ -38,6 +24,35 @@
 .bws > *:not(.bws-gridlines):not(.pfocus) {
   position: relative;
   z-index: 1;
+}
+
+/* ── Rail-only: collapsible FILTERS group header (spec §4.1) ──────
+   Same type grammar as the flat group titles, plus a caret. */
+.bws-rc-toggle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--pt-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.bws-rc-caret {
+  font-size: 8px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bws-rc-toggle:hover {
+    color: var(--pt-text);
+  }
 }
 
 /* ── Header: Clash display title + mono count. The parallax fade
@@ -70,13 +85,6 @@
   letter-spacing: 0.12em;
   color: var(--pt-dim);
   white-space: nowrap;
-}
-
-/* Interim controls (ticket 03 will relocate them): .bws uses normal
-   flow, so the legacy blocks need their spacing back. */
-.bws .command-bar,
-.bws .filter-stack {
-  margin-bottom: 14px;
 }
 
 /* ── Contact sheet grid. Column count is measured at runtime

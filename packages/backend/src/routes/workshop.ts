@@ -4,7 +4,7 @@ import { DEFAULT_PAGE_SIZE, SteamWorkshop, type WorkshopSort } from "../services
 import type { AppRuntime } from "../runtime.js"
 
 const parseSort = (raw: string | undefined): WorkshopSort =>
-  raw === "recent" ? "recent" : "trend"
+  raw === "recent" || raw === "rating" ? raw : "trend"
 
 const parseTags = (raw: string | undefined): string[] =>
   raw

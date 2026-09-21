@@ -97,6 +97,12 @@ describe("SteamWorkshop.search URL assembly", () => {
     expect(sp.get("query_type")).toBe("1")
   })
 
+  test("maps sort=rating to query_type 0 (RankedByVote)", async () => {
+    stubFetch(payload())
+    await search({ query: "x", sort: "rating" })
+    expect(lastUrl().searchParams.get("query_type")).toBe("0")
+  })
+
   test("defaults sort to trend (query_type 9)", async () => {
     stubFetch(payload())
     await search({ query: "x" })

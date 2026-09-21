@@ -1067,3 +1067,127 @@ test.describe("Browse focus band: reduced motion (ticket 06)", () => {
     await expectRingOn(page, ".bws-card", 4)
   })
 })
+
+/* ── Ticket 03: rail page controls (QUERY / SORT / FILTERS / 18+) ── */
+
+test.describe("Browse rail controls (ticket 03)", () => {
+  test("QUERY/SORT/FILTERS live in the rail; ⌘K only focuses the query input", async ({
+    page,
+  }) => {
+    await bootBrowse(page)
+    const rail = page.locator(".rail-controls")
+
+    // QUERY with the ⌘K hint chip; no separate command palette exists.
+    await expect(rail.locator("#bws-q")).toBeVisible()
+    await expect(rail.getByText("⌘K")).toBeVisible()
+    // The interim content-column controls are gone.
+    await expect(page.locator(".bws .command-bar")).toHaveCount(0)
+    await expect(page.locator(".bws .filter-stack")).toHaveCount(0)
+
+    // SORT: the three-way selection row set.
+    await expect(rail.getByRole("button", { name: /Trending/ })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(rail.getByRole("button", { name: /Rating/ })).toBeVisible()
+    await expect(rail.getByRole("button", { name: /Recent/ })).toBeVisible()
+
+    // FILTERS groups: AGE flat (Everyone only at rest), RESOLUTION open,
+    // GENRE collapsed by default.
+    await expect(rail.getByRole("button", { name: /Everyone/ })).toBeVisible()
+    await expect(rail.getByRole("button", { name: /Questionable/ })).toHaveCount(0)
+    await expect(
+      rail.getByRole("button", { name: "RESOLUTION", exact: true })
+    ).toBeVisible()
+    await expect(rail.getByRole("button", { name: /1920x1080/ })).toBeVisible()
+    await expect(rail.getByRole("button", { name: "GENRE", exact: true })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    )
+    await expect(rail.getByRole("button", { name: /Anime/ })).toHaveCount(0)
+
+    // ⌘K / Ctrl-K focuses and selects the rail query — no palette opens.
+    await page.keyboard.press("Control+k")
+    await expect(rail.locator("#bws-q")).toBeFocused()
+    await rail.locator("#bws-q").fill("neon")
+    await page.keyboard.press("Control+k")
+    await expect(rail.locator("#bws-q")).toBeFocused()
+  })
+
+  test("SORT rows drive the URL; Rating reaches the backend as sort=rating", async ({
+    page,
+  }) => {
+    const seenSorts: string[] = []
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await mockAllEndpoints(page, (r) => {
+      seenSorts.push(new URL(r.request().url()).searchParams.get("sort") ?? "trend")
+      pagedSearch(200)(r)
+    })
+    await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+    await expect(page.locator(".bws-grid .bws-card")).toHaveCount(28, { timeout: 15000 })
+
+    const rail = page.locator(".rail-controls")
+    await rail.getByRole("button", { name: /Rating/ }).click()
+    await expect(page).toHaveURL(/sort=rating/)
+    await expect(page.locator(".bws-title")).toHaveText("Results / Rating")
+    await expect(rail.getByRole("button", { name: /Rating/ })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect.poll(() => seenSorts).toContain("rating")
+
+    await rail.getByRole("button", { name: /Recent/ }).click()
+    await expect(page).toHaveURL(/sort=recent/)
+    await expect(page.locator(".bws-title")).toHaveText("Results / Recent")
+  })
+
+  test("filter rows toggle tags, the section head counts and clears them", async ({
+    page,
+  }) => {
+    await bootBrowse(page)
+    const rail = page.locator(".rail-controls")
+
+    await rail.getByRole("button", { name: /Everyone/ }).click()
+    await expect(page).toHaveURL(/tags=Everyone/)
+    await expect(rail.getByRole("button", { name: /1 ACTIVE — CLEAR/ })).toBeVisible()
+
+    // GENRE expands, takes a second tag, and keeps the count while collapsed.
+    await rail.getByRole("button", { name: "GENRE" }).click()
+    await rail.getByRole("button", { name: /Anime/ }).click()
+    await expect(page).toHaveURL(/tags=Everyone%2CAnime|tags=Everyone,Anime/)
+    await expect(rail.getByRole("button", { name: /2 ACTIVE — CLEAR/ })).toBeVisible()
+    await rail.getByRole("button", { name: /GENRE — 1/ }).click()
+    await expect(rail.getByRole("button", { name: /Anime/ })).toHaveCount(0)
+    await expect(rail.getByRole("button", { name: /GENRE — 1/ })).toBeVisible()
+
+    await rail.getByRole("button", { name: /2 ACTIVE — CLEAR/ }).click()
+    await expect(page).not.toHaveURL(/tags=/)
+    await expect(rail.getByRole("button", { name: /ACTIVE — CLEAR/ })).toHaveCount(0)
+  })
+
+  test("18+ entry: dots at rest, reveals ● 18+ and the adult age rows on click", async ({
+    page,
+  }) => {
+    await bootBrowse(page)
+    const rail = page.locator(".rail-controls")
+
+    // At rest: two faint dots, no 18+ label or adult rows anywhere.
+    await expect(rail.getByRole("button", { name: "Toggle adult age ratings" })).toHaveText("••")
+    await expect(rail.getByRole("button", { name: /18\+/ })).toHaveCount(0)
+    await expect(rail.getByRole("button", { name: /Mature/ })).toHaveCount(0)
+
+    await rail.getByRole("button", { name: "Toggle adult age ratings" }).click()
+    await expect(
+      rail.getByRole("button", { name: "Toggle adult age ratings" })
+    ).toHaveText("● 18+")
+    await expect(rail.getByRole("button", { name: /Questionable/ })).toBeVisible()
+    await expect(rail.getByRole("button", { name: /Mature/ })).toBeVisible()
+
+    // Hiding again strips a selected adult tag from the URL.
+    await rail.getByRole("button", { name: /Questionable/ }).click()
+    await expect(page).toHaveURL(/tags=Questionable/)
+    await rail.getByRole("button", { name: "Toggle adult age ratings" }).click()
+    await expect(page).not.toHaveURL(/tags=/)
+    await expect(rail.getByRole("button", { name: /Questionable/ })).toHaveCount(0)
+  })
+})

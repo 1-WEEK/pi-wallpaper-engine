@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { flushSync } from "react-dom"
 import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
@@ -11,6 +11,8 @@ import { FocusView, resolutionTag } from "../components/FocusView.js"
 import { LedgerList, LedgerRow } from "../components/LedgerList.js"
 import { FocusRing, FOCUS_CONFIRM_MS } from "../components/FocusRing.js"
 import { GridOverlay } from "../components/GridOverlay.js"
+import { RailControls } from "../components/RailShell.js"
+import { RailRow } from "../components/RailRow.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { appIcons } from "../icons.js"
 import { prefersReducedMotion } from "../reducedMotion.js"
@@ -25,12 +27,17 @@ import {
   GENRE_TAGS,
   RESOLUTION_TAGS,
   SORT_OPTIONS,
+  displayTag,
   type WorkshopSort,
 } from "../workshopTags.js"
 
 const MIN_CARD_WIDTH = 248
 const GRID_GAP = 16
 const PAGE_SIZE = 25
+
+// Questionable/Mature are the 18+ age ratings: their rail rows exist only
+// behind the discreet •• entry (spec §4.1), never at rest.
+const ADULT_AGE_TAGS: ReadonlyArray<string> = [...AGE_TAGS.slice(1)]
 
 // URL search params are the source of truth. localStorage is only consulted
 // once per page load: if the URL has no filter params at boot, we restore the
@@ -53,7 +60,7 @@ const loadPersisted = (): PersistedState => {
     return {
       query: parsed.query ?? "",
       tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-      sort: parsed.sort === "recent" ? "recent" : "trend",
+      sort: parsed.sort === "recent" || parsed.sort === "rating" ? parsed.sort : "trend",
     }
   } catch {
     return { query: "", tags: [], sort: "trend" }
@@ -61,7 +68,7 @@ const loadPersisted = (): PersistedState => {
 }
 
 const parseSort = (raw: string | null): WorkshopSort =>
-  raw === "recent" ? "recent" : "trend"
+  raw === "recent" || raw === "rating" ? raw : "trend"
 
 const parseTags = (raw: string | null): ReadonlyArray<string> =>
   raw ? raw.split(",").filter(Boolean) : []
@@ -139,6 +146,11 @@ export const Browse = () => {
   // Mobile-only sheet state
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [cardItem, setCardItem] = useState<WorkshopItem | null>(null)
+  const queryRef = useRef<HTMLInputElement | null>(null)
+  // Discreet 18+ entry (spec §4.1): at rest the rail shows two faint dots
+  // and the AGE group lists Everyone only; clicking reveals ● 18+ and the
+  // Questionable/Mature rows.
+  const [adultRevealed, setAdultRevealed] = useState(false)
 
   const writeParams = (next: {
     query?: string
@@ -392,10 +404,18 @@ export const Browse = () => {
   // uses the measured column count, list steps row by row) with the shared
   // 1-bit focus band (ticket 06); Enter plays the confirm beat, then opens
   // the focus view. While the focus view is open, ←/→ steps and Esc closes.
+  // ⌘K focuses the rail QUERY input — a focus shortcut only, never a
+  // command palette (spec §4.1).
   useEffect(() => {
     if (mobile) return
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        queryRef.current?.focus()
+        queryRef.current?.select()
+        return
+      }
       if (t?.closest("input, textarea, [contenteditable]")) return
       if (focusIdx !== null) {
         if (e.key === "Escape") {
@@ -468,12 +488,24 @@ export const Browse = () => {
 
   const clearTags = () => writeParams({ tags: [] })
 
+  // An adult age tag arriving via URL/localStorage forces the reveal so an
+  // active selection is never invisible.
+  const showAdult = adultRevealed || selectedTags.some((t) => ADULT_AGE_TAGS.includes(t))
+  const toggleAdult = () => {
+    if (showAdult) {
+      const next = selectedTags.filter((t) => !ADULT_AGE_TAGS.includes(t))
+      if (next.length !== selectedTags.length) writeParams({ tags: next })
+    }
+    setAdultRevealed(!showAdult)
+  }
+  const ageRows: ReadonlyArray<string> = showAdult ? AGE_TAGS : AGE_TAGS.slice(0, 1)
+
   const searchInput = (
     <label className="command-bar-input">
       <span className="command-bar-search-icon">{appIcons.browse}</span>
       <input
         type="text"
-        placeholder={mobile ? "Search wallpapers…" : "Search Wallpaper Engine video wallpapers…"}
+        placeholder="Search wallpapers…"
         value={queryDraft}
         onChange={(e) => setQueryDraft(e.target.value)}
       />
@@ -652,90 +684,88 @@ export const Browse = () => {
         </div>
       </header>
 
-      {/* Interim query/sort/filter controls in the content column; ticket 03
-          moves them into the rail control slot (spec §4.1). */}
-      <form
-        className="command-bar pt-enter"
-        style={{ "--pt-i": 1 } as CSSProperties}
-        action={() => {
-          writeParams({ query: queryDraft })
-        }}
-      >
-        {searchInput}
-        <button type="submit" className="btn btn-primary command-bar-submit">
-          Search
-        </button>
-        <div className="command-bar-sort">
-          <span className="mono">sort</span>
-          <div className="segmented segmented-compact command-bar-sort-toggle" role="tablist" aria-label="Sort results">
-            {SORT_OPTIONS.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                className={`segmented-button ${sort === o.value ? "active" : ""}`}
-                aria-pressed={sort === o.value}
-                onClick={() => writeParams({ sort: o.value })}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <span className="kbd mono">⌘K</span>
-      </form>
+      {/* Page-level controls live in the rail (spec §4.1): QUERY with the
+          ⌘K focus hint, SORT selection rows, then the FILTERS section with
+          its active count and the discreet 18+ entry. Row styles are the
+          shared rail language (lib-rc-*, ticket 11). */}
+      <RailControls>
+        <form
+          className="lib-rc-query"
+          action={() => {
+            writeParams({ query: queryDraft })
+          }}
+        >
+          <label className="lib-rc-title mono" htmlFor="bws-q">
+            QUERY <span className="lib-rc-kbd mono">⌘K</span>
+          </label>
+          <input
+            ref={queryRef}
+            id="bws-q"
+            type="text"
+            value={queryDraft}
+            placeholder="Search the workshop…"
+            onChange={(e) => setQueryDraft(e.target.value)}
+          />
+        </form>
 
-      <div className="filter-stack pt-enter" style={{ "--pt-i": 2 } as CSSProperties}>
-        <div className="filter-group">
-          <span className="filter-group-label mono">Genre</span>
-          <div className="filter-chips">
-            {GENRE_TAGS.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
-                onClick={() => toggleTag(tag)}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
+        <div>
+          <div className="lib-rc-title mono">SORT</div>
+          {SORT_OPTIONS.map((o) => (
+            <RailRow
+              key={o.value}
+              label={o.label}
+              mark={sort === o.value ? "●" : "○"}
+              on={sort === o.value}
+              onClick={() => writeParams({ sort: o.value })}
+            />
+          ))}
         </div>
-        <div className="filter-group">
-          <span className="filter-group-label mono">Resolution</span>
-          <div className="filter-chips">
-            {RESOLUTION_TAGS.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
-                onClick={() => toggleTag(tag)}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="filter-group">
-          <span className="filter-group-label mono">Age</span>
-          <div className="filter-chips">
-            {AGE_TAGS.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                className={`chip ${selectedTags.includes(tag) ? "chip-active" : ""}`}
-                onClick={() => toggleTag(tag)}
-              >
-                {tag}
-              </button>
-            ))}
+
+        <div className="lib-rc-sec">
+          <div className="lib-rc-sec-head mono">
+            <span>FILTERS</span>
             {selectedTags.length > 0 && (
-              <button type="button" className="chip chip-clear" onClick={clearTags}>
-                Clear {selectedTags.length}
+              <button type="button" className="lib-rc-sec-clear" onClick={clearTags}>
+                {selectedTags.length} ACTIVE — CLEAR
               </button>
             )}
           </div>
+          <RailFilterGroup
+            title="AGE"
+            tags={ageRows}
+            selectedTags={selectedTags}
+            onToggle={toggleTag}
+          />
+          <RailFilterGroup
+            title="RESOLUTION"
+            tags={RESOLUTION_TAGS}
+            selectedTags={selectedTags}
+            onToggle={toggleTag}
+            collapsible
+          />
+          <RailFilterGroup
+            title="GENRE"
+            tags={GENRE_TAGS}
+            selectedTags={selectedTags}
+            onToggle={toggleTag}
+            collapsible
+            defaultOpen={false}
+          />
+          {/* Discreet 18+ entry (spec §4.1): two faint dots at rest, no
+              counts or labels anywhere else. */}
+          <div className="lib-rc-content">
+            <button
+              type="button"
+              className={`mono${showAdult ? " is-on" : ""}`}
+              aria-label="Toggle adult age ratings"
+              aria-pressed={showAdult}
+              onClick={toggleAdult}
+            >
+              {showAdult ? "● 18+" : "••"}
+            </button>
+          </div>
         </div>
-      </div>
+      </RailControls>
 
       {isLoading && <StateBlock kind="loading" text="FETCHING INDEX…" />}
       {/* Page-level error only when the whole page failed to load (spec §3.3);
@@ -851,6 +881,68 @@ const listMeta = (item: WorkshopItem): string => {
   const res = resolutionTag(item)
   const tag = pickTagLabel(item)
   return `${res ?? "—"} · ${size ?? "—"} · ${tag?.toUpperCase() ?? "—"}`
+}
+
+/** One FILTERS group in the rail (spec §4.1): a ledger-row selection list.
+ *  Collapsible groups show the active-count in the title (`GENRE — 2`) and
+ *  GENRE starts collapsed; the rows display the abbreviated tag
+ *  (displayTag) but always filter by the real Steam tag. */
+const RailFilterGroup = ({
+  title,
+  tags,
+  selectedTags,
+  onToggle,
+  collapsible = false,
+  defaultOpen = true,
+}: {
+  title: string
+  tags: ReadonlyArray<string>
+  selectedTags: ReadonlyArray<string>
+  onToggle: (tag: string) => void
+  collapsible?: boolean
+  defaultOpen?: boolean
+}) => {
+  const [open, setOpen] = useState(defaultOpen)
+  const rows = tags.map((tag) => {
+    const on = selectedTags.includes(tag)
+    return (
+      <RailRow
+        key={tag}
+        label={displayTag(tag)}
+        mark={on ? "●" : "○"}
+        on={on}
+        onClick={() => onToggle(tag)}
+      />
+    )
+  })
+  if (!collapsible) {
+    return (
+      <div>
+        <div className="lib-rc-title mono">{title}</div>
+        {rows}
+      </div>
+    )
+  }
+  const activeCount = tags.filter((t) => selectedTags.includes(t)).length
+  return (
+    <div>
+      <button
+        type="button"
+        className="bws-rc-toggle mono"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span>
+          {title}
+          {activeCount > 0 ? ` — ${activeCount}` : ""}
+        </span>
+        <span className="bws-rc-caret" aria-hidden="true">
+          {open ? "▾" : "▸"}
+        </span>
+      </button>
+      {open && rows}
+    </div>
+  )
 }
 
 const FiltersSheetBody = ({
