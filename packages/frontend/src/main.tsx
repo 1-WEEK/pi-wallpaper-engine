@@ -8,6 +8,7 @@ import "./browse.css"
 import "./ledger.css"
 import "./focusRing.css"
 import "./playerBar.css"
+import "./functionalScrollbar.css"
 import "./library.css"
 import "./settings.css"
 

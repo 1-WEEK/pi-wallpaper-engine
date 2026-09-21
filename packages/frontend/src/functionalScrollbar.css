@@ -1,0 +1,120 @@
+/* ── Functional scrollbar (implementation ticket 07) ───────────────
+   spec §2.3 "功能性滚动条" (08 票定稿 — E interaction core + L visual skin)
+   on the Browse long grid only. Structure: a <canvas> draws the Kare 1-bit
+   dithered dot track and the PAGE graduations (§2.6); the thumb is a DOM
+   liquid-glass sliver using the §2.4 recipe verbatim — canvas can't do
+   backdrop-filter, and the glass usage boundary (§2.4) counts this thumb
+   alongside the PlayerBar. While mounted, the native scrollbar on .main is
+   hidden; reduced motion never mounts the component (Browse.tsx), so RM
+   keeps the global thin bar. */
+
+html.pt-fbar .main {
+  scrollbar-width: none;
+}
+html.pt-fbar .main::-webkit-scrollbar {
+  display: none;
+}
+
+/* The strip: fixed to the viewport's right edge (the .main scroller's right
+   edge on desktop), stopping clear of the PlayerBar glass dock. It stays
+   interactive while invisible — pointer proximity is what fades it in. */
+.fbar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 92px;
+  width: 30px;
+  z-index: 50; /* under the PlayerBar (60) and the focus scrim (80) */
+  touch-action: none; /* pointer-capture drag; touch scheme is a deliberate
+                         door left open (spec §2.3), not a mobile proposal */
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.fbar.is-on {
+  opacity: 1;
+}
+
+.fbar-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  /* Ink for the canvas dot track / graduations, read back via
+     getComputedStyle so both themes stay token-driven. */
+  color: var(--pt-faint);
+}
+
+/* The glass sliver (§2.4 recipe verbatim: near-clear fill, heavy
+   blur+saturate, refracting top rim, lens-thickness bottom shadow, faint
+   chromatic fringe, 3% grain). Position/length/width are written per frame
+   from the LERP loop, so no transitions here. */
+.fbar-thumb {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  width: 5px;
+  height: 60px;
+  border-radius: 999px;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.07);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.3),
+    inset 1px 0 0 rgba(255, 255, 255, 0.1),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 1px rgba(180, 200, 255, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Near-invisible grain (3%), only to break gradient banding. */
+.fbar-thumb::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Light theme: clear water over cream — low fill, strong white rim. */
+html[data-theme="light"] .fbar-thumb {
+  background: rgba(255, 255, 255, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.12),
+    inset 1px 0 0 rgba(255, 255, 255, 0.4),
+    inset -1px 0 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.05),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Drag readout chip (`137 / 240`): current item / total, parked left of the
+   strip at the pointer height. Plain ledger surface, NOT glass — the §2.4
+   boundary allows one glass element here and that is the thumb. */
+.fbar-chip {
+  position: fixed;
+  right: 38px;
+  top: 0;
+  z-index: 51;
+  padding: 3px 8px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: var(--pt-text);
+  background: var(--pt-bg);
+  border: 1px solid var(--pt-line);
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity var(--dur-micro) var(--ease-out);
+  pointer-events: none;
+}
+
+.fbar-chip.is-on {
+  opacity: 1;
+}

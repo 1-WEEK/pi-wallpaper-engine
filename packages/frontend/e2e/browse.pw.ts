@@ -1191,3 +1191,245 @@ test.describe("Browse rail controls (ticket 03)", () => {
     await expect(rail.getByRole("button", { name: /Questionable/ })).toHaveCount(0)
   })
 })
+
+/* ── Functional scrollbar (ticket 07, spec §2.3) ─────────────────── */
+
+/** Boot Browse with a long mocked result set (240 total, endless pages),
+ *  load `pages` pages via the sentinel, return to the top, and wait for the
+ *  scrollbar's rAF loop to park (data-raf="off"). */
+const bootScrollbarGrid = async (page: Page, pages = 3) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await mockAllEndpoints(page, pagedSearch(240))
+  await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+  const cards = page.locator(".bws-card")
+  const pageSize = Math.ceil(25 / computeColumns(1440)) * computeColumns(1440)
+  await expect(cards).toHaveCount(pageSize, { timeout: 15000 })
+  for (let p = 1; p < pages; p++) {
+    await page.locator(".main").evaluate((el) => el.scrollTo(0, el.scrollHeight))
+    await expect(cards).toHaveCount(pageSize * (p + 1), { timeout: 15000 })
+  }
+  await page.locator(".main").evaluate((el) => el.scrollTo(0, 0))
+  await expect(page.locator(".fbar")).toHaveAttribute("data-raf", "off", { timeout: 8000 })
+  return { pageSize }
+}
+
+interface BarGeometry {
+  top: number
+  left: number
+  width: number
+  H: number
+  ms: number
+  len: number
+  y: number
+}
+
+/** Track geometry + the LOGICAL thumb rect (what the hit-test uses), mirroring
+ *  the component's measure(): len = max(28, clientH/docH * H), y from the
+ *  current scroll fraction. Only valid once the rAF loop has parked. */
+const barGeometry = (page: Page): Promise<BarGeometry> =>
+  page.evaluate(() => {
+    const scroller = document.querySelector(".main") as HTMLElement
+    const track = document.querySelector(".fbar") as HTMLElement
+    const rect = track.getBoundingClientRect()
+    const H = rect.height
+    const ms = scroller.scrollHeight - scroller.clientHeight
+    const len = Math.max(28, (scroller.clientHeight / scroller.scrollHeight) * H)
+    const y = ms > 0 ? (scroller.scrollTop / ms) * (H - len) : 0
+    return { top: rect.top, left: rect.left, width: rect.width, H, ms, len, y }
+  })
+
+test.describe("Browse functional scrollbar (ticket 07)", () => {
+  test("drag syncs the scroll position with zero damping; the chip reads n / total", async ({
+    page,
+  }) => {
+    await bootScrollbarGrid(page, 4)
+    const geo = await barGeometry(page)
+    const cx = geo.left + geo.width - 6.5 // thumb lane center (right: 4px, w 5px)
+    const grabY = geo.top + geo.y + geo.len / 2
+
+    await page.mouse.move(cx, grabY) // proximity wakes the bar
+    await expect(page.locator(".fbar")).toHaveClass(/is-on/)
+    await page.mouse.down()
+    const targetY = geo.top + geo.H * 0.6
+    await page.mouse.move(cx, targetY, { steps: 10 })
+
+    // Zero damping: the scroll position is already there before mouse-up.
+    const expectedFrac = (geo.H * 0.6 - geo.len / 2) / (geo.H - geo.len)
+    const scrollTop = await page.locator(".main").evaluate((el) => el.scrollTop)
+    expect(Math.abs(scrollTop - expectedFrac * geo.ms)).toBeLessThanOrEqual(3)
+
+    // The thumb follows the pointer exactly (no LERP while dragging).
+    const thumbY = await page
+      .locator(".fbar-thumb")
+      .evaluate((el) => parseFloat(/translateY\(([\d.]+)px\)/.exec(el.style.transform)?.[1] ?? "NaN"))
+    expect(Math.abs(thumbY - (geo.H * 0.6 - geo.len / 2))).toBeLessThanOrEqual(2)
+
+    // Hot zone: the thumb widened 5px → ~11px.
+    const thumbW = await page
+      .locator(".fbar-thumb")
+      .evaluate((el) => parseFloat(el.style.width))
+    expect(thumbW).toBeGreaterThan(9)
+
+    // The chip reads current / total from the live scroll fraction.
+    const expectedChip = await page.evaluate(() => {
+      const s = document.querySelector(".main") as HTMLElement
+      const ms = s.scrollHeight - s.clientHeight
+      return `${Math.min(240, Math.floor((s.scrollTop / ms) * 240) + 1)} / 240`
+    })
+    await expect(page.locator(".fbar-chip")).toHaveClass(/is-on/)
+    await expect(page.locator(".fbar-chip")).toHaveText(expectedChip)
+
+    await page.mouse.up()
+    await expect(page.locator(".fbar-chip")).not.toHaveClass(/is-on/)
+  })
+
+  test("clicking the track jumps so the thumb centers on the click", async ({ page }) => {
+    await bootScrollbarGrid(page, 3)
+    const geo = await barGeometry(page)
+    const cx = geo.left + geo.width - 6.5
+    const clickY = geo.top + geo.H * 0.55
+
+    await page.mouse.move(cx, clickY) // wake before the click
+    await expect(page.locator(".fbar")).toHaveClass(/is-on/)
+    await page.mouse.click(cx, clickY)
+
+    const expectedFrac = (geo.H * 0.55 - geo.len / 2) / (geo.H - geo.len)
+    const target = expectedFrac * geo.ms
+    // lenis glides to the target — poll until it lands.
+    await expect
+      .poll(
+        async () => {
+          const y = await page.locator(".main").evaluate((el) => el.scrollTop)
+          return Math.abs(y - target)
+        },
+        { timeout: 8000 }
+      )
+      .toBeLessThanOrEqual(12)
+  })
+
+  test("idle ~1.4s auto-hides; scrolling or pointer near the right edge fades in", async ({
+    page,
+  }) => {
+    await bootScrollbarGrid(page, 3)
+    const bar = page.locator(".fbar")
+
+    // The boot wake shows the bar; after the idle window it fades out.
+    await expect(bar).not.toHaveClass(/is-on/, { timeout: 4000 })
+
+    // Scrolling fades it back in…
+    await page.mouse.move(720, 450)
+    await page.mouse.wheel(0, 600)
+    await expect(bar).toHaveClass(/is-on/)
+    await page.waitForTimeout(1600)
+    await expect(bar).not.toHaveClass(/is-on/)
+
+    // …as does the pointer approaching the right edge.
+    await page.mouse.move(1439, 450)
+    await expect(bar).toHaveClass(/is-on/)
+  })
+
+  test("an infinite-scroll append shrinks the thumb smoothly, never in one jump", async ({
+    page,
+  }) => {
+    const { pageSize } = await bootScrollbarGrid(page, 1)
+    const heightOf = () =>
+      page.locator(".fbar-thumb").evaluate((el) => parseFloat(el.style.height))
+    const before = await heightOf()
+
+    // Append page 2 via the sentinel, then sample the thumb height per frame.
+    await page.locator(".main").evaluate((el) => el.scrollTo(0, el.scrollHeight))
+    await expect(page.locator(".bws-card")).toHaveCount(pageSize * 2, { timeout: 15000 })
+    const samples = await page.evaluate(
+      () =>
+        new Promise<number[]>((resolve) => {
+          const thumb = document.querySelector(".fbar-thumb") as HTMLElement
+          const out: number[] = []
+          const tick = () => {
+            out.push(parseFloat(thumb.style.height))
+            if (out.length >= 26) resolve(out)
+            else requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        })
+    )
+
+    const first = samples[0]
+    const last = samples[samples.length - 1]
+    expect(last).toBeLessThan(before - 2) // the append really shrank it
+    expect(first).toBeGreaterThan(last + 2) // …and it didn't jump straight there
+    // Smooth glide: many intermediate values, monotonically non-increasing.
+    expect(new Set(samples.map((v) => v.toFixed(1))).size).toBeGreaterThan(4)
+    for (let i = 1; i < samples.length; i++) {
+      expect(samples[i]).toBeLessThanOrEqual(samples[i - 1] + 0.6)
+    }
+    // Converged to the new logical length.
+    const expected = await page.evaluate(() => {
+      const s = document.querySelector(".main") as HTMLElement
+      const track = document.querySelector(".fbar") as HTMLElement
+      return Math.max(28, (s.clientHeight / s.scrollHeight) * track.getBoundingClientRect().height)
+    })
+    expect(Math.abs(last - expected)).toBeLessThanOrEqual(2)
+  })
+
+  test("PAGE graduations are etched on the canvas layer, one per loaded page", async ({
+    page,
+  }) => {
+    await bootScrollbarGrid(page, 3)
+    await expect(page.locator(".fbar-canvas")).toHaveCount(1)
+    await expect(page.locator(".fbar")).toHaveAttribute("data-ticks", "3")
+  })
+
+  test("the rAF loop parks 300ms after rest and wakes on scroll (spec §5 F8)", async ({
+    page,
+  }) => {
+    await bootScrollbarGrid(page, 3) // returns with the loop parked
+    const bar = page.locator(".fbar")
+    await expect(bar).toHaveAttribute("data-raf", "off")
+
+    await page.mouse.move(720, 450)
+    await page.mouse.wheel(0, 400)
+    await expect(bar).toHaveAttribute("data-raf", "on")
+    await expect(bar).toHaveAttribute("data-raf", "off", { timeout: 8000 })
+  })
+
+  test("the glass thumb is real backdrop-filter material, in both themes", async ({ page }) => {
+    await bootScrollbarGrid(page, 1)
+    const thumb = page.locator(".fbar-thumb")
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = "dark"
+    })
+    const darkFilter = await thumb.evaluate((el) => getComputedStyle(el).backdropFilter)
+    expect(darkFilter).toContain("blur(28px)")
+    expect(darkFilter).toContain("saturate(1.8)")
+    expect(darkFilter).toContain("brightness(1.12)")
+    const darkFill = await thumb.evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(darkFill).toBe("rgba(255, 255, 255, 0.07)")
+
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = "light"
+    })
+    const lightFill = await thumb.evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(lightFill).toBe("rgba(255, 255, 255, 0.32)")
+  })
+})
+
+test.describe("Browse functional scrollbar: reduced motion (ticket 07)", () => {
+  test.use({ reducedMotion: "reduce" })
+
+  test("falls back to the native thin scrollbar — no overlay, nothing hidden", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await mockAllEndpoints(page, pagedSearch(240))
+    await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+    const pageSize = Math.ceil(25 / computeColumns(1440)) * computeColumns(1440)
+    await expect(page.locator(".bws-card")).toHaveCount(pageSize, { timeout: 15000 })
+
+    await expect(page.locator(".fbar")).toHaveCount(0)
+    await expect(page.locator("html")).not.toHaveClass(/pt-fbar/)
+    const scrollbarWidth = await page
+      .locator(".main")
+      .evaluate((el) => getComputedStyle(el).scrollbarWidth)
+    expect(scrollbarWidth).toBe("thin")
+  })
+})

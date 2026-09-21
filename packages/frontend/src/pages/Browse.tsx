@@ -11,11 +11,12 @@ import { FocusView, resolutionTag } from "../components/FocusView.js"
 import { LedgerList, LedgerRow } from "../components/LedgerList.js"
 import { FocusRing, FOCUS_CONFIRM_MS } from "../components/FocusRing.js"
 import { GridOverlay } from "../components/GridOverlay.js"
+import { FunctionalScrollbar } from "../components/FunctionalScrollbar.js"
 import { RailControls } from "../components/RailShell.js"
 import { RailRow } from "../components/RailRow.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { appIcons } from "../icons.js"
-import { prefersReducedMotion } from "../reducedMotion.js"
+import { prefersReducedMotion, useReducedMotion } from "../reducedMotion.js"
 import { canViewTransition, withViewTransition } from "../viewTransition.js"
 import { flyGhost } from "../ghost.js"
 import { duration } from "../motionTokens.js"
@@ -151,6 +152,9 @@ export const Browse = () => {
   // and the AGE group lists Everyone only; clicking reveals ● 18+ and the
   // Questionable/Mature rows.
   const [adultRevealed, setAdultRevealed] = useState(false)
+  // Functional scrollbar (ticket 07, spec §2.3): desktop grid only; reduced
+  // motion keeps the native thin scrollbar (no LERP, no auto-hide).
+  const reducedMotion = useReducedMotion()
 
   const writeParams = (next: {
     query?: string
@@ -669,6 +673,15 @@ export const Browse = () => {
     <div className="bws" ref={rootRef}>
       {view === "grid" && (
         <GridOverlay rootRef={rootRef} gridRef={gridRef} itemCount={items.length} />
+      )}
+
+      {!reducedMotion && (
+        <FunctionalScrollbar
+          rootRef={rootRef}
+          itemSelector={view === "grid" ? ".bws-card" : ".ledger-row"}
+          pageSize={pageSize}
+          total={total}
+        />
       )}
 
       <header className="bws-head pt-enter" ref={headRef}>

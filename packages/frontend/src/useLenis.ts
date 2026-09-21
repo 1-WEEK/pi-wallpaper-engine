@@ -6,6 +6,14 @@ import Lenis from "lenis"
 import { useEffect, type RefObject } from "react"
 import { prefersReducedMotion } from "./reducedMotion.js"
 
+// The live desktop lenis instance, exposed for the Browse functional
+// scrollbar (ticket 07): it reads `animatedScroll` and writes drags back
+// through `scrollTo`. Null under reduced motion (lenis never initializes)
+// and on the mobile shell.
+let activeLenis: Lenis | null = null
+
+export const getLenis = (): Lenis | null => activeLenis
+
 export const useLenis = (scrollerRef: RefObject<HTMLElement | null>): void => {
   useEffect(() => {
     const scroller = scrollerRef.current
@@ -20,6 +28,15 @@ export const useLenis = (scrollerRef: RefObject<HTMLElement | null>): void => {
       lerp: 0.09,
       smoothWheel: true,
     })
+    activeLenis = lenis
+
+    // With wrapper === content, lenis's own ResizeObserver can't see growth:
+    // the scroller's box never changes when only its scrollHeight does, so
+    // after an infinite-scroll append `lenis.limit` would stay stale and
+    // clamp wheel/drag scrolling. Observe the page root and re-measure.
+    const content = scroller.firstElementChild
+    const ro = new ResizeObserver(() => lenis.resize())
+    if (content) ro.observe(content)
 
     let raf = 0
     const tick = (time: number) => {
@@ -30,6 +47,8 @@ export const useLenis = (scrollerRef: RefObject<HTMLElement | null>): void => {
 
     return () => {
       cancelAnimationFrame(raf)
+      ro.disconnect()
+      activeLenis = null
       lenis.destroy()
     }
   }, [scrollerRef])

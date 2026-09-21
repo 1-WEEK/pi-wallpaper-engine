@@ -21,7 +21,7 @@
     color var(--dur-hover) var(--ease-out);
 }
 
-.bws > *:not(.bws-gridlines):not(.pfocus) {
+.bws > *:not(.bws-gridlines):not(.pfocus):not(.fbar) {
   position: relative;
   z-index: 1;
 }

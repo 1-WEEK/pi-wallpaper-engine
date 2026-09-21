@@ -137,6 +137,17 @@ causes a brief playback interruption. For removal, read [Uninstall](../uninstall
   out / XOR `difference` block in, ~120ms). The host container must carry
   `.focus-ring-host` (positioned + isolating); ticket 08 (Library) reuses
   the same component.
+- The functional scrollbar (implementation ticket 07) is
+  [FunctionalScrollbar.tsx](../../packages/frontend/src/components/FunctionalScrollbar.tsx)
+  + [functionalScrollbar.css](../../packages/frontend/src/functionalScrollbar.css),
+  mounted only by the Browse desktop grid: canvas dot-track/PAGE-graduation
+  layer + DOM liquid-glass thumb, position/length LERP, idle auto-hide,
+  pointer-capture drag with readout chip, track-click jump, and a parking
+  rAF loop (`data-raf` reflects running/parked). It reads/writes the live
+  lenis instance via `getLenis()` from `useLenis.ts`; because lenis binds
+  wrapper === content, `useLenis` also observes the page root and calls
+  `lenis.resize()` so appends never leave `lenis.limit` stale. Reduced
+  motion never mounts the component and keeps the native thin scrollbar.
 - Keep the existing plain CSS system for not-yet-migrated pages. Reuse
   controls and icons from
   [icons.tsx](../../packages/frontend/src/icons.tsx).
