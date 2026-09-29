@@ -2,7 +2,7 @@ import { expect, test } from "playwright/test"
 import type { Page } from "playwright"
 import type { LibraryItem } from "@pwe/shared"
 import { mockLibraryItem, mockSystemSummary } from "./fixtures.js"
-import { mockAuthDisabled, mockLibraryList, mockSummary } from "./helpers.js"
+import { mockAuthDisabled, mockLibraryList, mockSummary, freezePageClock } from "./helpers.js"
 
 const mockAllEndpoints = (page: Page, items: LibraryItem[], nowPlayingId?: string) => {
   const summary = mockSystemSummary()
@@ -155,7 +155,15 @@ test.describe("Library views: ledger list (ticket 08)", () => {
 })
 
 test.describe("Library actions: PLAY / PREVIEW / DELETE (ticket 08)", () => {
-  test("hover PLAY posts to the player endpoint", async ({ page }) => {
+  test("hover PLAY on the FIRST card (wide transcoded meta) posts to the player endpoint", async ({
+    page,
+  }) => {
+    // Regression (ticket 15): the first card carries the widest caption meta
+    // ("1920x1080 · HEVC · 95.4 MB ↓80%"), which used to push the hover
+    // action cluster past the card's right edge — the button's center
+    // hit-tested on .lib-grid and the click never landed. The cluster now
+    // overlays the caption's right end (out of flow), so it can never leave
+    // the card and never squeezes the caption at rest.
     let played: string | null = null
     await mockAllEndpoints(page, [completed, failed])
     await page.route("**/api/player/play/*", (r) => {
@@ -163,6 +171,35 @@ test.describe("Library actions: PLAY / PREVIEW / DELETE (ticket 08)", () => {
       void r.fulfill({ status: 200, contentType: "application/json", body: "{}" })
     })
     await page.goto("/library")
+    await expect(page.locator(".lib-card")).toHaveCount(2, { timeout: 15000 })
+    const card = page.locator(".lib-card", { hasText: "Neon City" })
+    await card.hover()
+    const play = card.locator(".lib-act-primary", { hasText: "PLAY" })
+    await play.click() // Playwright hit-tests the button center
+    await expect.poll(() => played).toContain("/api/player/play/1693728660")
+
+    // …and the cluster is geometrically inside the card, not just clickable.
+    const inside = await card.evaluate((el) => {
+      const actions = el.querySelector(".lib-actions")!
+      const c = el.getBoundingClientRect()
+      const a = actions.getBoundingClientRect()
+      return a.right <= c.right + 0.5
+    })
+    expect(inside).toBe(true)
+  })
+
+  test("hover PLAY posts to the player endpoint", async ({ page }) => {
+    test.setTimeout(60_000) // cold vite transform under parallel-suite load
+    let played: string | null = null
+    await mockAllEndpoints(page, [completed, failed])
+    await page.route("**/api/player/play/*", (r) => {
+      played = r.request().url()
+      void r.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+    })
+    await page.goto("/library")
+    // First paint after a cold vite transform can outlast the default expect
+    // timeout under parallel-suite load.
+    await expect(page.locator(".lib-card")).toHaveCount(2, { timeout: 15000 })
     const card = page.locator(".lib-card", { hasText: "Rainy Window" })
     await card.hover()
     await card.locator(".lib-act-primary", { hasText: "PLAY" }).click()
@@ -335,6 +372,91 @@ test.describe("Library glass detail popover (ticket 08)", () => {
     await expect(page.locator(".ldet")).toHaveCount(0)
     await expect(page.locator(".lib-card")).toHaveCount(1)
   })
+
+  test("exit beat: scrim and panel fade out in lockstep — 150ms, no snap-off", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page, [completed], completed.workshop_id)
+    await page.goto("/library")
+    await expect(page.locator(".lib-card")).toHaveCount(1)
+    await page.keyboard.press("Enter")
+    await expect(page.locator(".ldet-panel")).toBeVisible()
+
+    /* Freeze the unmount timer: the close handler removes the popover on a
+     * real 150ms setTimeout, which races the probes below. */
+    await freezePageClock(page)
+    await page.keyboard.press("Escape")
+    await page.clock.runFor(50) // close class applies; exit animations created
+    await expect(page.locator(".ldet-scrim-out")).toBeAttached()
+
+    /* Freeze the exit 10ms in: both layers must still be mostly opaque.
+     * Regression for the pre-15 snap-off: the lingering fill:both entrance
+     * animation re-resolved its implicit `to` against the closing class and
+     * the scrim/panel jumped to opacity 0 with no exit at all. */
+    const mid = await page.evaluate(() => {
+      const read = (sel: string, name: string) => {
+        const el = document.querySelector(sel)
+        if (!el) return null
+        const exits = (el.getAnimations() as CSSAnimation[]).filter(
+          (a) => a.animationName === name
+        )
+        if (exits.length !== 1) return null
+        exits[0].pause()
+        exits[0].currentTime = 10
+        return parseFloat(getComputedStyle(el).opacity)
+      }
+      return {
+        scrim: read(".ldet-scrim", "ldet-scrim-out"),
+        panel: read(".ldet-panel", "ldet-out"),
+      }
+    })
+    expect(mid.scrim).not.toBeNull()
+    expect(mid.panel).not.toBeNull()
+    expect(mid.scrim!).toBeGreaterThan(0.5)
+    expect(mid.panel!).toBeGreaterThan(0.5)
+
+    /* F1: same duration on both layers. */
+    const durs = await page.evaluate(() =>
+      [".ldet-scrim", ".ldet-panel"].map(
+        (sel) => getComputedStyle(document.querySelector(sel)!).animationDuration
+      )
+    )
+    expect(durs[0]).toBe(durs[1])
+
+    await page.clock.runFor(300) // let the frozen unmount timer fire
+    await expect(page.locator(".ldet")).toHaveCount(0)
+  })
+
+  test.describe("reduced motion", () => {
+    test.use({ reducedMotion: "reduce" })
+
+    test("the exit beat degrades to an instant cut: opacity 0 with no animation", async ({
+      page,
+    }) => {
+      await mockAllEndpoints(page, [completed], completed.workshop_id)
+      await page.goto("/library")
+      await expect(page.locator(".lib-card")).toHaveCount(1)
+      await page.keyboard.press("Enter")
+      await expect(page.locator(".ldet-panel")).toBeVisible()
+
+      // Same frozen-clock seam as the exit-beat test above: under reduced
+      // motion there is no exit animation, but the 150ms unmount timer still
+      // races the probe.
+      await freezePageClock(page)
+      await page.keyboard.press("Escape")
+      await page.clock.runFor(50)
+      await expect(page.locator(".ldet-scrim-out")).toBeAttached()
+      const exit = await page.evaluate(() => {
+        const el = document.querySelector(".ldet-scrim")
+        return el
+          ? { anims: el.getAnimations().length, opacity: getComputedStyle(el).opacity }
+          : null
+      })
+      expect(exit).toEqual({ anims: 0, opacity: "0" })
+      await page.clock.runFor(300)
+      await expect(page.locator(".ldet")).toHaveCount(0)
+    })
+  })
 })
 
 test.describe("Library rail QUEUE commands (ticket 08)", () => {
@@ -413,42 +535,73 @@ test.describe("Library → PlayerBar play ghost (ticket 12)", () => {
     await card.locator(".lib-act-primary", { hasText: "PLAY" }).click()
   }
 
-  const ghostSnapshot = (page: Page) =>
-    page.locator("body > img").last().evaluate((el) => {
-      const style = (el as HTMLElement).style
-      const effect = el.getAnimations()[0]?.effect as KeyframeEffect | undefined
-      const kfs = effect?.getKeyframes() ?? []
-      const last = (kfs[kfs.length - 1] ?? {}) as Record<string, unknown>
-      return {
-        left: parseFloat(style.left),
-        top: parseFloat(style.top),
-        lastTransform: String(last.transform ?? ""),
-        duration: Number(effect?.getComputedTiming().duration),
-      }
+  /** Install BEFORE clicking PLAY: a MutationObserver records each ghost's
+   *  spawn snapshot (start pose + final keyframe + duration) at insertion
+   *  time, so the assertions read a recording instead of racing the 380ms
+   *  flight — a post-hoc probe can land after the animation's effect is
+   *  already gone (snapshot read NaN). The elements tagged with
+   *  data-ghost-from / data-ghost-to are measured in the SAME frame as the
+   *  spawn, so the assertions never compare against a stale boundingBox()
+   *  from before the click (async font metrics can shift the grid ~1px). */
+  const installGhostRecorder = (page: Page) =>
+    page.evaluate(() => {
+      const w = window as unknown as { __ghostShots: Array<Record<string, unknown>> }
+      w.__ghostShots = []
+      new MutationObserver((muts) => {
+        for (const mut of muts) {
+          for (const node of mut.addedNodes) {
+            if (!(node instanceof HTMLImageElement)) continue
+            if (node.parentElement !== document.body) continue
+            const effect = node.getAnimations()[0]?.effect as KeyframeEffect | undefined
+            const kfs = effect?.getKeyframes() ?? []
+            const last = (kfs[kfs.length - 1] ?? {}) as Record<string, unknown>
+            const from = document
+              .querySelector("[data-ghost-from]")
+              ?.getBoundingClientRect()
+            const to = document.querySelector("[data-ghost-to]")?.getBoundingClientRect()
+            w.__ghostShots.push({
+              left: parseFloat(node.style.left),
+              top: parseFloat(node.style.top),
+              lastTransform: String(last.transform ?? ""),
+              duration: Number(effect?.getComputedTiming().duration),
+              fromLeft: from?.left ?? null,
+              fromTop: from?.top ?? null,
+              toLeft: to?.left ?? null,
+              toTop: to?.top ?? null,
+            })
+          }
+        }
+      }).observe(document.body, { childList: true })
     })
+
+  const ghostSnapshots = (page: Page) =>
+    page.evaluate(() => (window as unknown as { __ghostShots: Array<Record<string, unknown>> }).__ghostShots)
 
   test("PLAY flies the card media into the PlayerBar thumb; now-playing switches", async ({
     page,
   }) => {
     const { played } = await bootWithPlayback(page)
     const card = page.locator(".lib-card", { hasText: "Neon City" })
-    const mediaBox = (await card.locator(".lib-media").boundingBox())!
-    const thumbBox = (await page.locator(".pbar-thumb").boundingBox())!
 
+    await installGhostRecorder(page)
+    await card.locator(".lib-media").evaluate((el) => ((el as HTMLElement).dataset.ghostFrom = "1"))
+    await page.locator(".pbar-thumb").evaluate((el) => ((el as HTMLElement).dataset.ghostTo = "1"))
     await playCard(page, "Neon City")
     const ghosts = page.locator("body > img")
     await expect(ghosts).toHaveCount(1)
 
     // Start pose = the card media rect; the final keyframe lands exactly on
-    // the PlayerBar thumb slot; 380ms — the registered §5 exception.
-    const g = await ghostSnapshot(page)
+    // the PlayerBar thumb slot; 380ms — the registered §5 exception. All
+    // rects were recorded in the spawn frame by the observer.
+    await expect.poll(() => ghostSnapshots(page)).toHaveLength(1)
+    const [g] = await ghostSnapshots(page)
     expect(g.duration).toBe(380)
-    expect(g.left).toBeCloseTo(mediaBox.x, 0)
-    expect(g.top).toBeCloseTo(mediaBox.y, 0)
-    const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(g.lastTransform)
+    expect(g.left as number).toBeCloseTo(g.fromLeft as number, 0)
+    expect(g.top as number).toBeCloseTo(g.fromTop as number, 0)
+    const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(g.lastTransform as string)
     expect(m).not.toBeNull()
-    expect(g.left + parseFloat(m![1])).toBeCloseTo(thumbBox.x, 0)
-    expect(g.top + parseFloat(m![2])).toBeCloseTo(thumbBox.y, 0)
+    expect((g.left as number) + parseFloat(m![1])).toBeCloseTo(g.toLeft as number, 0)
+    expect((g.top as number) + parseFloat(m![2])).toBeCloseTo(g.toTop as number, 0)
 
     // PlayerBar switches to now-playing and the card lights NOW PLAYING.
     await expect.poll(() => played()).toContain(`/api/player/play/${itemA.workshop_id}`)
@@ -524,23 +677,31 @@ test.describe("Library focus band: keyboard roaming (ticket 06, same language)",
     await expect(ring.locator(".focus-ring-coord")).toHaveText("C1·R1")
     await expect(cards.nth(0)).toHaveClass(/lib-cursor/)
 
-    // The band hugs the cursor card exactly.
+    // The band hugs the cursor card exactly. Poll until the slide has fully
+    // settled — a fixed wait races the 250ms flight under suite load.
     const hug = async (i: number) => {
-      const m = await page.evaluate((idx) => {
-        const ring = document.querySelector(".focus-ring")
-        const card = document.querySelectorAll(".lib-card")[idx]
-        if (!ring || !card) return null
-        const r = ring.getBoundingClientRect()
-        const c = card.getBoundingClientRect()
-        return Math.max(
-          Math.abs(r.x - c.x),
-          Math.abs(r.y - c.y),
-          Math.abs(r.width - c.width),
-          Math.abs(r.height - c.height)
+      await expect
+        .poll(
+          async () => {
+            const m = await page.evaluate((idx) => {
+              const ring = document.querySelector(".focus-ring")
+              const card = document.querySelectorAll(".lib-card")[idx]
+              if (!ring || !card) return null
+              const r = ring.getBoundingClientRect()
+              const c = card.getBoundingClientRect()
+              const d = Math.max(
+                Math.abs(r.x - c.x),
+                Math.abs(r.y - c.y),
+                Math.abs(r.width - c.width),
+                Math.abs(r.height - c.height)
+              )
+              return { d, anims: ring.getAnimations().length }
+            }, i)
+            return m !== null && m.d <= 1.5 && m.anims === 0
+          },
+          { timeout: 3000 }
         )
-      }, i)
-      expect(m).not.toBeNull()
-      expect(m!).toBeLessThanOrEqual(1.5)
+        .toBe(true)
     }
     await hug(0)
 
@@ -551,8 +712,7 @@ test.describe("Library focus band: keyboard roaming (ticket 06, same language)",
     await page.keyboard.press("ArrowDown")
     await expect(cards.nth(3)).toHaveClass(/lib-cursor/) // clamped to last item
     await expect(ring.locator(".focus-ring-coord")).toHaveText("C1·R2")
-    // Wait out the 250ms slide, then verify the hug on the new card.
-    await page.waitForTimeout(300)
+    // Assert the settled end pose, not a mid-flight sample.
     await hug(3)
 
     // The band follows into the list view, row by row.

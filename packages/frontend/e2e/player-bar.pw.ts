@@ -2,7 +2,7 @@ import { expect, test } from "playwright/test"
 import type { Page } from "playwright"
 import type { SystemSummary } from "@pwe/shared"
 import { mockSystemSummary } from "./fixtures.js"
-import { mockAuthDisabled, mockLibraryList } from "./helpers.js"
+import { mockAuthDisabled, mockLibraryList, freezePageClock } from "./helpers.js"
 
 const playingSummary = (): SystemSummary => {
   const summary = mockSystemSummary()
@@ -145,6 +145,76 @@ test.describe("PlayerBar glass dock", () => {
     // vanishing in the same frame (the mid-exit window is too short to
     // assert without races); it always ends up unmounted.
     await expect(displayPop).toHaveCount(0)
+  })
+
+  test("popover exit beat: 150ms fade + translateY(6px), no snap-off (spec §5 F2)", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page, { value: playingSummary() })
+    await page.goto("/browse")
+
+    await page.getByRole("button", { name: "Display mode", exact: true }).click()
+    const pop = page.locator(".pbar-pop").filter({ hasText: "DISPLAY" })
+    await expect(pop).toBeVisible()
+
+    /* Freeze the unmount timer: closePop() removes the popover on a real
+     * 150ms setTimeout, which races the probes below. And trap the exit
+     * transition at its birth: a transition lives only 150ms of REAL time,
+     * so a post-hoc getAnimations() probe can land after it finished (the
+     * finished transition is dropped and the read comes back null).
+     * Listening for transitionrun and pausing inside the handler freezes
+     * the exit deterministically, no matter how loaded the machine is. */
+    await page.evaluate(() => {
+      const w = window as unknown as { __popExit: { opacity: number; duration: string } | null }
+      w.__popExit = null
+      document.addEventListener("transitionrun", (e) => {
+        const el = e.target as HTMLElement
+        if (!el.classList?.contains("pbar-pop")) return
+        if ((e as TransitionEvent).propertyName !== "opacity") return
+        if (w.__popExit) return // only the first opacity transition after install (the exit)
+        const anim = el.getAnimations().find(
+          (a) => (a as CSSTransition).transitionProperty === "opacity"
+        )
+        if (!anim) return
+        anim.pause()
+        anim.currentTime = 10 // freeze mid-exit at a deterministic frame
+        const cs = getComputedStyle(el)
+        w.__popExit = { opacity: parseFloat(cs.opacity), duration: cs.transitionDuration }
+      })
+    })
+    await freezePageClock(page)
+    await page.keyboard.press("Escape")
+    await page.clock.runFor(50) // close handler runs; class flip schedules the exit
+    await expect(page.locator(".pbar-pop-out")).toBeAttached()
+    await expect.poll(() => page.evaluate(() => (window as any).__popExit)).not.toBeNull()
+
+    /* Frozen 10ms into the exit: the popover must still be mostly opaque —
+     * the leave is a mirrored 150ms beat, not a cut. */
+    const mid = await page.evaluate(() => (window as any).__popExit)
+    expect(mid.duration).toBe("0.15s")
+    expect(mid.opacity).toBeGreaterThan(0.5)
+
+    /* End pose: fully faded and shifted down 6px — the mirror of the
+     * @starting-style enter. Fast-forward EVERY transition on the element
+     * (opacity was frozen by the trap; transform runs on real time and may
+     * still be early under load). */
+    await page.evaluate(() => {
+      const el = document.querySelector(".pbar-pop-out")
+      el?.getAnimations().forEach((a) => {
+        a.currentTime = 150
+      })
+      const cs = getComputedStyle(el!)
+      return { opacity: cs.opacity, transform: cs.transform }
+    }).then((end) => {
+      expect(parseFloat(end.opacity)).toBe(0)
+      // translateY(6px) is the ty component of the matrix.
+      const m = /matrix\([^,]+,[^,]+,[^,]+,[^,]+,[^,]+, ([^)]+)\)/.exec(end.transform)
+      expect(m).not.toBeNull()
+      expect(parseFloat(m![1])).toBeCloseTo(6, 0)
+    })
+
+    await page.clock.runFor(200) // let the frozen unmount timer fire
+    await expect(pop).toHaveCount(0)
   })
 
   test("SLEEP popover posts the chosen minutes and the subtitle reports sleep Nm", async ({

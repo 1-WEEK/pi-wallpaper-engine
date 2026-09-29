@@ -94,6 +94,18 @@ export const mockDownloadTasks = (page: Page, tasks: unknown[]) => {
   })
 }
 
+/** Freeze the page's timers so a popover's 150ms exit-beat unmount timer
+ *  cannot fire mid-probe (the close handler unmounts on a real setTimeout,
+ *  which races any sampling of the exit animation). Install once, then pause
+ *  at the page's CURRENT fake time +500ms — pausing at node's Date.now() can
+ *  land in the fake clock's past. Call right before triggering the close,
+ *  then `page.clock.runFor(...)` to step through the exit. */
+export const freezePageClock = async (page: Page): Promise<void> => {
+  await page.clock.install()
+  const now = await page.evaluate(() => Date.now())
+  await page.clock.pauseAt(now + 500)
+}
+
 /** Compute how many grid columns fit at the current viewport width.
  *  Mirrors computeFitColumns from useColumnsPerRow.ts. */
 export const computeColumns = (viewportWidth: number): number => {

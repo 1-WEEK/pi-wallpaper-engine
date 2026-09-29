@@ -395,10 +395,17 @@ button.bws-add.is-static {
 }
 
 /* Exit beat (spec §5 F1): scrim and stage exit together — same 150ms,
-   same curve, so the scrim never snaps off mid-fade. */
+   same curve, so the scrim never snaps off mid-fade. Keyframes, not a
+   transition: the lingering fill:both entrance animation would re-resolve
+   its implicit `to` against the class value and snap to 0 instantly. */
 .pfocus-scrim-out {
-  opacity: 0;
-  transition: opacity var(--dur-exit) var(--ease-out);
+  animation: pfocus-scrim-out var(--dur-exit) var(--ease-out) both;
+}
+
+@keyframes pfocus-scrim-out {
+  to {
+    opacity: 0;
+  }
 }
 
 .pfocus-stage {
@@ -427,11 +434,14 @@ button.bws-add.is-static {
 }
 
 .pfocus-closing {
-  opacity: 0;
-  transform: translateY(10px);
-  transition:
-    opacity var(--dur-exit) var(--ease-out),
-    transform var(--dur-exit) var(--ease-out);
+  animation: pfocus-out var(--dur-exit) var(--ease-out) both;
+}
+
+@keyframes pfocus-out {
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 }
 
 /* The only VT-named element (spec §5 F3): card media ⇄ focus media. */
@@ -645,5 +655,12 @@ button.bws-add.is-static {
 @media (prefers-reduced-motion: reduce) {
   .pfocus-stage {
     animation: pfocus-in-fade 200ms var(--ease-out) both;
+  }
+
+  /* F5: the exit beat is an instant cut — no fade. */
+  .pfocus-closing,
+  .pfocus-scrim-out {
+    animation: none;
+    opacity: 0;
   }
 }

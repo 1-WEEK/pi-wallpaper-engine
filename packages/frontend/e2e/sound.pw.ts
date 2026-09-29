@@ -156,9 +156,22 @@ test.describe("interface sound layer", () => {
     await page.locator(".bws-head").click()
     const before = (await probe(page)).osc
     await page.evaluate(() => {
-      document
-        .querySelectorAll<HTMLElement>(".rail-nav-link")
-        .forEach((el) => el.click())
+      /* Freeze performance.now() for the burst: each click handler runs
+       * flyTo's forced synchronous layout, which under parallel-suite load
+       * can stretch the "synchronous" forEach past the 50ms nav cooldown
+       * (observed: +2 voices on a load-average-11 box). The test's subject
+       * is the cooldown collapse, not layout speed — pin the clock so the
+       * burst is truly simultaneous. */
+      const realNow = performance.now.bind(performance)
+      const frozen = realNow()
+      performance.now = () => frozen
+      try {
+        document
+          .querySelectorAll<HTMLElement>(".rail-nav-link")
+          .forEach((el) => el.click())
+      } finally {
+        performance.now = realNow
+      }
     })
     expect((await probe(page)).osc).toBe(before + 1)
   })

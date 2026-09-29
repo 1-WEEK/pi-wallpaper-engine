@@ -1,7 +1,7 @@
 import { expect, test } from "playwright/test"
 import type { Page } from "playwright"
 import { mockSystemSummary } from "./fixtures.js"
-import { mockAuthDisabled, mockLibraryList, mockSummary } from "./helpers.js"
+import { mockAuthDisabled, mockLibraryList, mockSummary, freezePageClock } from "./helpers.js"
 
 const mockAllEndpoints = async (page: Page) => {
   await mockAuthDisabled(page)
@@ -66,7 +66,8 @@ test.describe("Desktop shell", () => {
 
     await expect(
       page.locator(".rail-nav-link", { hasText: "Activity" }).locator(".rail-nav-count")
-    ).toHaveText("3")
+      // A cold vite compile can eat the default 5s expect window.
+    ).toHaveText("3", { timeout: 15000 })
   })
 
   test("theme switch: AUTO follows the OS, manual choice overrides and persists", async ({
@@ -125,16 +126,25 @@ test.describe("Nav motion (ticket 11 — XOR mask, 09 票 N 方案)", () => {
           let maxMaskedMidFlight = 0
           let coveredDuringFlight = false
           let flightRunning = false
+          // Timestamp the route commit EXACTLY: wouter navigates via
+          // history.pushState. Watching pathname on rAF frames inflates the
+          // reading under suite load (starved frames observe the commit
+          // hundreds of ms late); the hook fires synchronously with the
+          // commit itself.
+          const origPush = history.pushState.bind(history)
+          history.pushState = (...args: Parameters<typeof history.pushState>) => {
+            if (commitAt < 0 && String(args[2]) !== "/browse") {
+              commitAt = performance.now() - t0
+              urlMidFlight = String(args[2])
+            }
+            return origPush(...args)
+          }
           const poll = () => {
             const flying = mask
               .getAnimations()
               .some((a) => a.playState === "running" || a.playState === "pending")
             if (flying) {
               flightRunning = true
-              if (commitAt < 0 && location.pathname !== "/browse") {
-                commitAt = performance.now() - t0
-                urlMidFlight = location.pathname
-              }
               maxMaskedMidFlight = Math.max(
                 maxMaskedMidFlight,
                 document.querySelectorAll(".rail-nav-link.is-masked").length
@@ -154,6 +164,13 @@ test.describe("Nav motion (ticket 11 — XOR mask, 09 票 N 方案)", () => {
                 requestAnimationFrame(poll)
                 return
               }
+            }
+            // Also wait for the commit itself: under suite load the 120ms
+            // commit timer can out-starve the whole flight (observed:
+            // settle landed while the timer was still queued → commitAt=-1).
+            if (commitAt < 0 && performance.now() - t0 < 8000) {
+              requestAnimationFrame(poll)
+              return
             }
             // Settled: coverage flipped to the target, no residue, no
             // flicker — the mask sits exactly on the target row.
@@ -185,7 +202,10 @@ test.describe("Nav motion (ticket 11 — XOR mask, 09 票 N 方案)", () => {
     expect(probe.animatingImmediately).toBe(true)
     expect(probe.flightRunning).toBe(true)
     expect(probe.commitAt).toBeGreaterThan(60)
-    expect(probe.commitAt).toBeLessThan(1000)
+    // Scheduled at 120ms; the generous upper bound only tolerates timer
+    // starvation under parallel-suite load — a synchronous (<60ms) or
+    // missing (-1 after the 8s probe cap) commit still fails.
+    expect(probe.commitAt).toBeLessThan(2000)
     expect(probe.urlMidFlight).toBe("/settings")
     expect(probe.maxMaskedMidFlight).toBeGreaterThan(0)
     expect(probe.coveredDuringFlight).toBe(false)
@@ -224,10 +244,17 @@ test.describe("Nav motion (ticket 11 — XOR mask, 09 票 N 方案)", () => {
     expect(dark.chipShadow).toContain("2px")
 
     // AUTO follows the OS live — the tile and chips flip with the theme.
-    // (The rail's background has a 200ms theme transition; let it land.)
+    // (The rail's background has a 200ms theme transition; poll for it to
+    // land — under load the transition can start late and outlive a fixed
+    // sleep, reading a mid-flight railBg ≠ the instantly-flipped chipBg.)
     await page.emulateMedia({ colorScheme: "light" })
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
-    await page.waitForTimeout(300)
+    await expect
+      .poll(async () => {
+        const { chipBg, railBg } = await read()
+        return chipBg === railBg
+      })
+      .toBe(true)
     const light = await read()
     expect(light.afterBg).toContain("%23000000")
     expect(light.chipBg).toBe(light.railBg)
@@ -241,8 +268,44 @@ test.describe("Nav motion (ticket 11 — XOR mask, 09 票 N 方案)", () => {
     await page.goto("/browse")
     const library = page.locator(".rail-nav-link", { hasText: "Library" })
     await library.hover()
-    // Record the whole flight in-page — Playwright's click() roundtrip alone
-    // can eat most of the 420ms window, so post-hoc sampling is too late.
+    /* Trap the mask slide at creation and freeze it half-way (210ms of the
+     * 420ms flight): the sweep recorder below and the app's own --pt-sweep
+     * writer both sample rAF frames, which starve under suite load — a live
+     * flight can settle between two samples and the clip reads a near-zero
+     * early frame (observed: 4.7% vs the >20% assertion). Frozen, every
+     * produced frame shows the same mid-flight coverage. */
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __maskAnim: Animation | null
+        __origAnimate: typeof Element.prototype.animate
+      }
+      w.__maskAnim = null
+      w.__origAnimate = Element.prototype.animate
+      Element.prototype.animate = function (
+        this: Element,
+        kfs: Keyframe[] | PropertyIndexedKeyframes | null,
+        opts?: number | KeyframeAnimationOptions
+      ): Animation {
+        const anim = w.__origAnimate.call(this, kfs, opts)
+        if ((this as HTMLElement).classList?.contains("rail-nav-mask")) {
+          anim.pause()
+          anim.currentTime = 210
+          w.__maskAnim = anim
+        }
+        return anim
+      }
+    })
+    /* Freeze the flight's timers (120ms route commit, 540ms settle
+     * fallback): the frozen animation never finishes, so without this the
+     * fallback would tear the flight down mid-probe under load. Note
+     * page.clock also fakes requestAnimationFrame — while paused neither the
+     * app's --pt-sweep writer nor the recorder below tick on their own; the
+     * probe advances them deterministically via clock.runFor. */
+    await freezePageClock(page)
+    // Record the frozen flight in-page — Playwright's click() roundtrip alone
+    // can eat most of a live 420ms window, so post-hoc sampling is too late.
+    // (Click's actionability probe uses the raw builtin rAF, so it still
+    // works with the clock paused.)
     await library.evaluate((el) => {
       const w = window as unknown as { __handoff: Record<string, unknown>; __handoffDone: boolean }
       w.__handoffDone = false
@@ -272,17 +335,33 @@ test.describe("Nav motion (ticket 11 — XOR mask, 09 票 N 方案)", () => {
     })
     await library.click()
 
-    await expect(library).toHaveClass(/is-covered/, { timeout: 1500 })
-    const handoff = await page.evaluate(() => {
-      const w = window as unknown as { __handoff: Record<string, unknown>; __handoffDone: boolean }
-      w.__handoffDone = true
-      return w.__handoff
-    })
+    /* The flight is frozen at half coverage: the sweep clip MUST reach the
+     * middle of the row. The paused clock owns rAF now — tick ~4 frames so
+     * the app writes --pt-sweep from the frozen pose and the recorder sees
+     * it. 64ms stays well under the 120ms commit timer, so nothing tears
+     * the flight down mid-probe. */
+    await page.clock.runFor(64)
+    const handoff = await page.evaluate(() => (window as any).__handoff)
+    expect(handoff.maxClipPct).toBeGreaterThan(20)
     expect(handoff.sweepingSeen).toBe(true)
     expect(handoff.bandDuringSweep).toBe(true) // the dither band holds until full coverage
     expect(handoff.clipInsetSeen).toBe(true) // its swept region is clipped per frame
-    expect(handoff.maxClipPct).toBeGreaterThan(20) // the clip really tracks the leading edge
     expect(handoff.coveredDuringSweep).toBe(false)
+
+    /* Unfreeze: restore the prototype, stop the recorder, resume the flight
+     * and let the frozen timers (commit + settle) run out. */
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __maskAnim: Animation | null
+        __origAnimate: typeof Element.prototype.animate
+        __handoffDone: boolean
+      }
+      Element.prototype.animate = w.__origAnimate
+      w.__handoffDone = true
+      w.__maskAnim?.play()
+    })
+    await page.clock.runFor(1000)
+    await expect(library).toHaveClass(/is-covered/, { timeout: 1500 })
 
     const settled = await library.evaluate((el) => ({
       band: getComputedStyle(el, "::after").content,
@@ -421,22 +500,25 @@ test.describe("Mobile shell", () => {
     await mockAllEndpoints(page)
     await page.goto("/browse")
 
+    // boundingBox() returns fractional px — a 44 CSS px target can read
+    // 43.999969 under sub-pixel rounding, so compare with a 0.1px epsilon.
+    const EPS = 0.1
     for (const item of await page.locator(".mobile-tab-bar-item").all()) {
       const box = (await item.boundingBox())!
-      expect(box.height).toBeGreaterThanOrEqual(44)
+      expect(box.height).toBeGreaterThanOrEqual(44 - EPS)
     }
     for (const btn of await page.locator(".mobile-mini-player-btn").all()) {
       const box = (await btn.boundingBox())!
-      expect(box.width).toBeGreaterThanOrEqual(44)
-      expect(box.height).toBeGreaterThanOrEqual(44)
+      expect(box.width).toBeGreaterThanOrEqual(44 - EPS)
+      expect(box.height).toBeGreaterThanOrEqual(44 - EPS)
     }
     const open = await page.locator(".mobile-mini-player-open").boundingBox()
-    expect(open!.height).toBeGreaterThanOrEqual(44)
+    expect(open!.height).toBeGreaterThanOrEqual(44 - EPS)
 
     await page.getByRole("button", { name: "Open player controls" }).click()
     const close = await page.locator(".mobile-sheet.open .mobile-sheet-close").boundingBox()
-    expect(close!.width).toBeGreaterThanOrEqual(44)
-    expect(close!.height).toBeGreaterThanOrEqual(44)
+    expect(close!.width).toBeGreaterThanOrEqual(44 - EPS)
+    expect(close!.height).toBeGreaterThanOrEqual(44 - EPS)
   })
 })
 

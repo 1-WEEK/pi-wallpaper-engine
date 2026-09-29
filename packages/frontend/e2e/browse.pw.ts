@@ -2,7 +2,7 @@ import { expect, test } from "playwright/test"
 import type { Page, Route } from "playwright"
 import type { ActivityTask } from "@pwe/shared"
 import { mockSearchResult, mockSystemSummary, mockWorkshopItems } from "./fixtures.js"
-import { computeColumns } from "./helpers.js"
+import { computeColumns, freezePageClock } from "./helpers.js"
 
 const summary = mockSystemSummary()
 
@@ -298,6 +298,9 @@ test.describe("Browse contact sheet: download intent", () => {
   test("ADD queues a download; the task surfaces on the card and in Activity", async ({
     page,
   }) => {
+    // First paint after a cold vite transform plus the tasks refetch window
+    // can outlast the 30s default test timeout under parallel-suite load.
+    test.setTimeout(60_000)
     await page.setViewportSize({ width: 1600, height: 900 })
     const firstId = "3000000000"
     const activeDownload: ActivityTask = {
@@ -344,15 +347,20 @@ test.describe("Browse contact sheet: download intent", () => {
       })
     })
 
-    await page.goto("/browse?q=test", { waitUntil: "networkidle" })
+    // No networkidle: the app's SWR polling can keep the network busy past
+    // the navigation window under load; readiness is asserted on the grid.
+    await page.goto("/browse?q=test")
     const card = page.locator(".bws-card").first()
-    await expect(card.locator(".bws-card-index")).toHaveText("N°001")
+    // First paint after a cold vite transform can outlast the default 5s
+    // expect timeout under parallel-suite load.
+    await expect(card.locator(".bws-card-index")).toHaveText("N°001", { timeout: 30000 })
     await card.hover()
     await card.locator("button.bws-add", { hasText: "ADD" }).click()
 
     await expect.poll(() => postedTo).toContain(`/api/download/${firstId}`)
     // The tasks refetch turns the card's ADD into the live stage readout…
-    await expect(card.locator(".bws-add.is-static")).toHaveText("DOWNLOADING")
+    // (lands on the app's SWR refresh window, slow under suite load).
+    await expect(card.locator(".bws-add.is-static")).toHaveText("DOWNLOADING", { timeout: 15000 })
 
     // …and the same task appears on the Activity page.
     await page.locator(".rail-nav-link", { hasText: "Activity" }).click()
@@ -691,6 +699,50 @@ test.describe("Browse views: immersive focus view (ticket 05)", () => {
     await expect(focus).toHaveCount(0)
   })
 
+  test("Esc exit beat: scrim and stage fade in lockstep — 150ms, no snap-off", async ({
+    page,
+  }) => {
+    await bootBrowse(page)
+    await page.keyboard.press("Enter")
+    await expect(page.locator(".pfocus")).toBeVisible()
+
+    /* Freeze the unmount timer: the close handler removes the focus view on
+     * a real 150ms setTimeout, which races the probes below. */
+    await freezePageClock(page)
+    await page.keyboard.press("Escape")
+    await page.clock.runFor(50) // close class applies; exit animations created
+    await expect(page.locator(".pfocus-scrim-out")).toBeAttached()
+
+    /* Freeze the exit 10ms in: both layers must still be mostly opaque.
+     * Regression for the pre-15 snap-off: the lingering fill:both entrance
+     * animation re-resolved its implicit `to` against the closing class and
+     * the scrim/panel jumped to opacity 0 with no exit at all. */
+    const mid = await page.evaluate(() => {
+      const read = (sel: string, name: string) => {
+        const el = document.querySelector(sel)
+        if (!el) return null
+        const exits = (el.getAnimations() as CSSAnimation[]).filter(
+          (a) => a.animationName === name
+        )
+        if (exits.length !== 1) return null
+        exits[0].pause()
+        exits[0].currentTime = 10
+        return parseFloat(getComputedStyle(el).opacity)
+      }
+      return {
+        scrim: read(".pfocus-scrim", "pfocus-scrim-out"),
+        stage: read(".pfocus-stage", "pfocus-out"),
+      }
+    })
+    expect(mid.scrim).not.toBeNull()
+    expect(mid.stage).not.toBeNull()
+    expect(mid.scrim!).toBeGreaterThan(0.5)
+    expect(mid.stage!).toBeGreaterThan(0.5)
+
+    await page.clock.runFor(300) // let the frozen unmount timer fire
+    await expect(page.locator(".pfocus")).toHaveCount(0)
+  })
+
   test("Enter opens from the density list; scrim click closes", async ({ page }) => {
     await bootBrowse(page)
     await page.keyboard.press("v")
@@ -779,6 +831,31 @@ test.describe("Browse views: reduced motion (ticket 05)", () => {
     expect(await page.evaluate(() => document.body.querySelectorAll(":scope > img").length)).toBe(
       0
     )
+  })
+
+  test("the exit beat degrades to an instant cut: opacity 0 with no animation", async ({
+    page,
+  }) => {
+    await bootBrowse(page)
+    await page.keyboard.press("Enter")
+    await expect(page.locator(".pfocus")).toBeVisible()
+
+    // Same frozen-clock seam as the exit-beat test above: under reduced
+    // motion there is no exit animation, but the 150ms unmount timer still
+    // races the probe.
+    await freezePageClock(page)
+    await page.keyboard.press("Escape")
+    await page.clock.runFor(50)
+    await expect(page.locator(".pfocus-scrim-out")).toBeAttached()
+    const exit = await page.evaluate(() => {
+      const el = document.querySelector(".pfocus-scrim")
+      return el
+        ? { anims: el.getAnimations().length, opacity: getComputedStyle(el).opacity }
+        : null
+    })
+    expect(exit).toEqual({ anims: 0, opacity: "0" })
+    await page.clock.runFor(300)
+    await expect(page.locator(".pfocus")).toHaveCount(0)
   })
 })
 
@@ -881,20 +958,96 @@ test.describe("Browse focus band: keyboard roaming (ticket 06)", () => {
   }) => {
     await bootBrowse(page)
     const cols = computeColumns(1600)
-    const cardLeft = (i: number) =>
-      page.locator(".bws-card").nth(i).evaluate((el) => el.getBoundingClientRect().left)
-    const x0 = await cardLeft(0)
-    const x1 = await cardLeft(1)
 
-    await page.keyboard.press("ArrowRight")
-    await page.waitForTimeout(60) // ~25% into the 250ms slide
-    await page.keyboard.press("ArrowDown") // re-target mid-flight
-    const x = await page.locator(".focus-ring").evaluate((el) => el.getBoundingClientRect().x)
-    // §5 F4: the new slide continues from wherever the ring was visibly
-    // mid-flight — restarting from the old target would put it at x1, and
-    // restarting from the origin would put it back at x0.
-    expect(x).toBeGreaterThan(x0 + 4)
-    expect(x).toBeLessThan(x1 - 4)
+    /* Deterministic choreography: sampling the slide by wall-clock or rAF
+     * races under suite load (the first probe can land after the whole
+     * 250ms flight). Instead, spy on Element.prototype.animate: record the
+     * keyframes of every ring slide and freeze each one at a FIXED 60ms
+     * the moment it is created, so the presented value is deterministic no
+     * matter how loaded the machine is. */
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __ringCalls: Array<{ from: string; to: string; duration: number }>
+        __ringAnims: Animation[]
+        __origAnimate: typeof Element.prototype.animate
+      }
+      w.__ringCalls = []
+      w.__ringAnims = []
+      w.__origAnimate = Element.prototype.animate
+      Element.prototype.animate = function (
+        this: Element,
+        kfs: Keyframe[] | PropertyIndexedKeyframes | null,
+        opts?: number | KeyframeAnimationOptions
+      ): Animation {
+        const anim = w.__origAnimate.call(this, kfs, opts)
+        if ((this as HTMLElement).classList?.contains("focus-ring") && Array.isArray(kfs)) {
+          const o = (opts ?? {}) as KeyframeAnimationOptions
+          w.__ringCalls.push({
+            from: String((kfs[0] as Keyframe).transform ?? ""),
+            to: String((kfs[kfs.length - 1] as Keyframe).transform ?? ""),
+            duration: Number(o.duration),
+          })
+          anim.pause()
+          anim.currentTime = 60 // freeze mid-flight at a deterministic frame
+          w.__ringAnims.push(anim)
+        }
+        return anim
+      }
+    })
+
+    // Dispatch on body (bubbles to the window listener): dispatching on
+    // window directly makes e.target the window, which has no .closest.
+    const key = (k: string) =>
+      page.evaluate(
+        (key) =>
+          document.body.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })),
+        k
+      )
+
+    const cards = page.locator(".bws-card")
+    const x0 = (await cards.nth(0).boundingBox())!.x
+    const x1 = (await cards.nth(1).boundingBox())!.x
+
+    await key("ArrowRight")
+    // Slide 1 exists (spied, frozen at 60ms) — React flushes asynchronously,
+    // so poll the recording, not the clock.
+    await expect.poll(() => page.evaluate(() => (window as any).__ringCalls.length)).toBe(1)
+    // The frozen presented value is genuinely mid-flight…
+    const midX = await page
+      .locator(".focus-ring")
+      .evaluate((el) => el.getBoundingClientRect().x)
+    expect(midX).toBeGreaterThan(x0 + 2)
+    expect(midX).toBeLessThan(x1 - 2)
+
+    await key("ArrowDown") // re-target while slide 1 is frozen mid-flight
+    await expect.poll(() => page.evaluate(() => (window as any).__ringCalls.length)).toBe(2)
+
+    const calls = await page.evaluate(() => (window as any).__ringCalls)
+    const px = (t: string) => parseFloat(/translate\((-?[\d.]+)px/.exec(t)?.[1] ?? "NaN")
+    // The ring lives in host offset geometry: translate(x) is host-relative,
+    // so compare against viewport rects shifted by x0 (card 0's offsetLeft
+    // inside the host is 0).
+    const pitch = x1 - x0
+    // Slide 1: from the origin card to the ArrowRight target.
+    expect(px(calls[0].from)).toBeCloseTo(0, 0)
+    expect(px(calls[0].to)).toBeCloseTo(pitch, 0)
+    expect(calls[0].duration).toBe(250)
+    // Slide 2 (§5 F4): starts from the PRESENTED value the app read off the
+    // frozen frame — not from 0 (origin restart) and not from pitch
+    // (old-target restart).
+    expect(px(calls[1].from)).toBeCloseTo(midX - x0, 0)
+    expect(calls[1].duration).toBe(250)
+
+    /* Restore the prototype and let the last slide finish so the ring can
+     * settle on the re-targeted card for the assertions below. */
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __ringAnims: Animation[]
+        __origAnimate: typeof Element.prototype.animate
+      }
+      Element.prototype.animate = w.__origAnimate
+      w.__ringAnims[w.__ringAnims.length - 1]?.play()
+    })
 
     await expect(page.locator(".bws-card").nth(cols + 1)).toHaveClass(/bws-cursor/)
     await expectRingOn(page, ".bws-card", cols + 1)
@@ -903,6 +1056,7 @@ test.describe("Browse focus band: keyboard roaming (ticket 06)", () => {
   test("Enter plays the ~120ms commit beat (dither out, XOR in) before the focus view", async ({
     page,
   }) => {
+    test.setTimeout(60_000) // cold vite transform + VT capture under suite load
     await bootBrowse(page)
     // Record WHEN the commit flip and the focus-view mount happen — the
     // 120ms beat is too short to catch by polling after the fact.
@@ -939,7 +1093,10 @@ test.describe("Browse focus band: keyboard roaming (ticket 06)", () => {
     expect(t.focusAt).not.toBeNull()
     const delta = (t.focusAt ?? 0) - (t.commitAt ?? 0)
     expect(delta).toBeGreaterThanOrEqual(90) // the commit beat really played first
-    expect(delta).toBeLessThan(1000) // ~120ms beat + VT snapshot capture
+    // Upper bound is sanity only: the 120ms beat is a setTimeout (fires late,
+    // never early) and the VT snapshot capture is unbounded under parallel
+    // suite load — observed >1000ms with an otherwise correct beat.
+    expect(delta).toBeLessThan(4000)
   })
 
   test("hover coexists with focus and the band never eats pointer events", async ({ page }) => {
@@ -1254,15 +1411,25 @@ test.describe("Browse functional scrollbar (ticket 07)", () => {
     await page.mouse.move(cx, targetY, { steps: 10 })
 
     // Zero damping: the scroll position is already there before mouse-up.
+    // Poll instead of reading once — under suite load the drag's final rAF
+    // update can land after the mouse.move roundtrip returns.
     const expectedFrac = (geo.H * 0.6 - geo.len / 2) / (geo.H - geo.len)
-    const scrollTop = await page.locator(".main").evaluate((el) => el.scrollTop)
-    expect(Math.abs(scrollTop - expectedFrac * geo.ms)).toBeLessThanOrEqual(3)
+    await expect
+      .poll(async () => {
+        const scrollTop = await page.locator(".main").evaluate((el) => el.scrollTop)
+        return Math.abs(scrollTop - expectedFrac * geo.ms)
+      })
+      .toBeLessThanOrEqual(3)
 
     // The thumb follows the pointer exactly (no LERP while dragging).
-    const thumbY = await page
-      .locator(".fbar-thumb")
-      .evaluate((el) => parseFloat(/translateY\(([\d.]+)px\)/.exec(el.style.transform)?.[1] ?? "NaN"))
-    expect(Math.abs(thumbY - (geo.H * 0.6 - geo.len / 2))).toBeLessThanOrEqual(2)
+    await expect
+      .poll(async () => {
+        const thumbY = await page
+          .locator(".fbar-thumb")
+          .evaluate((el) => parseFloat(/translateY\(([\d.]+)px\)/.exec(el.style.transform)?.[1] ?? "NaN"))
+        return Math.abs(thumbY - (geo.H * 0.6 - geo.len / 2))
+      })
+      .toBeLessThanOrEqual(2)
 
     // Hot zone: the thumb widened 5px → ~11px.
     const thumbW = await page

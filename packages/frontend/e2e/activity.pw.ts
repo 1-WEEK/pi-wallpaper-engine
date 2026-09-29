@@ -313,6 +313,9 @@ test.describe("Activity page (ticket 09)", () => {
   test("settle beat: terminal row holds in ACTIVE ~1.4s, COMPLETE pill flashes twice, then drops to FINISHED", async ({
     page,
   }) => {
+    // The ~10s SWR refresh window plus the 1.4s beat stack up; under suite
+    // load expect polling adds seconds more than the 30s default allows.
+    test.setTimeout(60_000)
     await mockShellEndpoints(page, { mockTasks: false })
     let active: ActivityTask[] = [
       mockTask({ task_id: "dl-1", task_type: "download", title: "Settle Paper", stage: "downloading" }),
@@ -337,25 +340,73 @@ test.describe("Activity page (ticket 09)", () => {
     ]
 
     const pill = page.locator(".act-row", { hasText: "Settle Paper" }).locator(".act-stage")
+    // Measure the beat IN PAGE with a MutationObserver: under suite load the
+    // expect polling cadence can land after the whole ~1.4s settle window
+    // (the poll first sees COMPLETE once the row has already dropped), so
+    // every mid-window fact — settle class, pill text, flash animation — is
+    // recorded in the same observer callback that first sees the class flip.
+    // (Earlier round: a wall-clock delta from the poll moment misread the
+    // hold as ~0.4s — observed 441ms vs the >1000 assertion.)
+    const beatPromise = page.evaluate(
+      () =>
+        new Promise<{
+          holdMs: number
+          pillText: string
+          animName: string
+          animDur: string
+          animIter: string
+        }>((resolve) => {
+          const active = document.querySelector('section[aria-label="Active tasks"]')!
+          const finished = document.querySelector('section[aria-label="Finished tasks"]')!
+          let settleAt = -1
+          let pillText = ""
+          let animName = ""
+          let animDur = ""
+          let animIter = ""
+          const obs = new MutationObserver(() => {
+            const row = [...active.querySelectorAll(".act-row")].find((r) =>
+              r.textContent?.includes("Settle Paper")
+            )
+            if (settleAt < 0) {
+              if (row?.classList.contains("act-settle")) {
+                settleAt = performance.now()
+                const pillEl = row.querySelector(".act-stage")
+                pillText = pillEl?.textContent ?? ""
+                const cs = pillEl ? getComputedStyle(pillEl) : null
+                animName = cs?.animationName ?? ""
+                animDur = cs?.animationDuration ?? ""
+                animIter = cs?.animationIterationCount ?? ""
+              }
+            } else if (!row && finished.textContent?.includes("Settle Paper")) {
+              obs.disconnect()
+              resolve({ holdMs: performance.now() - settleAt, pillText, animName, animDur, animIter })
+            }
+          })
+          obs.observe(document.body, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ["class"],
+          })
+        })
+    )
     // The app's SWRConfig dedupes the 1s poll into ~10s network refreshes;
     // the terminal stage lands on the next refresh window.
     await expect(pill).toHaveText("COMPLETE", { timeout: 15000 })
-    const detectedAt = Date.now()
-
-    // The row is pinned in ACTIVE with the settle class; the pill flashes
-    // inverse twice at 700ms per iteration (§5 exception 700×2+1400).
-    const row = page.locator(".act-row", { hasText: "Settle Paper" })
-    await expect(row).toHaveClass(/act-settle/)
-    await expect(activeSection(page).locator(".act-row", { hasText: "Settle Paper" })).toHaveCount(1)
-    await expect(pill).toHaveCSS("animation-name", "act-flash")
-    await expect(pill).toHaveCSS("animation-duration", "0.7s")
-    await expect(pill).toHaveCSS("animation-iteration-count", "2")
 
     // After the ~1.4s hold the row drops into FINISHED.
     await expect(finishedSection(page).locator(".act-row", { hasText: "Settle Paper" })).toHaveCount(1, {
-      timeout: 6000,
+      timeout: 15000,
     })
-    expect(Date.now() - detectedAt).toBeGreaterThan(1000)
+    const beat = await beatPromise
+
+    // While held in ACTIVE the row carried the settle class and the pill
+    // flashed inverse twice at 700ms per iteration (§5 exception 700×2+1400).
+    expect(beat.pillText).toBe("COMPLETE")
+    expect(beat.animName).toBe("act-flash")
+    expect(beat.animDur).toBe("0.7s")
+    expect(beat.animIter).toBe("2")
+    expect(beat.holdMs).toBeGreaterThan(1000)
     await expect(activeSection(page).locator(".act-row")).toHaveCount(0)
   })
 

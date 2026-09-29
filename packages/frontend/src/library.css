@@ -336,6 +336,8 @@
 }
 
 .lib-caption {
+  /* Positioning context for the card's overlay action cluster. */
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 10px;
@@ -351,6 +353,12 @@
 }
 
 .lib-caption-meta {
+  /* May shrink and truncate: a wide transcoded readout (e.g. "1920x1080 ·
+     HEVC · 95.4 MB ↓80%") takes the full row at rest; under hover the
+     overlay action cluster covers its tail. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 9px;
   letter-spacing: 0.06em;
   color: var(--pt-dim);
@@ -368,6 +376,22 @@
   gap: 10px;
   opacity: 0;
   transition: opacity var(--dur-exit) var(--ease-out);
+}
+
+/* Cards: the cluster overlays the caption's right end instead of sitting
+   in flow. In flow it reserved its width even while opacity-hidden —
+   squeezing title/meta to a few characters at rest — and a wide meta
+   could push it past the card's right edge (ticket 15 regression test:
+   hover PLAY on the first card). The overlay owns the row under hover on
+   an opaque chip and can never leave the card. Ledger rows keep the
+   flow layout: they are wide enough. */
+.lib-card .lib-actions {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  margin-left: 0;
+  padding-left: 10px;
+  background: var(--pt-bg);
 }
 
 .lib-card:focus-within .lib-actions,
@@ -467,10 +491,18 @@
   }
 }
 
-/* F1 (spec §5): the scrim exits WITH the panel — same 150ms, same curve. */
+/* F1 (spec §5): the scrim exits WITH the panel — same 150ms, same curve.
+ * Keyframes, not a transition: the lingering fill:both entrance animation
+ * re-resolves its implicit `to` against the class's opacity and snaps to 0
+ * with no transition at all; a replacement animation overrides it cleanly. */
 .ldet-scrim-out {
-  opacity: 0;
-  transition: opacity var(--dur-exit) var(--ease-out);
+  animation: ldet-scrim-out var(--dur-exit) var(--ease-out) both;
+}
+
+@keyframes ldet-scrim-out {
+  to {
+    opacity: 0;
+  }
 }
 
 .ldet-panel {
@@ -506,11 +538,14 @@
 }
 
 .ldet-closing {
-  opacity: 0;
-  transform: translateY(10px);
-  transition:
-    opacity var(--dur-exit) var(--ease-out),
-    transform var(--dur-exit) var(--ease-out);
+  animation: ldet-out var(--dur-exit) var(--ease-out) both;
+}
+
+@keyframes ldet-out {
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 }
 
 /* Near-invisible grain (3%) + static specular, same recipe as the dock. */
@@ -798,5 +833,12 @@ html[data-theme="light"] .ldet-panel::after {
     animation-name: ldet-in-fade;
     animation-duration: 200ms;
     animation-delay: 0ms;
+  }
+
+  /* F5: the exit beat is an instant cut — no fade. */
+  .ldet-closing,
+  .ldet-scrim-out {
+    animation: none;
+    opacity: 0;
   }
 }
