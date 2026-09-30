@@ -144,9 +144,11 @@ causes a brief playback interruption. For removal, read [Uninstall](../uninstall
   layer + DOM liquid-glass thumb, position/length LERP, idle auto-hide,
   pointer-capture drag with readout chip, track-click jump, and a parking
   rAF loop (`data-raf` reflects running/parked). It reads/writes the live
-  lenis instance via `getLenis()` from `useLenis.ts`; because lenis binds
-  wrapper === content, `useLenis` also observes the page root and calls
-  `lenis.resize()` so appends never leave `lenis.limit` stale. Reduced
+  lenis instance via `getLenis()` from `useLenis.ts`; lenis binds
+  wrapper === content and runs with `naiveDimensions`, so `lenis.limit` is
+  read live from the scroller on every access — cached dimensions can't see
+  content growth here, and observing a page root node instead would freeze
+  the limit when SPA route swaps detach it. Reduced
   motion never mounts the component and keeps the native thin scrollbar.
 - Ticket 14 (spec §9) covered the auth pages and the mobile fallbacks:
   Login/Setup are typographic skeleton pages in

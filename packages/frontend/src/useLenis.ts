@@ -27,16 +27,15 @@ export const useLenis = (scrollerRef: RefObject<HTMLElement | null>): void => {
       content: scroller,
       lerp: 0.09,
       smoothWheel: true,
+      // wrapper === content: lenis's cached Dimensions can never see growth —
+      // its ResizeObservers watch the wrapper box, which doesn't change when
+      // only scrollHeight does, and observing firstElementChild instead leaves
+      // the limit frozen after an SPA route swap (the observed node detaches),
+      // killing wheel scrolling and clamping scrollbar drags at a stale limit.
+      // Naive dimensions read scrollHeight/clientHeight live on every access.
+      naiveDimensions: true,
     })
     activeLenis = lenis
-
-    // With wrapper === content, lenis's own ResizeObserver can't see growth:
-    // the scroller's box never changes when only its scrollHeight does, so
-    // after an infinite-scroll append `lenis.limit` would stay stale and
-    // clamp wheel/drag scrolling. Observe the page root and re-measure.
-    const content = scroller.firstElementChild
-    const ro = new ResizeObserver(() => lenis.resize())
-    if (content) ro.observe(content)
 
     let raf = 0
     const tick = (time: number) => {
@@ -47,7 +46,6 @@ export const useLenis = (scrollerRef: RefObject<HTMLElement | null>): void => {
 
     return () => {
       cancelAnimationFrame(raf)
-      ro.disconnect()
       activeLenis = null
       lenis.destroy()
     }

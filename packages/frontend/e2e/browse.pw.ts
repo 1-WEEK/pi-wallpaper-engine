@@ -1578,6 +1578,47 @@ test.describe("Browse functional scrollbar (ticket 07)", () => {
     const lightFill = await thumb.evaluate((el) => getComputedStyle(el).backgroundColor)
     expect(lightFill).toBe("rgba(255, 255, 255, 0.32)")
   })
+
+  /* Regression (useLenis naiveDimensions): an SPA route swap must not freeze
+     lenis's scroll limit — the old ResizeObserver watched the first content
+     node, which detaches on navigation, leaving the wheel dead and drags
+     clamped at a stale limit once the old page unmounted on a shorter one. */
+  test("wheel and drag survive an SPA route swap away and back", async ({ page }) => {
+    await bootScrollbarGrid(page, 3)
+    const scroller = page.locator(".main")
+
+    await page.mouse.move(720, 450)
+    await page.mouse.wheel(0, 600)
+    await expect
+      .poll(() => scroller.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(100)
+
+    await page.locator(".rail-nav-link", { hasText: "Library" }).click()
+    await expect(page.locator(".bws")).toHaveCount(0)
+    await page.locator(".rail-nav-link", { hasText: "Browse" }).click()
+    await expect(page.locator(".bws-card").first()).toBeVisible({ timeout: 15000 })
+    await expect(page.locator(".fbar")).toHaveAttribute("data-raf", "off", { timeout: 8000 })
+
+    // Wheel was fully dead here (limit frozen at 0 by the unmount resize).
+    await page.mouse.move(720, 450)
+    await page.mouse.wheel(0, 600)
+    await expect
+      .poll(() => scroller.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(100)
+
+    // …and the drag clamped at the stale limit instead of reaching the target.
+    await scroller.evaluate((el) => el.scrollTo(0, 0))
+    const geo = await barGeometry(page)
+    const cx = geo.left + geo.width - 6.5
+    await page.mouse.move(cx, geo.top + geo.y + geo.len / 2)
+    await expect(page.locator(".fbar")).toHaveClass(/is-on/)
+    await page.mouse.down()
+    await page.mouse.move(cx, geo.top + geo.H * 0.6, { steps: 10 })
+    await page.mouse.up()
+    await expect
+      .poll(() => scroller.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(geo.ms * 0.4)
+  })
 })
 
 test.describe("Browse functional scrollbar: reduced motion (ticket 07)", () => {
