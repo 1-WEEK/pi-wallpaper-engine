@@ -102,11 +102,13 @@
     linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.07) 50%, transparent 58%);
 }
 
-/* Light theme: clear water over cream — low fill, strong white rim. */
+/* Light theme: clear water over cream — low fill, strong white rim. The
+   blur/saturate/brightness recipe is the §2.4 literal, same as every other
+   glass surface (fbar thumb, ldet, set-sheet, auth-focus). */
 html[data-theme="light"] .pbar-inner {
   background: rgba(255, 255, 255, 0.32);
-  -webkit-backdrop-filter: blur(28px) saturate(1.6) brightness(1.05);
-  backdrop-filter: blur(28px) saturate(1.6) brightness(1.05);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.85),
     inset 0 -1px 1px rgba(0, 0, 0, 0.12),
@@ -372,8 +374,8 @@ html[data-theme="light"] .pbar-cluster button.active {
 
 html[data-theme="light"] .pbar-pop {
   background: rgba(255, 255, 255, 0.32);
-  -webkit-backdrop-filter: blur(28px) saturate(1.6) brightness(1.05);
-  backdrop-filter: blur(28px) saturate(1.6) brightness(1.05);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.85),
     inset 0 -1px 1px rgba(0, 0, 0, 0.12),

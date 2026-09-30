@@ -115,6 +115,56 @@ test.describe("interface sound layer", () => {
     expect((await probe(page)).osc).toBe(before + 1)
   })
 
+  test("nav and transport fire at pointerdown, exactly once per press", async ({ page }) => {
+    await installProbe(page, { enabled: true })
+    const summary = mockSystemSummary()
+    summary.status.player = {
+      ...summary.status.player,
+      playing: true,
+      current_workshop_id: "1693728660",
+      current_title: "Neon City",
+    }
+    await mockShell(page, summary)
+    await page.route("**/api/player/next", (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+    )
+    await page.goto("/browse")
+
+    // Sound spec §3: the nav family's trigger point is pointerdown (same
+    // frame as :active) — dispatching pointerdown alone already sounds.
+    const before = (await probe(page)).osc
+    await page.locator(".rail-nav-link", { hasText: "Library" }).dispatchEvent("pointerdown")
+    expect((await probe(page)).osc).toBe(before + 1)
+    // The trailing click (navigation semantic layer) must NOT double-fire…
+    await page.locator(".rail-nav-link", { hasText: "Library" }).click()
+    await expect(page).toHaveURL(/\/library/)
+    expect((await probe(page)).osc).toBe(before + 2) // one for the bare press, one for the click
+
+    // …and the press+release of a single real click is exactly one voice.
+    const mid = (await probe(page)).osc
+    await page.locator(".rail-nav-link", { hasText: "Browse" }).click()
+    expect((await probe(page)).osc).toBe(mid + 1)
+
+    // Transport (commit family, 3 layers). Keyboard activation first — no
+    // pointerdown precedes it, so the click semantic layer fires the sound.
+    const k0 = (await probe(page)).osc
+    await page.getByRole("button", { name: "Next wallpaper" }).press("Enter")
+    expect((await probe(page)).osc).toBe(k0 + 3)
+
+    // …and the pointer path fires at pointerdown. (The waits step past the
+    // trigger's 80ms cooldown so each gesture is its own voice.)
+    await page.waitForTimeout(120)
+    const t0 = (await probe(page)).osc
+    await page.getByRole("button", { name: "Next wallpaper" }).dispatchEvent("pointerdown")
+    expect((await probe(page)).osc).toBe(t0 + 3)
+
+    // A full real click (press+release) is exactly one voice, not two.
+    await page.waitForTimeout(120)
+    const c0 = (await probe(page)).osc
+    await page.getByRole("button", { name: "Next wallpaper" }).click()
+    expect((await probe(page)).osc).toBe(c0 + 3)
+  })
+
   test("commit fires on download accept and PlayerBar transport", async ({ page }) => {
     await installProbe(page, { enabled: true })
     const summary = mockSystemSummary()

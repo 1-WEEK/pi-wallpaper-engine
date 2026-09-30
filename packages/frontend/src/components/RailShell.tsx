@@ -231,13 +231,28 @@ export const RailShell = ({
     []
   )
 
+  // Interface sound timing (ticket 13, sound spec §3): the nav family's
+  // trigger point is pointerdown — same frame as :active, ahead of the
+  // route commit. Navigation itself stays on the click semantic layer
+  // (keyboard Enter/Space, modified clicks); the click handler only fires
+  // the sound when no pointer press just did (keyboard path).
+  const navSoundAt = useRef<{ key: string; at: number } | null>(null)
+  const onNavPress = (item: (typeof navItems)[number]) => {
+    if (item.active) return
+    navSoundAt.current = { key: item.key, at: performance.now() }
+    sounds.trigger("nav")
+  }
+
   const onNavClick = (e: ReactMouseEvent<HTMLAnchorElement>, item: (typeof navItems)[number]) => {
     // wouter has already let modified clicks (new tab etc.) through; take
     // over the plain left click. Clicking the current page is a no-op.
     e.preventDefault()
     if (item.active) return
-    // Interface sound (ticket 13): nav family, with the active state.
-    sounds.trigger("nav")
+    // Interface sound (ticket 13): nav family, with the active state. Skip
+    // when onNavPress already fired it for this press (no double trigger).
+    const last = navSoundAt.current
+    if (!last || last.key !== item.key || performance.now() - last.at > 400)
+      sounds.trigger("nav")
     const target = linkRefs.current[item.key]
     if (!target || prefersReducedMotion()) {
       navigate(item.href)
@@ -270,6 +285,7 @@ export const RailShell = ({
                 coveredKey === item.key ? "is-covered" : ""
               }`}
               aria-current={item.active ? "page" : undefined}
+              onPointerDown={() => onNavPress(item)}
               onClick={(e) => onNavClick(e, item)}
               ref={(el: HTMLAnchorElement | null) => {
                 linkRefs.current[item.key] = el

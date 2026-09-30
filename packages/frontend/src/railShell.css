@@ -1,7 +1,9 @@
 /* ── RailShell (spec §2.3 / §3.1) ──────────────────────────────────
    300px sticky instrument rail: wordmark → plain-text nav → per-page
    control slot → THEME tri-state. Colors come exclusively from the
-   --pt-* token layer (tokens.css). Row baseline: 12px / padding 5px. */
+   --pt-* token layer (tokens.css). Row baseline: 12px / padding 5px
+   (spec §2.3, 07 票修订 — covers every rail row: nav plus the shared
+   lib-rc / set-rc ledger rows). */
 .rail {
   grid-column: 1;
   grid-row: 1 / -1;
@@ -99,8 +101,8 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 7px 0;
-  font-size: 14px;
+  padding: 5px 0;
+  font-size: 12px;
   color: var(--pt-dim);
   text-decoration: none;
   border-bottom: 1px solid var(--pt-line-soft);

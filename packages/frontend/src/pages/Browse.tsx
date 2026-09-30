@@ -30,6 +30,7 @@ import {
   RESOLUTION_TAGS,
   SORT_OPTIONS,
   displayTag,
+  parseSort,
   type WorkshopSort,
 } from "../workshopTags.js"
 
@@ -62,15 +63,12 @@ const loadPersisted = (): PersistedState => {
     return {
       query: parsed.query ?? "",
       tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-      sort: parsed.sort === "recent" || parsed.sort === "rating" ? parsed.sort : "trend",
+      sort: parseSort(parsed.sort),
     }
   } catch {
     return { query: "", tags: [], sort: "trend" }
   }
 }
-
-const parseSort = (raw: string | null): WorkshopSort =>
-  raw === "recent" || raw === "rating" ? raw : "trend"
 
 const parseTags = (raw: string | null): ReadonlyArray<string> =>
   raw ? raw.split(",").filter(Boolean) : []

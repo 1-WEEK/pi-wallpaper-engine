@@ -121,13 +121,14 @@
 }
 
 /* Ledger row grammar in the rail: name left + dotted leader + mark
-   right (●/○ selection, → command). */
+   right (●/○ selection, → command). Row baseline 12px / padding 5px —
+   spec §2.3 (07 票修订), shared by every page's rail rows. */
 .lib-rc-row {
   display: flex;
   align-items: baseline;
   width: 100%;
-  padding: 3px 0;
-  font-size: 11px;
+  padding: 5px 0;
+  font-size: 12px;
   letter-spacing: 0.06em;
   color: var(--pt-dim);
   background: none;
@@ -292,13 +293,18 @@
   object-fit: cover;
 }
 
-@media (hover: hover) and (pointer: fine) {
+/* Same hover prezoom grammar as Browse (spec §2.5): 250ms dwell before
+   the 400ms zoom (§5 exception budget for hover video crossfade); the
+   delay sits on the :hover rule so leaving early cancels and the return
+   is instant. Reduced motion keeps the still image — no zoom at all. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .lib-media-img {
-    transition: transform var(--dur-base) var(--ease-out);
+    transition: transform 400ms var(--ease-out);
   }
 
   .lib-card:hover .lib-media-img {
     transform: scale(1.045);
+    transition-delay: 250ms;
   }
 }
 

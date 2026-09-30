@@ -6,12 +6,18 @@
 // ("committed") before the caller's open transition runs.
 //
 // Focus migration is a shared-element FLIP slide (250ms --ease-slide, the
-// same paradigm as the 09 nav mask). A re-trigger mid-flight starts from the
-// PRESENTED value — the in-flight animation's current frame via
-// getComputedStyle, never the previous target — so rapid key repeats have no
-// velocity discontinuity (spec §5 F4). Layout shifts (resize, grid reflow)
-// snap instantly: ResizeObserver + window resize re-measure and cancel any
-// in-flight slide rather than animating to a moving target.
+// same paradigm as the 09 nav mask), transform-only like ghost.ts (spec §5
+// F6): the ring's box parks at the flight's FROM rect and the WAAPI runs
+// translate + scaleX/scaleY on the compositor — no layout properties
+// animate. The 2px dither band would thicken under scale, so the dither's
+// own padding flies the inverse compensation (2px → 2/scale, ghost.ts's
+// border-radius trick), keeping the band 2px wide throughout. A re-trigger
+// mid-flight starts from the PRESENTED value — the in-flight animation's
+// current frame via getComputedStyle, never the previous target — so rapid
+// key repeats have no velocity discontinuity (spec §5 F4). Layout shifts
+// (resize, grid reflow) snap instantly: ResizeObserver + window resize
+// re-measure and cancel any in-flight slide rather than animating to a
+// moving target.
 //
 // Reusable: ticket 08 (Library) mounts the same ring over its own grid/list.
 // The host element must carry .focus-ring-host (position + isolation — the
@@ -28,6 +34,9 @@ import { easeSlide } from "../motionTokens.js"
 export const FOCUS_SLIDE_MS = 250
 /** Enter confirm beat: dither out / XOR in before the open transition. */
 export const FOCUS_CONFIRM_MS = 120
+
+/** Visual width of the checker band (focusRing.css .focus-ring-dither). */
+const BAND_PX = 2
 
 interface Rect {
   x: number
@@ -55,7 +64,18 @@ export const FocusRing = ({
   commit?: boolean
 }) => {
   const ringRef = useRef<HTMLDivElement | null>(null)
+  const ditherRef = useRef<HTMLDivElement | null>(null)
   const prevRect = useRef<Rect | null>(null)
+  // The rect the ring's box is currently parked at (a flight's from, or the
+  // committed target at rest) — the base over which the animated matrix maps.
+  const parkedRect = useRef<Rect | null>(null)
+
+  const park = (ring: HTMLElement, rect: Rect) => {
+    ring.style.transform = `translate(${rect.x}px, ${rect.y}px)`
+    ring.style.width = `${rect.w}px`
+    ring.style.height = `${rect.h}px`
+    parkedRect.current = rect
+  }
 
   // Kept in a ref so the ResizeObserver closure always sees the latest
   // index/selector. animate=true FLIP-slides from the presented value;
@@ -85,45 +105,67 @@ export const FocusRing = ({
       (prev.x !== rect.x || prev.y !== rect.y || prev.w !== rect.w || prev.h !== rect.h)
     if (animate && moved && !prefersReducedMotion()) {
       // F4: capture the presented frame BEFORE cancelling the old animation,
-      // all within this frame so nothing flashes. The computed transform of an
-      // in-flight WAAPI animation is its current interpolated value.
+      // all within this frame so nothing flashes. During a flight the WAAPI
+      // owns the transform outright (absolute translate + scale keyframes),
+      // so the computed matrix maps the parked box to the presented rect.
       const inFlight = ring.getAnimations()
       let from = prev
+      const parked = parkedRect.current ?? prev
       if (inFlight.length > 0) {
-        const cs = getComputedStyle(ring)
-        const m = cs.transform.match(/matrix\(([^)]+)\)/)
+        const m = getComputedStyle(ring).transform.match(/matrix\(([^)]+)\)/)
         const parts = m?.[1]?.split(",").map(Number)
         from = {
-          x: parts?.[4] ?? prev.x,
-          y: parts?.[5] ?? prev.y,
-          w: parseFloat(cs.width),
-          h: parseFloat(cs.height),
+          x: parts?.[4] ?? parked.x,
+          y: parts?.[5] ?? parked.y,
+          w: parked.w * (parts?.[0] ?? 1),
+          h: parked.h * (parts?.[3] ?? 1),
         }
       }
       inFlight.forEach((a) => a.cancel())
-      ring.animate(
+      ditherRef.current?.getAnimations().forEach((a) => a.cancel())
+      // Transform FLIP (§5 F6): park the box at FROM and fly translate +
+      // scale to the target; nothing but transform animates.
+      park(ring, from)
+      const sx = rect.w / from.w
+      const sy = rect.h / from.h
+      const anim = ring.animate(
         [
-          {
-            transform: `translate(${from.x}px, ${from.y}px)`,
-            width: `${from.w}px`,
-            height: `${from.h}px`,
-          },
-          {
-            transform: `translate(${rect.x}px, ${rect.y}px)`,
-            width: `${rect.w}px`,
-            height: `${rect.h}px`,
-          },
+          { transform: `translate(${from.x}px, ${from.y}px) scale(1, 1)` },
+          { transform: `translate(${rect.x}px, ${rect.y}px) scale(${sx}, ${sy})` },
         ],
-        { duration: FOCUS_SLIDE_MS, easing: easeSlide }
+        { duration: FOCUS_SLIDE_MS, easing: easeSlide, fill: "forwards" }
+      )
+      // Band-width compensation: the checker band's thickness is the dither's
+      // padding, which would scale with the ring — fly it the inverse way so
+      // the band stays visually 2px (ghost.ts's border-radius trick). A no-op
+      // at scale 1 (uniform cards), so it only matters across a size change.
+      const ditherAnim =
+        sx === 1 && sy === 1
+          ? null
+          : ditherRef.current?.animate(
+              [
+                { padding: `${BAND_PX}px` },
+                { padding: `${BAND_PX / sy}px ${BAND_PX / sx}px` },
+              ],
+              { duration: FOCUS_SLIDE_MS, easing: easeSlide, fill: "forwards" }
+            )
+      if (ditherAnim) void ditherAnim.finished.catch(() => {})
+      anim.finished.then(
+        () => {
+          // Commit the landing: park on the target and drop the fills.
+          park(ring, rect)
+          anim.cancel()
+          ditherAnim?.cancel()
+        },
+        () => {}
       )
     } else if (!moved) {
       // Unchanged rect: leave any in-flight slide alone (unrelated re-render).
     } else {
       ring.getAnimations().forEach((a) => a.cancel())
+      ditherRef.current?.getAnimations().forEach((a) => a.cancel())
+      park(ring, rect)
     }
-    ring.style.transform = `translate(${rect.x}px, ${rect.y}px)`
-    ring.style.width = `${rect.w}px`
-    ring.style.height = `${rect.h}px`
     prevRect.current = rect
   }
 
@@ -159,7 +201,7 @@ export const FocusRing = ({
 
   return (
     <div ref={ringRef} className={`focus-ring${commit ? " commit" : ""}`} aria-hidden="true">
-      <div className="focus-ring-dither" />
+      <div ref={ditherRef} className="focus-ring-dither" />
       <div className="focus-ring-xor" />
       <span className="focus-ring-coord mono">
         C{col}·R{row}

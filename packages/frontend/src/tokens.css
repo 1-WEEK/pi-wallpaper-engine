@@ -56,6 +56,14 @@
   --pt-inv-text: #000000;
   /* Signal amber: status / activation only, weight ≤10% (spec §2.1). */
   --pt-accent: oklch(0.72 0.15 55);
+  /* Ink ON the signal amber: the accent is theme-constant, so its ink is
+     too — dark in both themes (mobile hot badge). Not overridden in the
+     light set. */
+  --pt-on-accent: #000000;
+  /* Light ink on scrims over imagery: scrim surfaces stay dark in both
+     themes (spec §2.1, theme-decoupled), so their ink is theme-constant.
+     Same role as the fixed rgba whites in browse.css's .pfocus block. */
+  --pt-scrim-ink: rgba(255, 255, 255, 0.92);
   /* Error readings (state blocks, inline card errors). */
   --pt-danger: rgba(255, 124, 124, 0.85);
 

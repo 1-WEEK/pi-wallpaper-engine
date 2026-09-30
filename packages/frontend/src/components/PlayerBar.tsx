@@ -115,6 +115,22 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const hasCurrent = !!player?.current_workshop_id
   const sleepLeft = sleepMinutesLeft(summary?.status.sleep ?? null)
 
+  // Interface sound timing (ticket 13, sound spec §3): the transport row's
+  // trigger point is pointerdown — the commit family sounds on the same
+  // frame as :active, ahead of the API round-trip. Play/pause/skip itself
+  // stays on the click semantic layer (keyboard Enter/Space); the click
+  // handler only fires the sound when no pointer press just did.
+  const transportSoundAt = useRef<{ id: string; at: number } | null>(null)
+  const transportPress = (id: string) => {
+    transportSoundAt.current = { id, at: performance.now() }
+    sounds.trigger("transport")
+  }
+  const transportClick = (id: string) => {
+    const last = transportSoundAt.current
+    if (!last || last.id !== id || performance.now() - last.at > 400)
+      sounds.trigger("transport")
+  }
+
   const runAction = async (action: () => Promise<unknown>) => {
     setPending(true)
     setError(null)
@@ -350,9 +366,10 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
             type="button"
             aria-label="Previous wallpaper"
             disabled={pending}
+            onPointerDown={() => transportPress("prev")}
             onClick={() => {
               // Interface sound (ticket 13): commit family, icon-swap frame.
-              sounds.trigger("transport")
+              transportClick("prev")
               void runAction(() => api.playerPrev())
             }}
           >
@@ -363,8 +380,9 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
             className="pbar-primary"
             aria-label={player.playing ? "Pause playback" : "Resume playback"}
             disabled={!hasCurrent || pending}
+            onPointerDown={() => transportPress("play")}
             onClick={() => {
-              sounds.trigger("transport")
+              transportClick("play")
               void runAction(() => (player.playing ? api.pause() : api.resume()))
             }}
           >
@@ -374,8 +392,9 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
             type="button"
             aria-label="Next wallpaper"
             disabled={pending}
+            onPointerDown={() => transportPress("next")}
             onClick={() => {
-              sounds.trigger("transport")
+              transportClick("next")
               void runAction(() => api.playerNext())
             }}
           >

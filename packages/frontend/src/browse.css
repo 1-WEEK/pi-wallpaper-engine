@@ -127,14 +127,20 @@
 }
 
 /* Hover prezoom placeholder (spec §8.4: video preview deferred) —
-   hover-capable pointers only, still image under reduced motion. */
-@media (hover: hover) and (pointer: fine) {
+   hover-capable pointers only, still image under reduced motion.
+   Timing (spec §2.5): the preview only starts after a 250ms dwell, then
+   runs the 400ms crossfade budget (§5 registered exception: hover video
+   crossfade — the prezoom spends the same budget). The delay lives on the
+   :hover rule, so leaving early cancels the pending zoom and un-hover
+   always returns instantly (no delay on the way back). */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .bws-media-img {
-    transition: transform var(--dur-base) var(--ease-out);
+    transition: transform 400ms var(--ease-out);
   }
 
   .bws-card:hover .bws-media-img {
     transform: scale(1.045);
+    transition-delay: 250ms;
   }
 }
 
@@ -511,6 +517,11 @@ button.bws-add.is-static {
   margin-top: 6px;
 }
 
+/* Inverse-fill primary, but pinned to THEME[B]'s --pt-inv-bg /
+   --pt-inv-text values on purpose: the focus view sits on a fixed dark
+   scrim over imagery (theme-decoupled, spec §2.1 — see .pfocus above), so
+   the token pair itself would be wrong here — under THEME[A] it flips to
+   dark-on-cream and the button would sink into the dark scrim. */
 .pfocus-primary {
   padding: 8px 14px;
   border: none;

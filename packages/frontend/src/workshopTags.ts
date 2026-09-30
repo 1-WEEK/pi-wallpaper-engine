@@ -60,6 +60,15 @@ export const SORT_OPTIONS = [
 
 export type WorkshopSort = (typeof SORT_OPTIONS)[number]["value"]
 
+// Single whitelist for parsing an untrusted sort string (URL param or
+// persisted state) into a WorkshopSort. NOTE: the backend keeps its own
+// WorkshopSort union + parseSort (packages/backend/src/services/SteamWorkshop.ts,
+// packages/backend/src/routes/workshop.ts) — the double definition across
+// packages is intentional (no shared runtime dep for this leaf); keep the
+// value lists in sync when adding a sort.
+export const parseSort = (raw: string | null | undefined): WorkshopSort =>
+  raw === "recent" || raw === "rating" ? raw : "trend"
+
 // Display abbreviation for the rail's narrow ledger rows. Filtering always
 // uses the real Steam tag; this is presentation only.
 export const displayTag = (tag: string): string =>

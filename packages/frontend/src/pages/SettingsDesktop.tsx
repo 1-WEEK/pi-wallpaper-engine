@@ -1031,7 +1031,6 @@ export const SettingsDesktop = ({ summary, onRefresh }: Props) => {
   const migratePct = migration
     ? Math.min(100, Math.round((migration.moved_bytes / Math.max(1, migration.total_bytes)) * 100))
     : 0
-  const storageAttn = migration !== null && migration.state !== "done"
   const health = summary ? buildHealthItems(summary) : []
   const warnCount = health.filter((h) => h.warn).length
 
@@ -1072,7 +1071,9 @@ export const SettingsDesktop = ({ summary, onRefresh }: Props) => {
         <div className="set-rc">
           <div className="set-rc-head mono">SECTIONS</div>
           {railRow("playback", "Playback")}
-          {railRow("storage", "Storage", storageAttn)}
+          {/* Migration state reads through the head count (MIGRATING n%) —
+              the `!` badge is reserved for System anomalies (spec §4.4). */}
+          {railRow("storage", "Storage")}
           {railRow("access", "Access & Security")}
         </div>
         <div className="set-rc set-rc-sys">{railRow("system", "System", warnCount > 0)}</div>

@@ -3,6 +3,9 @@ import { Effect } from "effect"
 import { DEFAULT_PAGE_SIZE, SteamWorkshop, type WorkshopSort } from "../services/SteamWorkshop.js"
 import type { AppRuntime } from "../runtime.js"
 
+// Mirrors the frontend's WorkshopSort/parseSort (packages/frontend/src/
+// workshopTags.ts) — the cross-package double definition is intentional;
+// keep the value lists in sync when adding a sort.
 const parseSort = (raw: string | undefined): WorkshopSort =>
   raw === "recent" || raw === "rating" ? raw : "trend"
 
