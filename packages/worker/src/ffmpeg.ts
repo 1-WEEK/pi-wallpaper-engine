@@ -157,6 +157,45 @@ export const detectEncoder = async (
   }
 }
 /**
+ * Rate control for the two hardware encoders, which used to run at constant
+ * quality with no ceiling (`-global_quality` / `-qp`). On grainy, high-motion
+ * wallpapers that emitted 22.4 Mbps out of a 12 Mbps source — an artifact
+ * bigger than the file it was made from — under a declared HEVC level 4.0,
+ * whose Main tier allows 12 Mbps.
+ *
+ * QVBR is the only mode that keeps a quality target *and* enforces
+ * bitrate + maxrate + VBV; see the rc-mode table in
+ * libavcodec/vaapi_encode.c (Bitrate/Maxrate/Quality/HRD all set), and
+ * libavcodec/qsvenc.c, which selects MFX_RATECONTROL_QVBR whenever
+ * global_quality and bit_rate are both set. VBR alone would be wrong: with no
+ * quality target it would inflate today's 1–8 Mbps artifacts up to the target.
+ * The quality factor stays `job.target_quality`, so easy content still lands
+ * wherever quality 23 puts it and only expensive content feels the cap.
+ *
+ * The target is what the driver aims for; maxrate is the hard bound (12 Mbps =
+ * ~1.5 MB/s), and bufsize gives the VBV a 1 s window.
+ */
+const HW_BITRATE_TARGET = "10M"
+const HW_BITRATE_MAX = "12M"
+const HW_VBV_BUFFER = "12M"
+
+/**
+ * Declared hardware level, per encoder — the two take different scales:
+ *   - hevc_qsv/h264_qsv take MFX level codes, where MFX_LEVEL_HEVC_5 /
+ *     MFX_LEVEL_AVC_5 = 50.
+ *   - hevc_vaapi/h264_vaapi take the codec's own level syntax, where the name
+ *     "5" resolves to general_level_idc 150 (HEVC) / level_idc 50 (AVC).
+ * Level 5.0 is the lowest level that holds for every frame rate in the library
+ * at 1200x1080 — the range observed is 16–100 fps, and 4.1 caps the luma
+ * sample rate at ~103 fps while 4.0 caps it at ~52 fps. Its 25 Mbps Main tier
+ * bound sits above the 12 Mbps ceiling above, so the declared level can never
+ * be contradicted by what this pipeline emits. (hevc_qsv additionally defaults
+ * the tier to High, whose 100 Mbps allows the same ceiling comfortably.)
+ */
+const QSV_LEVEL = "50"
+const VAAPI_LEVEL = "5"
+
+/**
  * Build the ffmpeg argv for a given encoder + job. Pure — no side effects.
  * Exported for unit testing.
  */
@@ -209,8 +248,16 @@ export const buildFfmpegArgs = (
       `${cropBox},hwupload=extra_hw_frames=64,format=qsv,scale_qsv=w=${w}:h=${h}:mode=hq`,
       "-c:v",
       "hevc_qsv",
+      "-level",
+      QSV_LEVEL,
       "-global_quality",
       String(q),
+      "-b:v",
+      HW_BITRATE_TARGET,
+      "-maxrate",
+      HW_BITRATE_MAX,
+      "-bufsize",
+      HW_VBV_BUFFER,
       "-pix_fmt",
       "nv12",
       "-movflags",
@@ -230,8 +277,18 @@ export const buildFfmpegArgs = (
       `${cropBox},format=nv12,hwupload,scale_vaapi=w=${w}:h=${h}:mode=hq`,
       "-c:v",
       enc,
-      "-qp",
+      "-level",
+      VAAPI_LEVEL,
+      "-rc_mode",
+      "QVBR",
+      "-global_quality",
       String(q),
+      "-b:v",
+      HW_BITRATE_TARGET,
+      "-maxrate",
+      HW_BITRATE_MAX,
+      "-bufsize",
+      HW_VBV_BUFFER,
       "-movflags",
       "+faststart",
       paths.partialAbs,

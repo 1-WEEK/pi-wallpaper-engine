@@ -39,6 +39,15 @@ describe("buildFfmpegArgs", () => {
     )
     expect(args).toContain("-global_quality")
     expect(args[args.indexOf("-global_quality") + 1]).toBe("23")
+    // Rate control: QVBR keeps the quality target but bounds the output.
+    expect(args).toContain("-level")
+    expect(args[args.indexOf("-level") + 1]).toBe("50")
+    expect(args).toContain("-b:v")
+    expect(args[args.indexOf("-b:v") + 1]).toBe("10M")
+    expect(args).toContain("-maxrate")
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("12M")
+    expect(args).toContain("-bufsize")
+    expect(args[args.indexOf("-bufsize") + 1]).toBe("12M")
     // Writes to .partial, not final.
     expect(args[args.length - 1]).toBe(paths.partialAbs)
   })
@@ -53,8 +62,21 @@ describe("buildFfmpegArgs", () => {
     expect(args[vfIndex + 1]).toBe(
       "crop=w='min(iw,ih*1200/1080)':h='min(ih,iw*1080/1200)',format=nv12,hwupload,scale_vaapi=w=1200:h=1080:mode=hq"
     )
-    expect(args).toContain("-qp")
-    expect(args[args.indexOf("-qp") + 1]).toBe("23")
+    // `-qp` would force CQP and override QVBR entirely, so it must be gone.
+    expect(args).not.toContain("-qp")
+    // Rate control: QVBR keeps the quality target but bounds the output.
+    expect(args).toContain("-rc_mode")
+    expect(args[args.indexOf("-rc_mode") + 1]).toBe("QVBR")
+    expect(args).toContain("-global_quality")
+    expect(args[args.indexOf("-global_quality") + 1]).toBe("23")
+    expect(args).toContain("-level")
+    expect(args[args.indexOf("-level") + 1]).toBe("5")
+    expect(args).toContain("-b:v")
+    expect(args[args.indexOf("-b:v") + 1]).toBe("10M")
+    expect(args).toContain("-maxrate")
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("12M")
+    expect(args).toContain("-bufsize")
+    expect(args[args.indexOf("-bufsize") + 1]).toBe("12M")
     expect(args[args.length - 1]).toBe(paths.partialAbs)
   })
 
@@ -63,8 +85,28 @@ describe("buildFfmpegArgs", () => {
     const args = buildFfmpegArgs(h264Job, paths, "vaapi")
     expect(args).toContain("h264_vaapi")
     expect(args).not.toContain("hevc_vaapi")
+    // The h264 sub-path carries the same bound as the HEVC one.
+    expect(args[args.indexOf("-rc_mode") + 1]).toBe("QVBR")
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("12M")
   })
 
+
+  test("both hardware paths bound the bitrate and declare a level", () => {
+    for (const encoder of ["qsv", "vaapi"] as const) {
+      const args = buildFfmpegArgs(job, paths, encoder)
+      // A ceiling is mandatory: without these the hardware encoder runs at
+      // unbounded constant quality (22.4 Mbps measured on a 12 Mbps source).
+      expect(args).toContain("-maxrate")
+      expect(args[args.indexOf("-maxrate") + 1]).toBe("12M")
+      expect(args).toContain("-bufsize")
+      expect(args[args.indexOf("-bufsize") + 1]).toBe("12M")
+      expect(args).toContain("-b:v")
+      expect(args[args.indexOf("-b:v") + 1]).toBe("10M")
+      // ...and the declared level must be able to hold that ceiling.
+      expect(args).toContain("-level")
+      expect(args[args.indexOf("-level") + 1]).toBe(encoder === "qsv" ? "50" : "5")
+    }
+  })
 
   test("libx265 fallback crops to fill then scales, with crf and -preset medium", () => {
     const args = buildFfmpegArgs(job, paths, "x265")
