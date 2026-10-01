@@ -24,6 +24,8 @@ Run commands from the repository root unless a command says otherwise.
 | Production frontend build | `bun run build` |
 | Browser workflows | `bun run test:e2e` |
 | Pi dependencies, Steam login, display and decode diagnostics | `bun run check` |
+| Media-root outage/recovery behavior (real mpv, isolated namespace) | `bash scripts/smoke-media-root-recovery.sh` |
+| systemd unit mount ordering | `bash scripts/check-service-unit.sh` |
 | Documentation only | Check links, named paths and scripts, then `git diff --check` |
 
 [CI](../../.github/workflows/ci.yml) runs tests, typechecking, the frontend build,
@@ -102,6 +104,50 @@ journalctl --user -u pi-wallpaper-engine -f
 
 Start/stop/status are plain systemctl wrappers. The backend owns mpv, so a restart
 causes a brief playback interruption. For removal, read [Uninstall](../uninstall.md).
+
+### Media-root ordering
+
+The media root is usually a network mount, and the service must not race it at
+boot. `install-pi.sh --service` renders the unit through
+[render-service-unit.sh](../../scripts/render-service-unit.sh), which reads the
+media root from configuration (`storage.root` when set, otherwise
+`paths.data_root`) and orders the service after that path's mount unit with
+`After=` + `Wants=`. `systemd-escape` produces the unit name, so a deployment at
+`/srv/media` gets `srv-media.mount` and nothing is hardcoded to one share.
+Re-running the installer rewrites the unit in place, replacing any older
+ordering.
+
+It is deliberately **not** `RequiresMountsFor=`. That directive is shorthand for
+`Requires=` + `After=`, so a failed mount unit would take the service down with
+it — and the web UI is the only place an administrator can see and fix "the
+share is not mounted", so failing it is strictly worse than starting without the
+share.
+
+**Scope limitation (measured 2026-10-01).** This service is a *user* unit, and
+the shelf-generated mounts are *system* units. The user manager cannot resolve a
+system unit name: `systemctl --user show systemd-journald.service` reports
+`LoadState=not-found`, and for the mount unit itself the user manager reports
+`FragmentPath=` with `SourcePath=/proc/self/mountinfo` — it mirrors a filesystem
+that is *already* mounted, and has no unit file to start. So the emitted
+`After=`/`Wants=` orders nothing while the share is still down, which is exactly
+the boot window it was meant to cover; the name is unresolvable and the
+dependency is inert. The directive is retained because it is correct and becomes
+effective whenever the mount resolves in the same manager (a user-scope mount, or
+if this service is ever converted to a system unit), and it is harmless
+otherwise.
+
+What actually delivers the outcome — a normal boot ends with the wallpaper
+playing — is the runtime recovery, which handles a mount that arrives at any
+point: the startup restore fails against the absent share, and the media-root
+watch resumes the wallpaper as soon as the path answers. See
+[Playback and Display](backend.md#playback-and-display). Cross-manager ordering
+would only shorten the gap; it cannot be the guarantee.
+
+Verify the rendering without installing:
+
+```bash
+bash scripts/check-service-unit.sh
+```
 
 ## Frontend
 

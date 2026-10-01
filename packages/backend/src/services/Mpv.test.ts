@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer, ManagedRuntime, Ref } from "effect"
-import { Mpv, type MpvImpl, type PlayerStatus, shouldReassertFullscreen } from "./Mpv.js"
+import { Effect, Layer, ManagedRuntime, Ref, Stream } from "effect"
+import { Mpv, type MpvImpl, type PlayerStatus, shouldConvergeToIdle, shouldReassertFullscreen } from "./Mpv.js"
 import type { DisplayMode } from "@pwe/shared"
 
 // ── Mock factory ──────────────────────────────────────────────
@@ -79,6 +79,10 @@ const makeMockMpv = Effect.sync((): MockMpvMemento => {
       }),
 
     status: () => Ref.get(statusRef),
+
+    // The mock has no IPC socket, so no end-of-file events; consumers that
+    // subscribe get a stream that never emits.
+    ended: () => Stream.empty,
   }
 
   return { impl, statusRef, sentCommands }
@@ -327,5 +331,42 @@ describe("shouldReassertFullscreen", () => {
     expect(shouldReassertFullscreen({ event: "idle" })).toBe(false)
     expect(shouldReassertFullscreen(null)).toBe(false)
     expect(shouldReassertFullscreen("property-change")).toBe(false)
+  })
+})
+
+// A wallpaper's file can stop without this backend asking: the share holding it
+// went away, the file was deleted, a decode failed. mpv reports that as
+// `end-file`, and the player has to converge to idle instead of reporting a
+// wallpaper that is not on screen any more.
+describe("shouldConvergeToIdle", () => {
+  test("true for the reasons that mean the file stopped on its own", () => {
+    expect(shouldConvergeToIdle({ event: "end-file", reason: "eof" })).toBe(true)
+    expect(shouldConvergeToIdle({ event: "end-file", reason: "error" })).toBe(true)
+    expect(shouldConvergeToIdle({ event: "end-file", reason: "unknown" })).toBe(true)
+  })
+
+  test("false for the reasons this backend caused", () => {
+    // `stop` and `quit` are ours; `stop()` already converged the status ref and
+    // treating them as a lost file would re-enter the recovery path on every
+    // ordinary stop.
+    expect(shouldConvergeToIdle({ event: "end-file", reason: "stop" })).toBe(false)
+    expect(shouldConvergeToIdle({ event: "end-file", reason: "quit" })).toBe(false)
+  })
+
+  test("true for an end with no reason field", () => {
+    // mpv versions have shipped `end-file` without `reason`; an unknown end is
+    // still an end, and the consumer probes the media root before acting.
+    expect(shouldConvergeToIdle({ event: "end-file" })).toBe(true)
+    expect(shouldConvergeToIdle({ event: "end-file", reason: "redirect" })).toBe(true)
+  })
+
+  test("false for other events, command replies and non-objects", () => {
+    expect(shouldConvergeToIdle({ event: "idle" })).toBe(false)
+    expect(shouldConvergeToIdle({ error: "success", request_id: 3 })).toBe(false)
+    expect(shouldConvergeToIdle({ event: "property-change", name: "fullscreen", data: false })).toBe(
+      false
+    )
+    expect(shouldConvergeToIdle(null)).toBe(false)
+    expect(shouldConvergeToIdle("end-file")).toBe(false)
   })
 })

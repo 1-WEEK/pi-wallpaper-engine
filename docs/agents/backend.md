@@ -97,6 +97,21 @@ linkage; [Rotation](../../packages/backend/src/services/Rotation.ts) owns sequen
 - Display commands are optional argv arrays executed directly with `Bun.spawn`.
   Keep them non-interactive (including any required sudo configuration) and retain
   the five-second timeout. An unconfigured display operation returns 503.
+- The media root can be absent at boot or disappear mid-playback, so nothing may
+  treat "not mounted right now" as "nothing to play".
+  [MediaRootWatch](../../packages/backend/src/services/MediaRootWatch.ts) probes
+  the root (`AVAILABLE_TICK` while reachable, `UNAVAILABLE_BACKOFF_CAP` while not,
+  and `probeNow()` to collapse the wait) and republishes *every* reachable probe.
+  `PlayerPower` retries a held wallpaper on those probes for `media_lost` and
+  `startup` reasons only — `display_off`, `manual_stop` and `auto_off` are
+  deliberate holds the user made and are never overridden. `Playback` arms
+  rotation on `PlayerPower.recovered()` (ADR 0009). `Mpv.ended()` reports files
+  that stop on their own; the consumer probes the root before acting, because a
+  codec failure and a vanished share look identical from mpv's side.
+- `Storage.status()` derives `available` and `last_error` from one fresh probe per
+  read, so a recovery clears the error with no cache to invalidate, and
+  `last_error` always names the causing path. Keep it that way: a cached verdict
+  would outlive the outage it describes.
 - Mpv is a backend-owned subprocess. Restarting the backend interrupts playback.
   For Pi flags and installation details, read [Pi Runtime](development.md#pi-runtime).
 

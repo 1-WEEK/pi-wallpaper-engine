@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime, Queue, Stream } from "effect"
 import type { PlayMode } from "@pwe/shared"
 import { DbError, DisplayError, MpvIpcError } from "@pwe/shared"
 import { Logger } from "./Logger.js"
@@ -20,6 +20,9 @@ interface FakeFailures {
 const makeRuntime = (failures: FakeFailures = {}) => {
   const events: string[] = []
   const warnings: string[] = []
+  // A Queue rather than a PubSub so a test can hand the service a wallpaper
+  // recovery without racing the subscription registration.
+  const recoveries = Effect.runSync(Queue.unbounded<string>())
 
   const playerPowerLayer = Layer.succeed(PlayerPower, {
     play: (workshopId: string) =>
@@ -57,6 +60,7 @@ const makeRuntime = (failures: FakeFailures = {}) => {
             }
           : { ok: true as const, state: "on" as const, restored: false }
       }),
+    recovered: () => Stream.fromQueue(recoveries),
   })
 
   const rotationLayer = Layer.succeed(Rotation, {
@@ -89,13 +93,16 @@ const makeRuntime = (failures: FakeFailures = {}) => {
   return {
     events,
     warnings,
+    /** Hand the orchestrator a wallpaper that PlayerPower restored on its own. */
+    recovered: (workshopId: string) =>
+      Queue.offer(recoveries, workshopId).pipe(Effect.andThen(Effect.sleep("50 millis"))),
     runtime: ManagedRuntime.make(PlaybackLive.pipe(Layer.provide(envLayer))),
   }
 }
 
 describe("PlaybackLive", () => {
   test("play runs playerPower.play first, then arms rotation with the workshop id", async () => {
-    const { events, runtime } = makeRuntime()
+    const { events, runtime, recovered } = makeRuntime()
     try {
       const result = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.play("123")))
       expect(result).toEqual({ ok: true, path: "/media/source/123/video.mp4" })
@@ -106,7 +113,7 @@ describe("PlaybackLive", () => {
   })
 
   test("play still succeeds when arming rotation fails", async () => {
-    const { events, runtime } = makeRuntime({ armFails: true })
+    const { events, runtime, recovered } = makeRuntime({ armFails: true })
     try {
       const result = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.play("123")))
       expect(result).toEqual({ ok: true, path: "/media/source/123/video.mp4" })
@@ -117,7 +124,7 @@ describe("PlaybackLive", () => {
   })
 
   test("stop disarms rotation strictly before playerPower.stopForIdle", async () => {
-    const { events, runtime } = makeRuntime()
+    const { events, runtime, recovered } = makeRuntime()
     try {
       const result = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.stop()))
       expect(result).toEqual({ ok: true })
@@ -128,7 +135,7 @@ describe("PlaybackLive", () => {
   })
 
   test("displayOff disarms rotation strictly before playerPower.displayOff", async () => {
-    const { events, runtime } = makeRuntime()
+    const { events, runtime, recovered } = makeRuntime()
     try {
       const result = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.displayOff()))
       expect(result).toEqual({ ok: true, state: "off" })
@@ -139,7 +146,7 @@ describe("PlaybackLive", () => {
   })
 
   test("displayOn without a restore does not arm rotation", async () => {
-    const { events, runtime } = makeRuntime()
+    const { events, runtime, recovered } = makeRuntime()
     try {
       const result = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.displayOn()))
       expect(result).toEqual({ ok: true, state: "on", restored: false })
@@ -172,8 +179,57 @@ describe("PlaybackLive", () => {
     }
   })
 
+  test("a wallpaper PlayerPower restored on its own arms rotation too (ticket 01)", async () => {
+    // The media root came back and PlayerPower resumed the wallpaper without
+    // going through a route. Rotation linkage still belongs to Playback
+    // (ADR 0009), so the recovered signal has to arm the sequence — otherwise
+    // the device resumes playing one wallpaper and rotates never again.
+    const { events, runtime, recovered } = makeRuntime()
+    try {
+      await runtime.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* Effect.sleep("30 millis")
+            yield* recovered("456")
+          })
+        )
+      )
+
+      expect(events).toEqual(["rotation.arm:456"])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("a recovered wallpaper still plays when arming rotation fails", async () => {
+    const { events, runtime, recovered } = makeRuntime({ armFails: true })
+    try {
+      await runtime.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* Effect.sleep("30 millis")
+            yield* recovered("456")
+          })
+        )
+      )
+
+      expect(events).toEqual(["rotation.arm:456"])
+      // The loop is still alive after the failure: another recovery is served.
+      await runtime.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* recovered("789")
+          })
+        )
+      )
+      expect(events).toEqual(["rotation.arm:456", "rotation.arm:789"])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
   test("next, prev, setMode and setRotationInterval delegate to rotation with their arguments", async () => {
-    const { events, runtime } = makeRuntime()
+    const { events, runtime, recovered } = makeRuntime()
     try {
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -219,7 +275,7 @@ describe("PlaybackLive", () => {
   })
 
   test("sleep elapse disarms rotation before turning the display off", async () => {
-    const { events, runtime } = makeRuntime()
+    const { events, runtime, recovered } = makeRuntime()
     try {
       // Use a fractional minute to get a ~50 ms timeout
       const shortMs = 50

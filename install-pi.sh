@@ -237,8 +237,32 @@ if [ "$INSTALL_SERVICE" -eq 1 ]; then
     err "Cannot find 'bun' binary — abort"
     exit 1
   fi
-  sed "s|@@PROJECT_ROOT@@|$PROJECT_ROOT|g; s|@@HOME@@|$HOME|g; s|@@BUN_BIN@@|$BUN_BIN|g" \
-    "$PROJECT_ROOT/pi-wallpaper-engine.service" > "$SERVICE_DST"
+
+  # Order the service after the media root's mount attempt, without requiring
+  # it. The media root comes from configuration (storage.root, else
+  # data_root), the unit name from systemd-escape — see
+  # scripts/render-service-unit.sh for why this is After=/Wants= and never
+  # RequiresMountsFor=, and for the guard that checks the rendered unit.
+  #
+  # Rendering through that script (rather than an inline sed) also means a
+  # re-run over an existing install rewrites the ordering in place instead of
+  # leaving the previous unit's dependencies behind.
+  MOUNT_UNIT=""
+  if MEDIA_UNIT="$(PROJECT_ROOT="$PROJECT_ROOT" HOME="$HOME" BUN_BIN="$BUN_BIN" \
+      bash "$PROJECT_ROOT/scripts/render-service-unit.sh" \
+        "$CONFIG_PATH" \
+        "$PROJECT_ROOT/pi-wallpaper-engine.service" \
+        "$SERVICE_DST")"; then
+    MOUNT_UNIT="$MEDIA_UNIT"
+    if [ -n "$MOUNT_UNIT" ]; then
+      ok "Ordering after mount unit ${MOUNT_UNIT} (non-requiring)"
+    else
+      warn "No media root resolved — unit installed without mount ordering"
+    fi
+  else
+    err "Could not render the systemd unit — abort"
+    exit 1
+  fi
   ok "Wrote $SERVICE_DST"
 
   if ! loginctl show-user "$USER" 2>/dev/null | grep -q "Linger=yes"; then

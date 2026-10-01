@@ -1,4 +1,4 @@
-import { Context, Deferred, Effect, Layer, Queue, Ref } from "effect"
+import { Context, Deferred, Effect, Layer, PubSub, Queue, Ref, Stream } from "effect"
 import { unlinkSync } from "node:fs"
 import type { DisplayMode } from "@pwe/shared"
 import { MpvIpcError, MpvSpawnError } from "@pwe/shared"
@@ -28,6 +28,17 @@ export interface MpvImpl {
   readonly stop: () => Effect.Effect<void, MpvIpcError>
   readonly setDisplayMode: (mode: DisplayMode) => Effect.Effect<void, MpvIpcError>
   readonly status: () => Effect.Effect<PlayerStatus>
+  /**
+   * One emission each time the current file stops without this backend asking:
+   * the source vanished, was deleted, or failed to decode. `status()` has
+   * already converged to `playing: false` with `current_workshop_id` retained,
+   * so the consumer knows *what* stopped and can decide whether to bring it
+   * back.
+   *
+   * mpv idling on a file that no longer exists is otherwise indistinguishable
+   * from a healthy paused player (ticket 01, `.scratch/playback-mount-resilience`).
+   */
+  readonly ended: () => Stream.Stream<void>
 }
 
 export class Mpv extends Context.Service<Mpv, MpvImpl>()("Mpv") {}
@@ -50,6 +61,40 @@ export const shouldReassertFullscreen = (msg: unknown): boolean => {
 
 const SOCKET_CONNECT_RETRIES = 30
 const SOCKET_CONNECT_DELAY_MS = 200
+
+/**
+ * Whether an mpv event means "the current file stopped playing on its own".
+ *
+ * mpv emits `end-file` for every file end, including the ones this backend
+ * caused with `stop` or by loading a replacement, so `stop` and `quit` are
+ * excluded: those are backend-initiated and `stop()` already converges the
+ * status ref itself.
+ *
+ * What is left is every reason that means *the file stopped without being
+ * asked to*:
+ *
+ * - `eof` — mpv ran out of data. With `--loop=inf` that does not happen for a
+ *   handful of files mid-decode; for a wallpaper whose backing share vanished
+ *   while mpv was reading it, this is exactly what mpv reports once its buffer
+ *   drains, instead of an open error.
+ * - `error` — the file was unreadable or stopped decoding. The usual cause on
+ *   this device is the same vanished share; a genuinely corrupt file is the
+ *   other, far rarer one.
+ * - `unknown` — mpv's catch-all.
+ * - `redirect` — `--loop=inf` re-emitting `end-file` at each loop boundary. It
+ *   is webm/mkv loop metadata and therefore also the one reason that fires
+ *   *during healthy playback*.
+ *
+ * The consumer does not have to guess between those: it probes the media root
+ * before acting (see `PlayerPower`), which is the only way to tell "the share
+ * is gone" from "this file is broken".
+ */
+export const shouldConvergeToIdle = (msg: unknown): boolean => {
+  if (typeof msg !== "object" || msg === null) return false
+  const event = msg as Record<string, unknown>
+  if (event.event !== "end-file") return false
+  return event.reason !== "stop" && event.reason !== "quit"
+}
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
@@ -159,6 +204,10 @@ export const MpvLive = Layer.effect(
     })
 
     let buffer = ""
+    // `end-file` is rare by nature (once per file that actually ends), and the
+    // one consumer's reaction is a ref read plus at most one `access(2)`, so an
+    // unbounded queue cannot accumulate here.
+    const endedPubSub = yield* PubSub.unbounded<void>()
     const handleData = async (socket: UnixSocket, chunk: string) => {
       buffer += chunk
       const lines = buffer.split("\n")
@@ -188,6 +237,12 @@ export const MpvLive = Layer.effect(
                 await Effect.runPromise(Deferred.succeed(pending.deferred, msg.data ?? null))
               }
             }
+          } else if (shouldConvergeToIdle(msg)) {
+            // Converge before publishing: a consumer that reacts by restoring
+            // the wallpaper must see the player as idle, not as still playing
+            // the file mpv just dropped.
+            await Effect.runPromise(Ref.update(statusRef, (s) => ({ ...s, playing: false })))
+            await Effect.runPromise(PubSub.publish(endedPubSub, undefined))
           } else if (shouldReassertFullscreen(msg)) {
             // Write on the socket directly: the corrective command must not
             // depend on the command queue, which is wired up after this handler.
@@ -325,6 +380,8 @@ export const MpvLive = Layer.effect(
         }),
 
       status: () => Ref.get(statusRef),
+
+      ended: () => Stream.fromPubSub(endedPubSub),
     }
   })
 )

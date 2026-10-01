@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime, Stream } from "effect"
 import type { LibraryItem } from "@pwe/shared"
 import { Display, type DisplayStatus } from "./Display.js"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
+import { MediaRootWatch } from "./MediaRootWatch.js"
 import { Mpv } from "./Mpv.js"
 import {
   PlayerPower,
@@ -12,6 +13,7 @@ import {
   shouldPowerOnBeforePlay,
 } from "./PlayerPower.js"
 import { PlayerState } from "./PlayerState.js"
+import { Storage } from "./Storage.js"
 
 const libraryItem: LibraryItem = {
   workshop_id: "123",
@@ -78,6 +80,7 @@ const makeRuntime = (displayStatus: DisplayStatus) => {
         path: null,
         display_mode: "fill" as const,
       }),
+    ended: () => Stream.empty,
   })
 
   const playerStateLayer = Layer.succeed(PlayerState, {
@@ -86,12 +89,35 @@ const makeRuntime = (displayStatus: DisplayStatus) => {
     clearRestore: () => Effect.sync(() => events.push("playerState.clearRestore")),
   })
 
+  const storageLayer = Layer.succeed(Storage, {
+    status: () =>
+      Effect.succeed({
+        available: true,
+        data_root: "/media",
+        default_root: "/media",
+        using_default: true,
+        last_error: null,
+      }),
+    mediaRoot: () => Effect.succeed("/media"),
+    mediaRootOrNull: () => Effect.succeed("/media"),
+    saveRoot: () => Effect.die("unused in this test"),
+  })
+
+  // A watch that never reports a reachable probe: the recovery path is
+  // exercised by its own suite with a controllable stream.
+  const watchLayer = Layer.succeed(MediaRootWatch, {
+    availableProbes: () => Stream.never,
+    probeNow: () => Effect.void,
+  })
+
   const envLayer = Layer.mergeAll(
     displayLayer,
     libraryLayer,
     loggerLayer,
     mpvLayer,
-    playerStateLayer
+    playerStateLayer,
+    storageLayer,
+    watchLayer
   )
 
   return {

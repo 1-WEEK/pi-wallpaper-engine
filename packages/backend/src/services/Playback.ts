@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Ref } from "effect"
+import { Context, Effect, Layer, Ref, Stream } from "effect"
 import type {
   DbError,
   DisplayError,
@@ -80,6 +80,30 @@ export const PlaybackLive = Layer.effect(
     )
 
     yield* Effect.addFinalizer(() => clearSleep)
+
+    // Ticket 01 (media-root recovery): PlayerPower restores a wallpaper on its
+    // own when the media root comes back (a file that vanished mid-playback, or
+    // a startup restore that aborted). Rotation linkage stays owned here, per
+    // ADR 0009, so this is the one place that observes those restores and arms
+    // the sequence on them — the same thing `displayOn` does explicitly.
+    yield* Effect.forkScoped(
+      playerPower
+        .recovered()
+        .pipe(
+          Stream.mapEffect((workshopId) =>
+            rotation.arm(workshopId).pipe(
+              Effect.tap(() => logger.info(`Armed rotation on recovered wallpaper ${workshopId}`)),
+              Effect.catch(() => Effect.void)
+            )
+          ),
+          Stream.runDrain
+        )
+        .pipe(
+          Effect.catchCause((cause) =>
+            logger.error(`Recovery rotation arm loop failed: ${String(cause)}`)
+          )
+        )
+    )
 
     return {
       play: (workshopId) =>

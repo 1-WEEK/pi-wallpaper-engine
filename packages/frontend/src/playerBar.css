@@ -304,11 +304,18 @@ html[data-theme="light"] .pbar-cluster button.active {
   color: var(--pt-danger);
 }
 
-.pbar-error {
+/* The dock's single notice line: either a failed action or the media-root
+   outage (ticket 01). One rendered element, one rule. Clamped to two lines —
+   the storage message carries the causing path and can be long. */
+.pbar-notice {
   padding: 6px 4px 0;
   font-size: 10px;
   letter-spacing: 0.06em;
   color: var(--pt-danger);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 /* ── DISPLAY / SLEEP popovers (spec §5 F2) ──────────────────────────

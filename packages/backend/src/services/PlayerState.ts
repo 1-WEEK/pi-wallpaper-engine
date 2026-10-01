@@ -2,7 +2,16 @@ import { Context, Effect, Layer } from "effect"
 import { DbError } from "@pwe/shared"
 import { Db } from "./Db.js"
 
-export type RestoreReason = "manual_stop" | "display_off" | "auto_off"
+/**
+ * Why a wallpaper is held for restore.
+ *
+ * `media_lost` is ticket 01 of `.scratch/playback-mount-resilience`: the media
+ * root the current wallpaper lives on went away, so the wallpaper is neither
+ * playing nor stopped by choice. `startup` is the same ticket's other half: the
+ * backend meant to resume a wallpaper at boot, but the media root was not
+ * mounted yet. Both are retried by the recovery loop once the root answers.
+ */
+export type RestoreReason = "manual_stop" | "display_off" | "auto_off" | "media_lost" | "startup"
 
 export interface RestoreState {
   readonly workshop_id: string

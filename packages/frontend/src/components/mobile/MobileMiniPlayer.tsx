@@ -38,6 +38,10 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
   const display = summary?.status.display ?? null
   const sleep = summary?.status.sleep ?? null
   const hasCurrent = !!player?.current_workshop_id
+  // Ticket 01 (media-root resilience): same rule as the desktop dock — an
+  // idle-looking mini player on a device whose media root is gone has to name
+  // the outage rather than read as "nothing playing".
+  const storageDown = summary !== null && !summary.status.storage.available
 
   const runAction = async (action: () => Promise<unknown>) => {
     setPending(true)
@@ -97,8 +101,11 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
           <span className="mobile-mini-player-copy">
             <span className="mobile-mini-player-title">{title}</span>
             <span className="mobile-mini-player-meta mono">
-              {player?.current_resolution ?? "—"} · HDMI ·{" "}
-              {display?.configured ? display.state : "n/a"}
+              {storageDown
+                ? "STORAGE UNAVAILABLE"
+                : `${player?.current_resolution ?? "—"} · HDMI · ${
+                    display?.configured ? display.state : "n/a"
+                  }`}
             </span>
           </span>
         </button>
