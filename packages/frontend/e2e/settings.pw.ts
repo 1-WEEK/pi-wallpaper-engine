@@ -5,6 +5,16 @@ import { mockSystemSummary } from "./fixtures.js"
 
 const GB = 2 ** 30
 
+/** Mock route bodies are attacker-shaped JSON until proven otherwise; this is
+ *  the one place a test reads a posted field, so it narrows before trusting. */
+const postedField = (body: unknown, key: string): unknown => {
+  if (body === null || typeof body !== "object" || !(key in body)) return undefined
+  // The `in` check proves the key exists but not its type, and a request body
+  // has no schema here; a record view is the honest shape for one field read.
+  const record = body as Record<string, unknown>
+  return record[key]
+}
+
 const baseSummary = () => {
   const summary = mockSystemSummary()
   summary.status.player.rotation_interval_sec = 300
@@ -70,7 +80,8 @@ test.describe("Settings page", () => {
 
     let postedSeconds: number | null = null
     await page.route("**/api/player/interval", (r) => {
-      postedSeconds = (r.request().postDataJSON() as { seconds: number }).seconds
+      const seconds = postedField(r.request().postDataJSON(), "seconds")
+      if (typeof seconds === "number") postedSeconds = seconds
       return r.fulfill({ status: 200, contentType: "application/json", body: "{}" })
     })
 
@@ -96,6 +107,55 @@ test.describe("Settings page", () => {
     await expect(page.getByText(/COMMIT FAILED/)).toBeVisible()
     await expect(seg.getByRole("radio", { name: "10M" })).toHaveAttribute("aria-checked", "false")
     await expect(seg.getByRole("radio", { name: "5M" })).toHaveAttribute("aria-checked", "true")
+  })
+
+  test("play limit row commits immediately and shows the live auto-stop countdown", async ({
+    page,
+  }) => {
+    const summary = baseSummary()
+    // A limit is already set and a session is counting down: 90 minutes left.
+    summary.status.play_limit = { minutes: 60, deadline: Date.now() + 90 * 60_000 }
+    await mockBase(page, summary)
+
+    let postedMinutes: number | null = null
+    await page.route("**/api/player/play-limit", (r) => {
+      const minutes = postedField(r.request().postDataJSON(), "minutes")
+      if (typeof minutes === "number") postedMinutes = minutes
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ minutes, deadline: null }),
+      })
+    })
+
+    await page.goto("/settings")
+    const seg = page.getByRole("radiogroup", { name: "Stop playback after" })
+    await expect(seg.getByRole("radio", { name: "1H" })).toHaveAttribute("aria-checked", "true")
+
+    // The armed session's remaining time is read from the summary deadline.
+    await expect(page.getByText(/AUTO-STOP IN 1:2\d:\d\d/)).toBeVisible()
+
+    await seg.getByRole("radio", { name: "2H" }).click()
+    await expect.poll(() => postedMinutes).toBe(120)
+    await expect(seg.getByRole("radio", { name: "2H" })).toHaveAttribute("aria-checked", "true")
+  })
+
+  test("play limit off reads as no limit and a failed commit reverts", async ({ page }) => {
+    await mockBase(page)
+    await page.route("**/api/player/play-limit", (r) =>
+      r.fulfill({ status: 500, contentType: "application/json", body: '{"error":"db locked"}' })
+    )
+
+    await page.goto("/settings")
+    const seg = page.getByRole("radiogroup", { name: "Stop playback after" })
+    // Off is distinguished from "set but not yet armed".
+    await expect(seg.getByRole("radio", { name: "OFF" })).toHaveAttribute("aria-checked", "true")
+    await expect(page.getByText(/NO LIMIT — PLAYBACK RUNS UNTIL YOU STOP IT/)).toBeVisible()
+
+    await seg.getByRole("radio", { name: "30M" }).click()
+    await expect(page.getByText(/COMMIT FAILED/)).toBeVisible()
+    await expect(seg.getByRole("radio", { name: "30M" })).toHaveAttribute("aria-checked", "false")
+    await expect(seg.getByRole("radio", { name: "OFF" })).toHaveAttribute("aria-checked", "true")
   })
 
   test("interface sounds switch persists across reload", async ({ page }) => {

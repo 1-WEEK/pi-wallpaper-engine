@@ -94,6 +94,16 @@ linkage; [Rotation](../../packages/backend/src/services/Rotation.ts) owns sequen
 - `sleep(minutes)` replaces the previous timer; `minutes <= 0` cancels it. Expiry
   disarms rotation, calls display-off, and falls back to `stopForIdle` on failure.
   The summary exposes `sleep: { active, deadline }`, with an epoch-ms deadline.
+  It is a one-shot instruction from the PlayerBar, not a persisted setting.
+- The play limit is the durable counterpart: `playback_prefs.play_limit_minutes`
+  (`0` = off) is armed per playback session by `play()` and by a display-on
+  restore, and deliberately **not** re-armed by `next`/`prev`/pause, so the
+  deadline is not pushed out by every rotation tick. `setPlayLimit` persists and
+  clears a live deadline when set to off. Expiry reuses the sleep timer's
+  stop recipe, and each timer disarms the other on elapse so the summary never
+  reports a deadline for a stopped session. Routes: `POST /api/player/play-limit`;
+  the summary exposes `play_limit: { minutes, deadline }`. See
+  [ADR 0010](../adr/0010-play-limit.md).
 - Display commands are optional argv arrays executed directly with `Bun.spawn`.
   Keep them non-interactive (including any required sudo configuration) and retain
   the five-second timeout. An unconfigured display operation returns 503.

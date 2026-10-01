@@ -218,6 +218,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ minutes }),
     }).then(json<{ active: boolean; deadline: number | null }>),
+  setPlayLimit: (minutes: number) =>
+    fetchWithTimeout(`/api/player/play-limit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutes }),
+    }).then(json<{ minutes: number; deadline: number | null }>),
   playerStatus: () =>
     fetchWithTimeout(`/api/player/status`).then(
       json<{

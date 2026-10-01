@@ -3,6 +3,7 @@ import { Effect, Layer, ManagedRuntime, Queue, Stream } from "effect"
 import type { PlayMode } from "@pwe/shared"
 import { DbError, DisplayError, MpvIpcError } from "@pwe/shared"
 import { Logger } from "./Logger.js"
+import { MAX_PLAY_LIMIT_MINUTES, PlaybackPrefs } from "./PlaybackPrefs.js"
 import { PlayerPower } from "./PlayerPower.js"
 import { Rotation } from "./Rotation.js"
 import { Playback, PlaybackLive } from "./Playback.js"
@@ -17,9 +18,15 @@ interface FakeFailures {
 
 // Recording fakes: every dependency call appends to `events`, so the ordering
 // invariants of playback orchestration are asserted on one literal array.
-const makeRuntime = (failures: FakeFailures = {}) => {
+const makeRuntime = (failures: FakeFailures = {}, playLimitMinutes = 0) => {
   const events: string[] = []
   const warnings: string[] = []
+  // Mutable so a test can change the stored policy mid-session the way the
+  // Settings row does. Seeded directly (not through setPlayLimit) because a
+  // unit test needs a sub-minute deadline: the real store floors to whole
+  // minutes, so a test that could not seed a fraction would have to wait a
+  // real minute to watch the timer fire.
+  const prefsState = { play_limit_minutes: playLimitMinutes }
   // A Queue rather than a PubSub so a test can hand the service a wallpaper
   // recovery without racing the subscription registration.
   const recoveries = Effect.runSync(Queue.unbounded<string>())
@@ -88,11 +95,29 @@ const makeRuntime = (failures: FakeFailures = {}) => {
     debug: () => Effect.void,
   })
 
-  const envLayer = Layer.mergeAll(playerPowerLayer, rotationLayer, loggerLayer)
+  const prefsLayer = Layer.succeed(PlaybackPrefs, {
+    get: () =>
+      Effect.succeed({
+        play_mode: "single" as const,
+        rotation_interval_sec: 600,
+        play_limit_minutes: prefsState.play_limit_minutes,
+      }),
+    setMode: () => Effect.void,
+    setInterval: () => Effect.void,
+    setPlayLimit: (minutes: number) =>
+      Effect.sync(() => {
+        prefsState.play_limit_minutes = Math.max(0, Math.floor(minutes))
+      }),
+  })
+
+  const envLayer = Layer.mergeAll(playerPowerLayer, rotationLayer, loggerLayer, prefsLayer)
 
   return {
     events,
     warnings,
+    setLimit: (minutes: number) => {
+      prefsState.play_limit_minutes = minutes
+    },
     /** Hand the orchestrator a wallpaper that PlayerPower restored on its own. */
     recovered: (workshopId: string) =>
       Queue.offer(recoveries, workshopId).pipe(Effect.andThen(Effect.sleep("50 millis"))),
@@ -229,7 +254,7 @@ describe("PlaybackLive", () => {
   })
 
   test("next, prev, setMode and setRotationInterval delegate to rotation with their arguments", async () => {
-    const { events, runtime, recovered } = makeRuntime()
+    const { events, runtime } = makeRuntime()
     try {
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -246,6 +271,135 @@ describe("PlaybackLive", () => {
         "rotation.setMode:shuffle",
         "rotation.setInterval:45",
       ])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("next/prev/pause do not re-arm an armed play limit", async () => {
+    const { events, runtime } = makeRuntime({}, 30)
+    try {
+      const armed = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          yield* playback.next()
+          yield* playback.prev()
+          return yield* playback.playLimitStatus()
+        })
+      )
+      const before = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.playLimitStatus()))
+      // The deadline is per session, not per wallpaper: changing wallpaper must
+      // not push it out, or the limit would never fire.
+      expect(before.deadline).toBe(armed.deadline)
+      expect(events).toEqual([
+        "playerPower.play:123",
+        "rotation.arm:123",
+        "rotation.next",
+        "rotation.prev",
+      ])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("play arms the limit from the stored policy; setPlayLimit(0) disarms it", async () => {
+    const { runtime } = makeRuntime({}, 30)
+    try {
+      const armed = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          return yield* playback.playLimitStatus()
+        })
+      )
+      expect(armed.minutes).toBe(30)
+      const remaining = armed.deadline! - Date.now()
+      expect(remaining).toBeGreaterThan(29.9 * 60_000)
+      expect(remaining).toBeLessThan(30.1 * 60_000)
+
+      const off = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.setPlayLimit(0)
+          return yield* playback.playLimitStatus()
+        })
+      )
+      // Switching off clears any live deadline so the summary stops reporting one.
+      expect(off).toEqual({ minutes: 0, deadline: null })
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("with the policy off, play arms nothing", async () => {
+    const { events, runtime } = makeRuntime({}, 0)
+    try {
+      const status = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          return yield* playback.playLimitStatus()
+        })
+      )
+      expect(status).toEqual({ minutes: 0, deadline: null })
+      expect(events).toEqual(["playerPower.play:123", "rotation.arm:123"])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("an over-range stored limit arms the capped deadline instead of firing at once", async () => {
+    // A row written before the ceiling existed can sit above the native timer
+    // range, where setTimeout fires after ~1ms: the arm path has to cap it, or
+    // playback would stop the moment it starts, on every restart.
+    const { runtime } = makeRuntime({}, Number.MAX_SAFE_INTEGER)
+    try {
+      const status = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          return yield* playback.playLimitStatus()
+        })
+      )
+      const remaining = status.deadline! - Date.now()
+      expect(remaining).toBeGreaterThan(MAX_PLAY_LIMIT_MINUTES * 60_000 - 60_000)
+      expect(remaining).toBeLessThanOrEqual(MAX_PLAY_LIMIT_MINUTES * 60_000)
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("a non-finite stored limit arms nothing rather than a NaN timer", async () => {
+    const { runtime } = makeRuntime({}, Number.NaN)
+    try {
+      const status = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          return yield* playback.playLimitStatus()
+        })
+      )
+      expect(status.deadline).toBeNull()
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("an explicit stop drops the live deadline so a later play re-arms from zero", async () => {
+    const { runtime } = makeRuntime({}, 30)
+    try {
+      const afterStop = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          yield* playback.stop()
+          return yield* playback.playLimitStatus()
+        })
+      )
+      expect(afterStop.deadline).toBeNull()
+      // The stored policy survives a stop — only the live deadline is dropped.
+      expect(afterStop.minutes).toBe(30)
     } finally {
       await runtime.dispose()
     }
@@ -335,6 +489,93 @@ describe("PlaybackLive", () => {
       // The service keeps answering after the failed elapse.
       const status = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleepStatus()))
       expect(status).toEqual({ active: false, deadline: null })
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("the play limit elapsing disarms the sleep timer that loses the race", async () => {
+    // Both timers are armed from the same session; the play limit fires first
+    // here. The sleep timer must not stay reporting "active" for a session that
+    // has already stopped — the summary would contradict itself.
+    const { events, runtime } = makeRuntime({}, 50 / 60_000)
+    try {
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          // A sleep timer that would fire far later than the play limit.
+          yield* playback.sleep(60)
+        })
+      )
+
+      // Wait for the native play-limit timer to fire, then flush the fiber.
+      await new Promise<void>((r) => setTimeout(r, 200))
+      await runtime.runPromise(Effect.sleep("10 millis"))
+
+      const sleep = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleepStatus()))
+      const limit = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.playLimitStatus()))
+      expect(sleep).toEqual({ active: false, deadline: null })
+      expect(limit.deadline).toBeNull()
+      expect(events).toEqual(["playerPower.play:123", "rotation.arm:123", "rotation.disarm", "playerPower.displayOff"])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("the sleep timer elapsing clears a live play-limit deadline", async () => {
+    // Mirror image: the sleep timer fires first, and the play limit must not be
+    // left reporting a deadline for a session that has already stopped.
+    const { events, runtime } = makeRuntime({}, 60)
+    try {
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          yield* playback.sleep(50 / 60_000)
+        })
+      )
+
+      await new Promise<void>((r) => setTimeout(r, 200))
+      await runtime.runPromise(Effect.sleep("10 millis"))
+
+      const sleep = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleepStatus()))
+      const limit = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.playLimitStatus()))
+      expect(sleep).toEqual({ active: false, deadline: null })
+      expect(limit.deadline).toBeNull()
+      expect(events).toEqual(["playerPower.play:123", "rotation.arm:123", "rotation.disarm", "playerPower.displayOff"])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("the play limit elapse under a degraded display only warns and keeps serving", async () => {
+    // Both stop paths are unavailable: the display is unconfigured AND mpv's
+    // socket is gone. The timer must swallow that the way the sleep timer does
+    // rather than take the process down with it.
+    const { events, warnings, runtime } = makeRuntime(
+      { displayOffFails: true, stopForIdleFails: true },
+      50 / 60_000
+    )
+    try {
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+        })
+      )
+
+      await new Promise<void>((r) => setTimeout(r, 200))
+      await runtime.runPromise(Effect.sleep("10 millis"))
+
+      expect(events).toEqual(["playerPower.play:123", "rotation.arm:123", "rotation.disarm", "playerPower.displayOff", "playerPower.stopForIdle"])
+      expect(warnings.length).toBe(1)
+      expect(warnings[0]).toContain("Play limit action failed")
+
+      // The service keeps answering after the failed elapse, and the deadline
+      // is cleared so the summary does not claim a stopped session is armed.
+      const status = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.playLimitStatus()))
+      expect(status).toEqual({ minutes: 50 / 60_000, deadline: null })
     } finally {
       await runtime.dispose()
     }

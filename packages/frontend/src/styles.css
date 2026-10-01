@@ -32,13 +32,18 @@ body,
   min-height: 100%;
 }
 
+/* The shell paints from the --pt-* theme layer, not the legacy --ink/--paper
+   pair: a page box that stops short of the viewport (short content, a page
+   with no min-height) then falls through to the SAME theme background instead
+   of a hardcoded dark band, and the shell's inherited text color follows the
+   theme too. --ink/--paper stay for the legacy surfaces not yet migrated. */
 body,
 html {
   margin: 0;
   padding: 0;
   font-family: system-ui, -apple-system, sans-serif;
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--pt-bg);
+  color: var(--pt-text);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -283,6 +288,21 @@ a {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--paper-faint);
+}
+
+.main > .set,
+.main > .bws,
+.main > .lib,
+.main > .act {
+  /* One owner for the page floor: every page box reaches the bottom of the
+     scroller's CONTENT box, so short content still paints the theme all the
+     way to the PlayerBar dock instead of exposing the shell behind it. The
+     four page roots keep their own bleed margin; only the floor is shared,
+     so a page can no longer drift into showing a band (Settings used to be
+     the only one carrying this, which is why it went wrong when the shell
+     background was the legacy hardcoded dark). No page may grow tall enough
+     to slide content under the translucent dock, so this stays at 100%. */
+  min-height: 100%;
 }
 
 /* ── App shell ───────────────────────────────────────────────────── */

@@ -25,6 +25,15 @@ const ensureLibraryColumns = (db: Database) => {
   }
 }
 
+// A database created before the play-limit policy needs the column added
+// in place; CREATE TABLE IF NOT EXISTS will not touch an existing table.
+const ensurePlaybackPrefsColumns = (db: Database) => {
+  if (!tableExists(db, "playback_prefs")) return
+  if (!columnNames(db, "playback_prefs").includes("play_limit_minutes")) {
+    db.exec(`ALTER TABLE playback_prefs ADD COLUMN play_limit_minutes INTEGER NOT NULL DEFAULT 0`)
+  }
+}
+
 const tableExists = (db: Database, name: string): boolean =>
   db.query(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name) !== null
 
@@ -215,6 +224,7 @@ export const DbLive = Layer.effect(
       migrateLegacyDownloadTasks(sqlite)
       sqlite.exec(migrationSql)
       ensureLibraryColumns(sqlite)
+      ensurePlaybackPrefsColumns(sqlite)
       ensureTaskColumns(sqlite)
     })
 
