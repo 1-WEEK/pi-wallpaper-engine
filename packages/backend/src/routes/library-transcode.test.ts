@@ -196,12 +196,39 @@ describe("POST /api/library/:workshopId/transcode", () => {
     expect(stack.libRow("abc")?.transcode_status).toBe("skipped")
   })
 
-  test("active/completed statuses are rejected with 409", async () => {
-    for (const status of ["pending", "claimed", "running", "uploading", "completed"] as const) {
+  test("active statuses are rejected with 409", async () => {
+    for (const status of ["pending", "claimed", "running", "uploading"] as const) {
       const stack = makeStack([makeRow({ transcode_status: status })])
       const res = await post(stack.app, "/api/library/abc/transcode")
       expect(res.status).toBe(409)
     }
+  })
+
+  test("completed item can be re-transcoded, keeping its artifact until the new one lands", async () => {
+    // The per-item route accepts a finished item so a wrong optimized file can
+    // be replaced without deleting it or hand-editing the database. The old
+    // artifact must survive on disk: the worker writes to
+    // `<final>.partial.<jobId>` and only renames on success, so a failed
+    // re-encode leaves the previous file in place.
+    const stack = makeStack([
+      makeRow({
+        transcode_status: "completed",
+        transcoded_path: "optimized/abc.mp4",
+      }),
+    ])
+    const res = await post(stack.app, "/api/library/abc/transcode")
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { ok: boolean; transcode_status: string }
+    expect(body.ok).toBe(true)
+    expect(body.transcode_status).toBe("pending")
+
+    const job = stack.sqlite
+      .query("SELECT workshop_id, status FROM transcode_jobs")
+      .get() as { workshop_id: string; status: string }
+    expect(job.workshop_id).toBe("abc")
+    expect(job.status).toBe("pending")
+    // Path is left alone, so playback keeps working off the old file.
+    expect(stack.libRow("abc")?.transcoded_path).toBe("optimized/abc.mp4")
   })
 
   test("unknown workshop id returns 404", async () => {

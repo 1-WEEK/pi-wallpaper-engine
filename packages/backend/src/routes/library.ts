@@ -12,11 +12,20 @@ import { httpFromError } from "./httpError.js"
 import { transcodeMode, type AppContext, type AppRuntime } from "../runtime.js"
 import type { AuthService } from "../services/Auth.js"
 
-// Manual retrigger only makes sense from a terminal state: `failed` (retry)
-// and `skipped` (items downloaded before a worker existed, or re-evaluate
-// after config changes). Active states are already owned by a worker and
-// `completed` items keep their optimized file.
+// Manual retrigger is allowed from any terminal state. `failed` is a retry,
+// `skipped` covers items downloaded before a worker existed (or re-evaluating
+// after a config change), and `completed` allows re-encoding an item whose
+// optimized file is wrong — a bad crop, or a change to the transcode policy —
+// without deleting the file or writing the database behind the backend's back.
+// Active states stay excluded: a worker already owns those.
 const canRetrigger = (status: LibraryItem["transcode_status"]): boolean =>
+  status === "failed" || status === "skipped" || status === "completed"
+
+// The bulk sweep is deliberately narrower than the per-item action. It runs
+// over every row, so letting it accept `completed` would re-encode the entire
+// library on one click. Re-encoding a specific finished item is an explicit
+// per-item act; the sweep exists to recover broken ones.
+const isSweepEligible = (status: LibraryItem["transcode_status"]): boolean =>
   status === "failed" || status === "skipped"
 
 // Rebuild only the inputs decideTranscode needs from what intake persisted.
@@ -203,7 +212,7 @@ export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = nu
           let skipped = 0
           let invalid = 0
           for (const row of rows) {
-            if (!canRetrigger(row.transcode_status)) continue
+            if (!isSweepEligible(row.transcode_status)) continue
             const result = yield* retrigger(row.workshop_id)
             if (result.kind === "invalid") invalid += 1
             else if (result.kind === "skipped") skipped += 1

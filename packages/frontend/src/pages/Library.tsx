@@ -81,8 +81,17 @@ const isAdultRow = (row: LibraryItem): boolean =>
     ratingSex: row.rating_sex,
   })
 
+// Per-item re-transcode is offered from any terminal state, including
+// `completed` — that is how a wrong optimized file gets replaced without
+// deleting it. See the matching predicate in the backend library routes.
 const canRetranscode = (status: LibraryItem["transcode_status"]): boolean =>
-  status === "failed" || status === "skipped"
+  status === "failed" || status === "skipped" || status === "completed"
+
+// The bulk sweep is narrower on purpose: it would otherwise re-encode the whole
+// library in one click, so its button only shows when something is actually
+// broken.
+const hasSweepable = (rows: LibraryItem[]): boolean =>
+  rows.some((row) => row.transcode_status === "failed" || row.transcode_status === "skipped")
 
 const canPreview = (row: LibraryItem): boolean => row.transcode_status === "completed"
 
@@ -1058,7 +1067,7 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
                 <span className="btn-icon">{appIcons.modeShuffle}</span>
                 Shuffle
               </button>
-              {rows.some((row) => canRetranscode(row.transcode_status)) && (
+              {hasSweepable(rows) && (
                 <button
                   type="button"
                   className="btn library-rotation-btn"
