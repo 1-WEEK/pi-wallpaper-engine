@@ -25,6 +25,7 @@ Run commands from the repository root unless a command says otherwise.
 | Browser workflows | `bun run test:e2e` |
 | Pi dependencies, Steam login, display and decode diagnostics | `bun run check` |
 | Media-root outage/recovery behavior (real mpv, isolated namespace) | `bash scripts/smoke-media-root-recovery.sh` |
+| Boot behavior with the media root absent (drives the installed unit) | `bash scripts/check-boot-recovery.sh` |
 | systemd unit mount ordering | `bash scripts/check-service-unit.sh` |
 | Documentation only | Check links, named paths and scripts, then `git diff --check` |
 
@@ -147,6 +148,13 @@ Verify the rendering without installing:
 
 ```bash
 bash scripts/check-service-unit.sh
+```
+
+Record the boot behavior itself (drives the installed unit with an isolated
+config and state, then restores the live deployment):
+
+```bash
+bash scripts/check-boot-recovery.sh
 ```
 
 ## Frontend
