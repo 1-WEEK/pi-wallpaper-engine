@@ -114,6 +114,13 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const display = summary?.status.display ?? null
   const hasCurrent = !!player?.current_workshop_id
   const sleepLeft = sleepMinutesLeft(summary?.status.sleep ?? null)
+  // Ticket 01 (media-root resilience): a wallpapered player that is sitting
+  // idle with the media root gone must not read as "idle". The dock is the one
+  // surface visible on every page, so the outage is named here; the status text
+  // swaps to it and the causing path is shown underneath.
+  const storage = summary?.status.storage ?? null
+  const storageDown = storage !== null && !storage.available
+  const storageReason = storage?.last_error ?? null
 
   // Interface sound timing (ticket 13, sound spec §3): the transport row's
   // trigger point is pointerdown — the commit family sounds on the same
@@ -354,9 +361,12 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
               {player.current_title ?? (hasCurrent ? player.current_workshop_id : "No wallpaper selected")}
             </div>
             <div className="pbar-sub mono">
-              {player.current_workshop_id ?? "waiting"} ·{" "}
-              {player.playing ? "looping" : hasCurrent ? "paused" : "idle"}
-              {sleepLeft != null ? ` · sleep ${sleepLeft}m` : ""}
+              {storageDown
+                ? "storage unavailable"
+                : `${player.current_workshop_id ?? "waiting"} · ${
+                    player.playing ? "looping" : hasCurrent ? "paused" : "idle"
+                  }`}
+              {!storageDown && sleepLeft != null ? ` · sleep ${sleepLeft}m` : ""}
             </div>
           </div>
         </div>
@@ -454,7 +464,9 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
           </button>
         </div>
       </div>
-      {error && <div className="pbar-error mono">{error}</div>}
+      {(error || (storageDown && !error)) && (
+        <div className="pbar-notice mono">{error ?? storageReason}</div>
+      )}
     </div>
   )
 }

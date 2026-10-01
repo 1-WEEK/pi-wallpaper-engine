@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime, Stream } from "effect"
 import { DbError, type LibraryItem } from "@pwe/shared"
 import { Library } from "./Library.js"
 import { Logger } from "./Logger.js"
@@ -43,6 +43,7 @@ const buildHarness = (ids: string[], missing: Set<string>, adultIds: Set<string>
         path: null,
         display_mode: "fill" as const,
       }),
+    ended: () => Stream.empty,
   })
 
   const library = Layer.succeed(Library, {

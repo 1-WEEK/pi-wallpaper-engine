@@ -9,6 +9,7 @@ import { TasksLive } from "./services/Tasks.js"
 import { LibraryLive } from "./services/Library.js"
 import { LoggerLive } from "./services/Logger.js"
 import { MigrateLive } from "./services/Migrate.js"
+import { MediaRootWatchLive } from "./services/MediaRootWatch.js"
 import { MpvLive } from "./services/Mpv.js"
 import { PlaybackLive } from "./services/Playback.js"
 import { PlaybackPrefsLive } from "./services/PlaybackPrefs.js"
@@ -53,6 +54,7 @@ export const buildLayer = (configPath: string) => {
     Layer.provideMerge(PlayerWatchLive),
     Layer.provideMerge(RotationLive),
     Layer.provideMerge(PlayerPowerLive),
+    Layer.provideMerge(MediaRootWatchLive),
     Layer.provideMerge(PlayerStateLive),
     Layer.provideMerge(PlaybackPrefsLive),
     Layer.provideMerge(DownloadReconcilerLive),

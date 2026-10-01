@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect, Layer, ManagedRuntime, Result } from "effect"
+import { Effect, Layer, ManagedRuntime, Result, Stream } from "effect"
 import { Database } from "bun:sqlite"
 import { DbError, MigrateError } from "@pwe/shared"
 import { Config, type RuntimeConfig } from "./Config.js"
@@ -88,6 +88,7 @@ const mpvLayer = () => {
         path: null,
         display_mode: "fill",
       }),
+    ended: () => Stream.empty,
   }
   return Layer.succeed(Mpv, mpv)
 }

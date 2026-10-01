@@ -26,6 +26,7 @@ describe("playerRoutes", () => {
     stop: () => Effect.void,
     setDisplayMode: () => Effect.void,
     status: () => Effect.succeed({ path: "", paused: false }),
+    ended: () => Stream.empty,
   }
 
   const mockPlayerWatch = {

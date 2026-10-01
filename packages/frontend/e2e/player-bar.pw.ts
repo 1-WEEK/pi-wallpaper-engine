@@ -60,6 +60,36 @@ test.describe("PlayerBar glass dock", () => {
     await expect(dock.getByRole("button", { name: "Next wallpaper" })).toBeEnabled()
   })
 
+  test("names a missing media root instead of reading as an idle player", async ({ page }) => {
+    // Ticket 01 (`.scratch/playback-mount-resilience`): with the media root
+    // unmounted, the player is idle and the wallpaper it would restore is not
+    // on screen. The dock is the surface visible on every page, so the outage
+    // has to be named there — "idle" would be a lie the administrator cannot
+    // act on.
+    const summary = mockSystemSummary()
+    summary.status.player.current_workshop_id = "1693728660"
+    summary.status.storage = {
+      ...summary.status.storage,
+      available: false,
+      used_bytes: null,
+      free_bytes: null,
+      total_bytes: null,
+      used_percent: null,
+      last_error:
+        "Media root is not accessible at /mnt/pi-wallpaper-engine-data: the directory does not exist (ENOENT).",
+      error: "Media root is not accessible at /mnt/pi-wallpaper-engine-data: the directory does not exist (ENOENT).",
+    }
+
+    await mockAllEndpoints(page, { value: summary })
+    await page.goto("/browse")
+
+    const dock = page.locator(".pbar")
+    await expect(dock.locator(".pbar-sub")).toContainText("storage unavailable")
+    await expect(dock.locator(".pbar-sub")).not.toContainText("paused")
+    // The causing path reaches the user, not just an "unavailable" verdict.
+    await expect(dock.locator(".pbar-notice")).toContainText("/mnt/pi-wallpaper-engine-data")
+  })
+
   test("pause posts to the API and the bar reflects the paused state", async ({ page }) => {
     const summaryRef = { value: playingSummary() }
     await mockAllEndpoints(page, summaryRef)
