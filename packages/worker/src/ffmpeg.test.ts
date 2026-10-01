@@ -26,7 +26,7 @@ describe("buildJobPaths", () => {
 describe("buildFfmpegArgs", () => {
   const paths = buildJobPaths("/tmp/pwe/J1/source", "/tmp/pwe/J1/output.mp4")
 
-  test("QSV path uses hevc_qsv + scale_qsv + global_quality with hardware device init", () => {
+  test("QSV path crops to fill before hwupload + scale_qsv", () => {
     const args = buildFfmpegArgs(job, paths, "qsv")
     expect(args).toContain("-init_hw_device")
     expect(args).toContain("-filter_hw_device")
@@ -35,14 +35,14 @@ describe("buildFfmpegArgs", () => {
     const vfIndex = args.indexOf("-vf")
     expect(vfIndex).toBeGreaterThan(-1)
     expect(args[vfIndex + 1]).toBe(
-      "hwupload=extra_hw_frames=64,format=qsv,scale_qsv=w=1200:h=1080:mode=hq"
+      "crop=w='min(iw,ih*1200/1080)':h='min(ih,iw*1080/1200)',hwupload=extra_hw_frames=64,format=qsv,scale_qsv=w=1200:h=1080:mode=hq"
     )
     expect(args).toContain("-global_quality")
     expect(args[args.indexOf("-global_quality") + 1]).toBe("23")
     // Writes to .partial, not final.
     expect(args[args.length - 1]).toBe(paths.partialAbs)
   })
-  test("VA-API path uses hevc_vaapi + scale_vaapi + qp with hardware device init", () => {
+  test("VA-API path crops to fill before hwupload + scale_vaapi", () => {
     const args = buildFfmpegArgs(job, paths, "vaapi")
     expect(args).toContain("-init_hw_device")
     expect(args).toContain("-filter_hw_device")
@@ -51,7 +51,7 @@ describe("buildFfmpegArgs", () => {
     const vfIndex = args.indexOf("-vf")
     expect(vfIndex).toBeGreaterThan(-1)
     expect(args[vfIndex + 1]).toBe(
-      "format=nv12,hwupload,scale_vaapi=w=1200:h=1080:mode=hq"
+      "crop=w='min(iw,ih*1200/1080)':h='min(ih,iw*1080/1200)',format=nv12,hwupload,scale_vaapi=w=1200:h=1080:mode=hq"
     )
     expect(args).toContain("-qp")
     expect(args[args.indexOf("-qp") + 1]).toBe("23")
@@ -66,12 +66,12 @@ describe("buildFfmpegArgs", () => {
   })
 
 
-  test("libx265 fallback uses scale + crop + crf with -preset medium", () => {
+  test("libx265 fallback crops to fill then scales, with crf and -preset medium", () => {
     const args = buildFfmpegArgs(job, paths, "x265")
     expect(args).toContain("libx265")
     const vfIndex = args.indexOf("-vf")
     expect(args[vfIndex + 1]).toBe(
-      "scale=1200:1080:force_original_aspect_ratio=increase,crop=1200:1080"
+      "crop=w='min(iw,ih*1200/1080)':h='min(ih,iw*1080/1200)',scale=1200:1080"
     )
     expect(args).toContain("-crf")
     expect(args[args.indexOf("-crf") + 1]).toBe("23")

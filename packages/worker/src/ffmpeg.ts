@@ -185,6 +185,14 @@ export const buildFfmpegArgs = (
   const h = job.target_height
   const q = job.target_quality
 
+  // Crop-to-fill, matching the Pi's "fill" display mode: take the largest
+  // centred window of the source with the target aspect ratio, then scale that
+  // window to the target box. Doing the crop *before* the scaler is what lets
+  // every encoder share it — the hardware scalers (scale_qsv / scale_vaapi)
+  // have no aspect-ratio or crop options, and hwuploaded frames cannot be
+  // cropped in software afterwards.
+  const cropBox = `crop=w='min(iw,ih*${w}/${h})':h='min(ih,iw*${h}/${w})'`
+
   if (encoder === "qsv") {
     // QSV path: hardware device initialization + VPP hardware scaler +
     // hardware HEVC encode. `mode=hq` favors quality over throughput;
@@ -198,7 +206,7 @@ export const buildFfmpegArgs = (
       "-filter_hw_device",
       "hw",
       "-vf",
-      `hwupload=extra_hw_frames=64,format=qsv,scale_qsv=w=${w}:h=${h}:mode=hq`,
+      `${cropBox},hwupload=extra_hw_frames=64,format=qsv,scale_qsv=w=${w}:h=${h}:mode=hq`,
       "-c:v",
       "hevc_qsv",
       "-global_quality",
@@ -219,7 +227,7 @@ export const buildFfmpegArgs = (
       "-filter_hw_device",
       "va",
       "-vf",
-      `format=nv12,hwupload,scale_vaapi=w=${w}:h=${h}:mode=hq`,
+      `${cropBox},format=nv12,hwupload,scale_vaapi=w=${w}:h=${h}:mode=hq`,
       "-c:v",
       enc,
       "-qp",
@@ -230,14 +238,13 @@ export const buildFfmpegArgs = (
     ]
   }
 
-  // Software libx265 path with aspect-correct crop. `force_original_aspect_ratio=
-  // increase` upscales to cover the target box, then `crop` trims the overflow
-  // — matches the Pi's "fill" display mode.
+  // Software libx265 path. The crop box above already yields the target aspect
+  // ratio, so the scaler is a plain fit with no aspect handling of its own.
   const sw = job.target_codec === "h264" ? "libx264" : "libx265"
   return [
     ...common,
     "-vf",
-    `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`,
+    `${cropBox},scale=${w}:${h}`,
     "-c:v",
     sw,
     "-crf",

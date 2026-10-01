@@ -120,6 +120,12 @@ the Pi validates and places the result under the current media root. Preserve th
 ownership when changing uploads, retries, or migration guards. Read the
 [deployment guide](../worker-deployment.md) for hardware requirements and encoder configuration.
 
+Every encoder path (QSV, VA-API, libx265/libx264) must crop-to-fill: take the centred
+window of the source matching the screen aspect ratio, then scale it to the screen box.
+The hardware scalers accept no aspect or crop options, so the crop runs in software on
+the source frames before `hwupload` — build it once in `buildFfmpegArgs`
+([worker ffmpeg.ts](../../packages/worker/src/ffmpeg.ts)) rather than per encoder.
+
 ## Auth Boundaries
 
 Authentication is optional and disabled by default. For public exposure, enable
