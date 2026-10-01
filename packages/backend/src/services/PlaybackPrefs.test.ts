@@ -15,6 +15,7 @@ const makeDbLayer = () => {
       id                    TEXT PRIMARY KEY CHECK (id = 'singleton'),
       play_mode             TEXT NOT NULL DEFAULT 'single',
       rotation_interval_sec INTEGER NOT NULL DEFAULT 600,
+      play_limit_minutes    INTEGER NOT NULL DEFAULT 0,
       updated_at            INTEGER NOT NULL
     );
   `)
@@ -55,16 +56,47 @@ describe("PlaybackPrefsLive", () => {
         Effect.gen(function* () {
           const prefs = yield* PlaybackPrefs
 
-          expect(yield* prefs.get()).toEqual({ play_mode: "single", rotation_interval_sec: 600 })
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "single",
+            rotation_interval_sec: 600,
+            play_limit_minutes: 0,
+          })
 
           yield* prefs.setMode("shuffle")
-          expect(yield* prefs.get()).toEqual({ play_mode: "shuffle", rotation_interval_sec: 600 })
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "shuffle",
+            rotation_interval_sec: 600,
+            play_limit_minutes: 0,
+          })
 
           yield* prefs.setInterval(120)
-          expect(yield* prefs.get()).toEqual({ play_mode: "shuffle", rotation_interval_sec: 120 })
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "shuffle",
+            rotation_interval_sec: 120,
+            play_limit_minutes: 0,
+          })
+
+          yield* prefs.setPlayLimit(45)
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "shuffle",
+            rotation_interval_sec: 120,
+            play_limit_minutes: 45,
+          })
 
           yield* prefs.setMode("sequential")
-          expect(yield* prefs.get()).toEqual({ play_mode: "sequential", rotation_interval_sec: 120 })
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "sequential",
+            rotation_interval_sec: 120,
+            play_limit_minutes: 45,
+          })
+
+          // A negative limit would arm an auto-stop in the past; it clamps to off.
+          yield* prefs.setPlayLimit(-10)
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "sequential",
+            rotation_interval_sec: 120,
+            play_limit_minutes: 0,
+          })
         })
       )
     } finally {

@@ -70,6 +70,19 @@ export const SleepStatus = Schema.Struct({
 })
 export type SleepStatus = typeof SleepStatus.Type
 
+/**
+ * The persistent "stop playback after N minutes" policy. `minutes` is the
+ * stored setting (0 = off); `deadline` is the epoch-ms auto-stop the currently
+ * active playback session is counting down to, or null when no session is
+ * armed. Separate from `SleepStatus`: sleep is a one-shot instruction from the
+ * PlayerBar, this is a durable setting that re-arms on every playback start.
+ */
+export const PlayLimitStatus = Schema.Struct({
+  minutes: Schema.Number,
+  deadline: Schema.NullOr(Schema.Number),
+})
+export type PlayLimitStatus = typeof PlayLimitStatus.Type
+
 export const TranscodeCounts = Schema.Struct({
   pending: Schema.Number,
   claimed: Schema.Number,
@@ -109,6 +122,7 @@ export const SummaryStatus = Schema.Struct({
   library: LibraryCounts,
   downloads: DownloadsCounts,
   sleep: SleepStatus,
+  play_limit: PlayLimitStatus,
   transcode: TranscodeCounts,
 })
 export type SummaryStatus = typeof SummaryStatus.Type

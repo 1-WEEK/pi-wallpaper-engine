@@ -59,9 +59,15 @@ const buildHarness = (ids: string[], missing: Set<string>, adultIds: Set<string>
   })
 
   const prefs = Layer.succeed(PlaybackPrefs, {
-    get: () => Effect.succeed({ play_mode: "sequential" as const, rotation_interval_sec: 600 }),
+    get: () =>
+      Effect.succeed({
+        play_mode: "sequential" as const,
+        rotation_interval_sec: 600,
+        play_limit_minutes: 0,
+      }),
     setMode: () => Effect.void,
     setInterval: () => Effect.void,
+    setPlayLimit: () => Effect.void,
   })
 
   const logger = Layer.succeed(Logger, {
