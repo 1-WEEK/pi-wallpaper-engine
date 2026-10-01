@@ -37,17 +37,19 @@ describe("buildFfmpegArgs", () => {
     expect(args[vfIndex + 1]).toBe(
       "crop=w='min(iw,ih*1200/1080)':h='min(ih,iw*1080/1200)',hwupload=extra_hw_frames=64,format=qsv,scale_qsv=w=1200:h=1080:mode=hq"
     )
-    expect(args).toContain("-global_quality")
-    expect(args[args.indexOf("-global_quality") + 1]).toBe("23")
-    // Rate control: QVBR keeps the quality target but bounds the output.
+    // Rate control: VBR bounds the output. The driver supports only
+    // CQP/CBR/VBR, and `-global_quality` alongside -b:v would quietly fall
+    // back to CQP and discard the ceiling, so it must not appear.
+    expect(args).not.toContain("-global_quality")
+    expect(args).not.toContain("-qp")
     expect(args).toContain("-level")
     expect(args[args.indexOf("-level") + 1]).toBe("50")
     expect(args).toContain("-b:v")
-    expect(args[args.indexOf("-b:v") + 1]).toBe("10M")
+    expect(args[args.indexOf("-b:v") + 1]).toBe("4M")
     expect(args).toContain("-maxrate")
-    expect(args[args.indexOf("-maxrate") + 1]).toBe("12M")
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("6M")
     expect(args).toContain("-bufsize")
-    expect(args[args.indexOf("-bufsize") + 1]).toBe("12M")
+    expect(args[args.indexOf("-bufsize") + 1]).toBe("6M")
     // Writes to .partial, not final.
     expect(args[args.length - 1]).toBe(paths.partialAbs)
   })
@@ -62,21 +64,21 @@ describe("buildFfmpegArgs", () => {
     expect(args[vfIndex + 1]).toBe(
       "crop=w='min(iw,ih*1200/1080)':h='min(ih,iw*1080/1200)',format=nv12,hwupload,scale_vaapi=w=1200:h=1080:mode=hq"
     )
-    // `-qp` would force CQP and override QVBR entirely, so it must be gone.
+    // `-qp` forces CQP, and `-global_quality` alongside -b:v silently forces
+    // CQP too — discarding the ceiling while looking configured. Both are out.
     expect(args).not.toContain("-qp")
-    // Rate control: QVBR keeps the quality target but bounds the output.
+    expect(args).not.toContain("-global_quality")
+    // Rate control: explicit VBR (the driver rejects QVBR outright).
     expect(args).toContain("-rc_mode")
-    expect(args[args.indexOf("-rc_mode") + 1]).toBe("QVBR")
-    expect(args).toContain("-global_quality")
-    expect(args[args.indexOf("-global_quality") + 1]).toBe("23")
+    expect(args[args.indexOf("-rc_mode") + 1]).toBe("VBR")
     expect(args).toContain("-level")
     expect(args[args.indexOf("-level") + 1]).toBe("5")
     expect(args).toContain("-b:v")
-    expect(args[args.indexOf("-b:v") + 1]).toBe("10M")
+    expect(args[args.indexOf("-b:v") + 1]).toBe("4M")
     expect(args).toContain("-maxrate")
-    expect(args[args.indexOf("-maxrate") + 1]).toBe("12M")
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("6M")
     expect(args).toContain("-bufsize")
-    expect(args[args.indexOf("-bufsize") + 1]).toBe("12M")
+    expect(args[args.indexOf("-bufsize") + 1]).toBe("6M")
     expect(args[args.length - 1]).toBe(paths.partialAbs)
   })
 
@@ -86,8 +88,8 @@ describe("buildFfmpegArgs", () => {
     expect(args).toContain("h264_vaapi")
     expect(args).not.toContain("hevc_vaapi")
     // The h264 sub-path carries the same bound as the HEVC one.
-    expect(args[args.indexOf("-rc_mode") + 1]).toBe("QVBR")
-    expect(args[args.indexOf("-maxrate") + 1]).toBe("12M")
+    expect(args[args.indexOf("-rc_mode") + 1]).toBe("VBR")
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("6M")
   })
 
 
@@ -95,13 +97,16 @@ describe("buildFfmpegArgs", () => {
     for (const encoder of ["qsv", "vaapi"] as const) {
       const args = buildFfmpegArgs(job, paths, encoder)
       // A ceiling is mandatory: without these the hardware encoder runs at
-      // unbounded constant quality (22.4 Mbps measured on a 12 Mbps source).
+      // unbounded constant quality (25.45 Mbps measured at 1200x1080).
       expect(args).toContain("-maxrate")
-      expect(args[args.indexOf("-maxrate") + 1]).toBe("12M")
+      expect(args[args.indexOf("-maxrate") + 1]).toBe("6M")
       expect(args).toContain("-bufsize")
-      expect(args[args.indexOf("-bufsize") + 1]).toBe("12M")
+      expect(args[args.indexOf("-bufsize") + 1]).toBe("6M")
       expect(args).toContain("-b:v")
-      expect(args[args.indexOf("-b:v") + 1]).toBe("10M")
+      expect(args[args.indexOf("-b:v") + 1]).toBe("4M")
+      // The quality factor must not ride along: with -b:v set, the driver
+      // silently drops back to CQP and ignores the ceiling.
+      expect(args).not.toContain("-global_quality")
       // ...and the declared level must be able to hold that ceiling.
       expect(args).toContain("-level")
       expect(args[args.indexOf("-level") + 1]).toBe(encoder === "qsv" ? "50" : "5")

@@ -159,25 +159,46 @@ export const detectEncoder = async (
 /**
  * Rate control for the two hardware encoders, which used to run at constant
  * quality with no ceiling (`-global_quality` / `-qp`). On grainy, high-motion
- * wallpapers that emitted 22.4 Mbps out of a 12 Mbps source — an artifact
- * bigger than the file it was made from — under a declared HEVC level 4.0,
- * whose Main tier allows 12 Mbps.
+ * wallpapers that emitted 25 Mbps out of a 12 Mbps source — an artifact bigger
+ * than the file it was made from — under a declared HEVC level 4.0, whose Main
+ * tier allows 12 Mbps.
  *
- * QVBR is the only mode that keeps a quality target *and* enforces
- * bitrate + maxrate + VBV; see the rc-mode table in
- * libavcodec/vaapi_encode.c (Bitrate/Maxrate/Quality/HRD all set), and
- * libavcodec/qsvenc.c, which selects MFX_RATECONTROL_QVBR whenever
- * global_quality and bit_rate are both set. VBR alone would be wrong: with no
- * quality target it would inflate today's 1–8 Mbps artifacts up to the target.
- * The quality factor stays `job.target_quality`, so easy content still lands
- * wherever quality 23 puts it and only expensive content feels the cap.
+ * The first attempt used QVBR, the one mode that keeps a quality target *and*
+ * enforces bitrate + maxrate + VBV. The deployed driver rejected it outright:
  *
- * The target is what the driver aims for; maxrate is the hard bound (12 Mbps =
- * ~1.5 MB/s), and bufsize gives the VBV a 1 s window.
+ *   Driver does not support QVBR RC mode (supported modes: CQP, CBR, VBR).
+ *
+ * So on this hardware only CQP, CBR and VBR exist, and the tradeoff has to be
+ * made inside that set. Measured on the real driver, 30 s of each of two
+ * sources, 1200x1080:
+ *
+ *   mode                     grainy source   ordinary source
+ *   CQP -qp 23 (previous)         25.45 Mbps       1.80 Mbps
+ *   VBR 4M/6M                      3.96 Mbps       3.83 Mbps
+ *   VBR 8M/12M                     7.89 Mbps       7.07 Mbps
+ *   CBR 6M/6M                      5.98 Mbps       5.30 Mbps
+ *
+ * No setting in that set both leaves ordinary content alone and bounds the
+ * expensive content: CQP is the only mode that preserves the 1.8 Mbps case and
+ * it is the one with no ceiling. So this picks the ceiling and pays for it —
+ * ordinary content rises to roughly the target, and the grainy outlier drops by
+ * 6.4x, which is what stops a 448 MB source producing an 838 MB artifact.
+ *
+ * `-global_quality` is gone from both paths on purpose. It cannot coexist with
+ * a ceiling here: without an explicit rc mode the VA-API wrapper silently falls
+ * back to CQP and *discards* -b:v/-maxrate/-bufsize ("Buffering settings are
+ * ignored in CQP RC mode"), leaving the encoder unbounded while looking
+ * configured. That failure mode is silent, so the quality factor is not carried
+ * on the hardware paths at all — bitrate now drives them, and
+ * `job.target_quality` only reaches the libx265/libx264 path, where `-crf` is
+ * still meaningful.
+ *
+ * The target is what the driver aims for; maxrate is the hard bound (6 Mbps ≈
+ * 0.75 MB/s), and bufsize gives the VBV a 1 s window at that rate.
  */
-const HW_BITRATE_TARGET = "10M"
-const HW_BITRATE_MAX = "12M"
-const HW_VBV_BUFFER = "12M"
+const HW_BITRATE_TARGET = "4M"
+const HW_BITRATE_MAX = "6M"
+const HW_VBV_BUFFER = "6M"
 
 /**
  * Declared hardware level, per encoder — the two take different scales:
@@ -188,9 +209,10 @@ const HW_VBV_BUFFER = "12M"
  * Level 5.0 is the lowest level that holds for every frame rate in the library
  * at 1200x1080 — the range observed is 16–100 fps, and 4.1 caps the luma
  * sample rate at ~103 fps while 4.0 caps it at ~52 fps. Its 25 Mbps Main tier
- * bound sits above the 12 Mbps ceiling above, so the declared level can never
- * be contradicted by what this pipeline emits. (hevc_qsv additionally defaults
- * the tier to High, whose 100 Mbps allows the same ceiling comfortably.)
+ * bound sits far above the 6 Mbps ceiling above, so the declared level cannot
+ * be contradicted by what this pipeline emits. Measured: every probe output
+ * carried general_level_idc 150 regardless of rate-control mode, so the
+ * declaration is independent of the mode chosen here.
  */
 const QSV_LEVEL = "50"
 const VAAPI_LEVEL = "5"
@@ -250,8 +272,6 @@ export const buildFfmpegArgs = (
       "hevc_qsv",
       "-level",
       QSV_LEVEL,
-      "-global_quality",
-      String(q),
       "-b:v",
       HW_BITRATE_TARGET,
       "-maxrate",
@@ -280,9 +300,7 @@ export const buildFfmpegArgs = (
       "-level",
       VAAPI_LEVEL,
       "-rc_mode",
-      "QVBR",
-      "-global_quality",
-      String(q),
+      "VBR",
       "-b:v",
       HW_BITRATE_TARGET,
       "-maxrate",
