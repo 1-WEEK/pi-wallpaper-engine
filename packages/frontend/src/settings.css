@@ -17,7 +17,7 @@
   padding: 46px 52px 174px;
   background: var(--pt-bg);
   color: var(--pt-text);
-  min-height: 100%;
+  /* The page floor is owned by the shared shell rule in styles.css. */
   transition:
     background-color var(--dur-hover) var(--ease-out),
     color var(--dur-hover) var(--ease-out);
