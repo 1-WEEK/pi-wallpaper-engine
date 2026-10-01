@@ -19,6 +19,31 @@ const DEFAULT_PREFS: PlaybackPrefsState = {
   play_limit_minutes: 0,
 }
 
+/**
+ * Upper bound on a stored play limit, in minutes.
+ *
+ * Native timers clamp a duration above 2^31-1 ms (about 24.8 days) down to
+ * 1 ms, so a limit large enough to overflow that would arm an immediate
+ * auto-stop instead of a distant one — and because this setting is durable, it
+ * would do so again after every restart. 14 days is past any real "leave it
+ * running" window and comfortably under the timer ceiling.
+ */
+export const MAX_PLAY_LIMIT_MINUTES = 20_160
+
+/**
+ * Bound a limit to a finite value in `[0, MAX_PLAY_LIMIT_MINUTES]`.
+ *
+ * Applied at the store *and* at the moment of arming: a row persisted before
+ * this bound existed must still arm a sane timer rather than firing at once,
+ * and a non-finite value must never reach `setTimeout` as `NaN`.
+ *
+ * Deliberately does not round: the store floors to whole minutes (which is what
+ * a durable policy should hold), while the arm path accepts whatever it is
+ * given so a shorter-than-a-minute value still produces a correct delay.
+ */
+export const clampPlayLimitMinutes = (minutes: number): number =>
+  Number.isFinite(minutes) ? Math.min(MAX_PLAY_LIMIT_MINUTES, Math.max(0, minutes)) : 0
+
 export interface PlaybackPrefsImpl {
   readonly get: () => Effect.Effect<PlaybackPrefsState, DbError>
   readonly setMode: (mode: PlayMode) => Effect.Effect<void, DbError>
@@ -87,10 +112,11 @@ export const PlaybackPrefsLive = Layer.effect(
       get: () => Ref.get(cache),
       setMode: (mode) => update((cur) => ({ ...cur, play_mode: mode })),
       setInterval: (sec) => update((cur) => ({ ...cur, rotation_interval_sec: sec })),
-      // Negative input would arm an auto-stop in the past; clamp to "off" so a
-      // bad value can never turn the limit on by accident.
+      // Bound the value at the store: a limit above the native timer ceiling
+      // would fire immediately, and a non-finite one would never fire at all.
+      // Flooring to whole minutes is what a durable policy should hold.
       setPlayLimit: (minutes) =>
-        update((cur) => ({ ...cur, play_limit_minutes: Math.max(0, Math.floor(minutes)) })),
+        update((cur) => ({ ...cur, play_limit_minutes: Math.floor(clampPlayLimitMinutes(minutes)) })),
     }
   })
 )

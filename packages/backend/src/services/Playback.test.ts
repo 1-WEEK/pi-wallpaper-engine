@@ -3,7 +3,7 @@ import { Effect, Layer, ManagedRuntime, Queue, Stream } from "effect"
 import type { PlayMode } from "@pwe/shared"
 import { DbError, DisplayError, MpvIpcError } from "@pwe/shared"
 import { Logger } from "./Logger.js"
-import { PlaybackPrefs } from "./PlaybackPrefs.js"
+import { MAX_PLAY_LIMIT_MINUTES, PlaybackPrefs } from "./PlaybackPrefs.js"
 import { PlayerPower } from "./PlayerPower.js"
 import { Rotation } from "./Rotation.js"
 import { Playback, PlaybackLive } from "./Playback.js"
@@ -344,6 +344,43 @@ describe("PlaybackLive", () => {
       )
       expect(status).toEqual({ minutes: 0, deadline: null })
       expect(events).toEqual(["playerPower.play:123", "rotation.arm:123"])
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("an over-range stored limit arms the capped deadline instead of firing at once", async () => {
+    // A row written before the ceiling existed can sit above the native timer
+    // range, where setTimeout fires after ~1ms: the arm path has to cap it, or
+    // playback would stop the moment it starts, on every restart.
+    const { runtime } = makeRuntime({}, Number.MAX_SAFE_INTEGER)
+    try {
+      const status = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          return yield* playback.playLimitStatus()
+        })
+      )
+      const remaining = status.deadline! - Date.now()
+      expect(remaining).toBeGreaterThan(MAX_PLAY_LIMIT_MINUTES * 60_000 - 60_000)
+      expect(remaining).toBeLessThanOrEqual(MAX_PLAY_LIMIT_MINUTES * 60_000)
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("a non-finite stored limit arms nothing rather than a NaN timer", async () => {
+    const { runtime } = makeRuntime({}, Number.NaN)
+    try {
+      const status = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          return yield* playback.playLimitStatus()
+        })
+      )
+      expect(status.deadline).toBeNull()
     } finally {
       await runtime.dispose()
     }

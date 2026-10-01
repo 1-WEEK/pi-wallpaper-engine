@@ -8,7 +8,7 @@ import type {
   StorageError,
 } from "@pwe/shared"
 import { Logger } from "./Logger.js"
-import { PlaybackPrefs } from "./PlaybackPrefs.js"
+import { PlaybackPrefs, clampPlayLimitMinutes } from "./PlaybackPrefs.js"
 import { PlayerPower, type PowerOnResult } from "./PlayerPower.js"
 import { Rotation } from "./Rotation.js"
 
@@ -146,8 +146,12 @@ export const PlaybackLive = Layer.effect(
     const armPlayLimit = Effect.gen(function* () {
       yield* clearPlayLimit
       const { play_limit_minutes } = yield* readPrefs()
-      if (play_limit_minutes <= 0) return
-      const ms = play_limit_minutes * 60_000
+      // Clamp here as well as at the store: an already-persisted row can hold
+      // a value written before the ceiling existed, and a duration above the
+      // platform timer ceiling fires *immediately* rather than never.
+      const minutes = clampPlayLimitMinutes(play_limit_minutes)
+      if (minutes <= 0) return
+      const ms = minutes * 60_000
       const deadline = Date.now() + ms
       const timer = setTimeout(() => {
         Effect.runFork(onPlayLimitElapsed)
@@ -155,7 +159,7 @@ export const PlaybackLive = Layer.effect(
       timer.unref()
       yield* Ref.set(limitTimerRef, timer)
       yield* Ref.set(limitDeadlineRef, deadline)
-      yield* logger.info(`Play limit armed: ${play_limit_minutes}m`)
+      yield* logger.info(`Play limit armed: ${minutes}m`)
     })
 
     const onPlayLimitElapsed = Effect.gen(function* () {

@@ -3,7 +3,38 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { Database } from "bun:sqlite"
 import { DbError } from "@pwe/shared"
 import { Db, type DbImpl } from "./Db.js"
-import { PlaybackPrefs, PlaybackPrefsLive } from "./PlaybackPrefs.js"
+import {
+  MAX_PLAY_LIMIT_MINUTES,
+  PlaybackPrefs,
+  PlaybackPrefsLive,
+  clampPlayLimitMinutes,
+} from "./PlaybackPrefs.js"
+
+describe("clampPlayLimitMinutes", () => {
+  test("passes values in range through unchanged", () => {
+    expect(clampPlayLimitMinutes(45)).toBe(45)
+    expect(clampPlayLimitMinutes(0)).toBe(0)
+  })
+
+  test("clamps negatives to off", () => {
+    expect(clampPlayLimitMinutes(-10)).toBe(0)
+  })
+
+  test("caps above the native timer ceiling", () => {
+    // Above 2^31-1 ms a native timer fires after ~1 ms, so an uncapped value
+    // would stop playback instantly — and keep doing so after every restart.
+    expect(clampPlayLimitMinutes(MAX_PLAY_LIMIT_MINUTES + 1)).toBe(MAX_PLAY_LIMIT_MINUTES)
+    expect(clampPlayLimitMinutes(Number.MAX_SAFE_INTEGER)).toBe(MAX_PLAY_LIMIT_MINUTES)
+    // The ceiling itself must stay inside the platform timer range.
+    expect(MAX_PLAY_LIMIT_MINUTES * 60_000).toBeLessThan(2 ** 31 - 1)
+  })
+
+  test("treats non-finite input as off rather than arming a NaN timer", () => {
+    expect(clampPlayLimitMinutes(Number.NaN)).toBe(0)
+    expect(clampPlayLimitMinutes(Number.POSITIVE_INFINITY)).toBe(0)
+    expect(clampPlayLimitMinutes(Number.NEGATIVE_INFINITY)).toBe(0)
+  })
+})
 
 let openDbs: Database[] = []
 
