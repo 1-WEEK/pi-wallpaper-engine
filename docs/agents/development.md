@@ -29,11 +29,11 @@ Run commands from the repository root unless a command says otherwise.
 | systemd unit mount ordering | `bash scripts/check-service-unit.sh` |
 | Documentation only | Check links, named paths and scripts, then `git diff --check` |
 
-[CI](../../.github/workflows/ci.yml) runs tests, typechecking, the frontend build,
-and a separate Worker image build/smoke test. [E2E](../../.github/workflows/e2e.yml)
-runs the browser suite separately. These checks cover software behavior; Pi
-playback and NAS acceleration still need hardware evidence when those are affected.
-Report which checks ran and any remaining hardware validation.
+There is no hosted CI. Run the commands above locally and report which ones ran;
+Worker image changes keep their own local gate:
+`bash scripts/smoke-test-worker-image.sh <tag>` after a local build. These checks
+cover software behavior; Pi playback and NAS acceleration still need hardware
+evidence when those are affected. Report any remaining hardware validation.
 
 Browser tests live in `packages/frontend/e2e/*.pw.ts`. Playwright starts the Vite
 frontend and mocks `/api/*`, so this suite needs neither the backend nor Pi hardware.
