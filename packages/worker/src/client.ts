@@ -193,13 +193,26 @@ export const createWorkerClient = (config: WorkerClientConfig): WorkerClient => 
     },
 
     uploadArtifact: async (artifactUrl, artifactPath, durationMs) => {
-      await fetchAuthed(artifactUrl, {
-        method: "PUT",
-        headers: {
-          "x-transcode-duration-ms": String(Math.max(0, Math.round(durationMs))),
-        },
-        body: Bun.file(artifactPath),
-      })
+      try {
+        await fetchAuthed(artifactUrl, {
+          method: "PUT",
+          headers: {
+            "x-transcode-duration-ms": String(Math.max(0, Math.round(durationMs))),
+          },
+          body: Bun.file(artifactPath),
+        })
+      } catch (e) {
+        // A refused oversized body surfaces as a broken pipe, which reads like a
+        // transient network fault. Carry the artifact's size so the failure is
+        // self-describing instead of sending the next reader off to measure it.
+        const mib = (Bun.file(artifactPath).size / 1048576).toFixed(1)
+        throw new WorkerHttpError(
+          `Artifact upload failed (${mib} MiB): ${e instanceof Error ? e.message : String(e)}`,
+          e instanceof WorkerHttpError ? e.status : 0,
+          e instanceof WorkerHttpError ? e.code : "network",
+          { cause: e }
+        )
+      }
     },
 
     fail: async (jobId, error) => {
