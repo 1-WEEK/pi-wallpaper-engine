@@ -14,6 +14,7 @@ import { Migrate, type MigrateImpl } from "../services/Migrate.js"
 import { Storage, type StorageImpl } from "../services/Storage.js"
 import { TranscodeQueue, TranscodeQueueLive } from "../services/TranscodeQueue.js"
 import { TasksLive } from "../services/Tasks.js"
+import { Mpv, withPlaybackFileLock, type MpvImpl } from "../services/Mpv.js"
 import { transcodeRoutes } from "./transcode.js"
 
 const ENV = "PWE_WORKER_API_KEY"
@@ -70,7 +71,7 @@ const baseLibraryRow: LibraryItem = {
   last_played_at: null,
 }
 
-const makeStack = (opts: { migrationRunning?: boolean } = {}) => {
+const makeStack = (opts: { migrationRunning?: boolean; onPlayerStatus?: () => void } = {}) => {
   const sqlite = new Database(":memory:")
   openDbs.push(sqlite)
   sqlite.exec(DDL)
@@ -156,11 +157,25 @@ const makeStack = (opts: { migrationRunning?: boolean } = {}) => {
     isRunning: () => Effect.succeed(Boolean(opts.migrationRunning)),
   }
 
+  const player = { path: null as string | null, playing: false }
+  const mpvImpl = {
+    status: () => Effect.sync(() => {
+      const status = {
+        ...player,
+        current_workshop_id: player.path ? "abc" : null,
+        display_mode: "fill" as const,
+      }
+      opts.onPlayerStatus?.()
+      return status
+    }),
+  } as MpvImpl
+
   // The route handler also yields shared services directly. `provideMerge`
   // keeps them visible in the runtime's context
   // instead of being fully consumed by TranscodeQueueLive.
   const layer = TranscodeQueueLive.pipe(
     Layer.provideMerge(TasksLive),
+    Layer.provideMerge(Layer.succeed(Mpv, mpvImpl)),
     Layer.provideMerge(Layer.succeed(Library, libImpl)),
     Layer.provideMerge(Layer.succeed(Logger, logImpl)),
     Layer.provideMerge(Layer.succeed(Storage, storageImpl)),
@@ -170,7 +185,7 @@ const makeStack = (opts: { migrationRunning?: boolean } = {}) => {
   )
 
   const runtime = ManagedRuntime.make(layer)
-  return { runtime, sqlite, mediaRoot, libRow: () => row }
+  return { runtime, sqlite, mediaRoot, player, libRow: () => row }
 }
 
 afterEach(() => {
@@ -343,6 +358,103 @@ describe("transcode routes — full lifecycle", () => {
       })
     )
     expect(res.status).toBe(404)
+  })
+
+  test("refuses an upload when playback began after enqueue, preserving the old artifact", async () => {
+    const output = join(stack.mediaRoot, "optimized/abc.mp4")
+    mkdirSync(dirname(output), { recursive: true })
+    writeFileSync(output, "old-artifact")
+    await stack.runtime.runPromise(Effect.gen(function* () {
+      const lib = yield* Library
+      yield* lib.update("abc", { transcoded_path: "optimized/abc.mp4" })
+    }))
+    stack.player.path = output
+    stack.player.playing = false
+    stack.sqlite.prepare(
+      "INSERT INTO transcode_jobs (id, workshop_id, status, created_at) VALUES ('J1', 'abc', 'running', ?)"
+    ).run(Date.now())
+
+    const response = await app.handle(new Request("http://localhost/api/transcode/J1/artifact", {
+      method: "PUT",
+      headers: { "x-worker-key": TEST_KEY },
+      body: "new-artifact",
+    }))
+
+    expect(response.status).toBe(409)
+    expect((await response.json()).error).toMatch(/stop playback|switch.*wallpaper/i)
+    expect(readFileSync(output, "utf-8")).toBe("old-artifact")
+    expect(existsSync(`${output}.partial.J1`)).toBe(false)
+    expect(stack.libRow().transcoded_path).toBe("optimized/abc.mp4")
+    expect(stack.sqlite.query("SELECT status FROM transcode_jobs WHERE id = 'J1'").get()).not.toEqual({ status: "completed" })
+  })
+
+  test("rechecks playback after streaming the upload and cleans up the partial file on conflict", async () => {
+    const checked = Promise.withResolvers<void>()
+    const releaseBody = Promise.withResolvers<void>()
+    stack = makeStack({ onPlayerStatus: () => checked.resolve() })
+    app = buildApp()
+    const output = join(stack.mediaRoot, "optimized/abc.mp4")
+    mkdirSync(dirname(output), { recursive: true })
+    writeFileSync(output, "old-artifact")
+    stack.sqlite.prepare(
+      "INSERT INTO transcode_jobs (id, workshop_id, status, created_at) VALUES ('J1', 'abc', 'running', ?)"
+    ).run(Date.now())
+    const body = new ReadableStream({
+      async start(controller) {
+        await releaseBody.promise
+        controller.enqueue(new TextEncoder().encode("new-artifact"))
+        controller.close()
+      },
+    })
+
+    const uploading = app.handle(new Request("http://localhost/api/transcode/J1/artifact", {
+      method: "PUT",
+      headers: { "x-worker-key": TEST_KEY },
+      body,
+    }))
+    await checked.promise
+    stack.player.path = output
+    stack.player.playing = true
+    releaseBody.resolve()
+    const response = await uploading
+
+    expect(response.status).toBe(409)
+    expect((await response.json()).error).toMatch(/stop playback|switch.*wallpaper/i)
+    expect(readFileSync(output, "utf-8")).toBe("old-artifact")
+    expect(existsSync(`${output}.partial.J1`)).toBe(false)
+    expect(stack.libRow().transcode_status).not.toBe("completed")
+  })
+
+  test("playback starting at the final upload check opens the new artifact only after replacement", async () => {
+    let statusChecks = 0
+    let playedBytes: Promise<string> | undefined
+    const output = () => join(stack.mediaRoot, "optimized/abc.mp4")
+    stack = makeStack({ onPlayerStatus: () => {
+      if (++statusChecks === 2) {
+        playedBytes = stack.runtime.runPromise(withPlaybackFileLock(Effect.sync(() => {
+          stack.player.path = output()
+          stack.player.playing = true
+          return readFileSync(output(), "utf-8")
+        })))
+      }
+    } })
+    app = buildApp()
+    mkdirSync(dirname(output()), { recursive: true })
+    writeFileSync(output(), "old-artifact")
+    stack.sqlite.prepare(
+      "INSERT INTO transcode_jobs (id, workshop_id, status, created_at) VALUES ('J1', 'abc', 'running', ?)"
+    ).run(Date.now())
+
+    const response = await app.handle(new Request("http://localhost/api/transcode/J1/artifact", {
+      method: "PUT",
+      headers: { "x-worker-key": TEST_KEY },
+      body: "new-artifact",
+    }))
+
+    expect(response.status).toBe(200)
+    expect(playedBytes).toBeDefined()
+    expect(await playedBytes).toBe("new-artifact")
+    expect(stack.libRow().transcode_status).toBe("completed")
   })
 
   test("/fail marks job and library failed", async () => {

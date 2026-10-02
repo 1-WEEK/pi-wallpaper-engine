@@ -10,6 +10,7 @@ import { Config } from "../services/Config.js"
 import { Db } from "../services/Db.js"
 import { Library } from "../services/Library.js"
 import { Migrate } from "../services/Migrate.js"
+import { withPlaybackFileLock } from "../services/Mpv.js"
 import { Storage, isPathInsideRoot } from "../services/Storage.js"
 import {
   ACTIVE_TRANSCODE_JOB_STATUSES,
@@ -17,6 +18,7 @@ import {
 } from "../services/TranscodeJobStatus.js"
 import { TranscodeQueue } from "../services/TranscodeQueue.js"
 import { workerGuard } from "../middleware/workerGuard.js"
+import { ensureArtifactNotInUse } from "../transcode/artifactPlayback.js"
 import type { AppRuntime } from "../runtime.js"
 
 // Body shape for /fail / /progress / /claim. Elysia's `t.*`
@@ -48,7 +50,7 @@ const mapRouteError = (set: { status?: number | string }, e: unknown) => {
     return { ok: false, error: e.message }
   }
   if (e instanceof StorageError) {
-    set.status = e.kind === "Disconnected" ? 503 : 400
+    set.status = e.kind === "Busy" ? 409 : e.kind === "Disconnected" ? 503 : 400
     return { ok: false, error: e.message }
   }
   set.status = 500
@@ -121,6 +123,7 @@ const artifactTarget = (jobId: string) =>
     if (!isPathInsideRoot(finalAbs, dataRoot)) {
       return yield* failFile(400, "Artifact path escapes the current media root.")
     }
+    yield* ensureArtifactNotInUse(finalAbs)
 
     return {
       finalAbs,
@@ -187,32 +190,39 @@ export const transcodeRoutes = (runtime: AppRuntime) =>
         .runPromise(
           Effect.gen(function* () {
             const target = yield* artifactTarget(params.jobId)
-            const outputSize = yield* Effect.tryPromise({
-              try: async () => {
-                await mkdir(dirname(target.finalAbs), { recursive: true })
-                await unlink(target.partialAbs).catch(() => {})
-                try {
+            const outputSize = yield* Effect.gen(function* () {
+              const size = yield* Effect.tryPromise({
+                try: async () => {
+                  await mkdir(dirname(target.finalAbs), { recursive: true })
+                  await unlink(target.partialAbs).catch(() => {})
                   await pipeline(
                     Readable.fromWeb(body as unknown as Parameters<typeof Readable.fromWeb>[0]),
                     createWriteStream(target.partialAbs)
                   )
                   const st = await stat(target.partialAbs)
-                  if (st.size <= 0) {
-                    throw new Error("Uploaded artifact is empty.")
-                  }
-                  await rename(target.partialAbs, target.finalAbs)
+                  if (st.size <= 0) throw new Error("Uploaded artifact is empty.")
                   return st.size
-                } catch (cause) {
-                  await unlink(target.partialAbs).catch(() => {})
-                  throw cause
-                }
-              },
-              catch: (cause) =>
-                new WorkerFileError(
+                },
+                catch: (cause) => new WorkerFileError(
                   500,
                   `Failed to store artifact: ${cause instanceof Error ? cause.message : String(cause)}`
                 ),
-            })
+              })
+
+              yield* withPlaybackFileLock(Effect.gen(function* () {
+                yield* ensureArtifactNotInUse(target.finalAbs)
+                yield* Effect.tryPromise({
+                  try: () => rename(target.partialAbs, target.finalAbs),
+                  catch: (cause) => new WorkerFileError(
+                    500,
+                    `Failed to store artifact: ${cause instanceof Error ? cause.message : String(cause)}`
+                  ),
+                })
+              }))
+              return size
+            }).pipe(Effect.ensuring(
+              Effect.promise(() => unlink(target.partialAbs).catch(() => {}))
+            ))
 
             const queue = yield* TranscodeQueue
             yield* queue.complete(

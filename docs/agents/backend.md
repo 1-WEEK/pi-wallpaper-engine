@@ -135,6 +135,15 @@ the Pi validates and places the result under the current media root. Preserve th
 ownership when changing uploads, retries, or migration guards. Read the
 [deployment guide](../worker-deployment.md) for hardware requirements and encoder configuration.
 
+Re-transcoding refuses to replace an optimized file open in mpv, including paused
+playback, with HTTP 409 explaining how to release it. The same check runs on artifact
+upload and immediately before the atomic rename, since playback can begin after enqueue.
+The final check and rename share a lock with mpv's file-opening transitions so a new
+playback handle cannot slip between them; streaming holds no lock.
+Conflicts leave the old artifact intact and remove the temporary upload; the Worker
+reports the job as failed so it can be retried after stopping or switching wallpapers.
+The bulk retry skips occupied artifacts and continues with the other eligible items.
+
 Every encoder path (QSV, VA-API, libx265/libx264) must crop-to-fill: take the centred
 window of the source matching the screen aspect ratio, then scale it to the screen box.
 The hardware scalers accept no aspect or crop options, so the crop runs in software on

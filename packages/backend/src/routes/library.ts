@@ -8,6 +8,7 @@ import { Library } from "../services/Library.js"
 import { Storage } from "../services/Storage.js"
 import { TranscodeQueue } from "../services/TranscodeQueue.js"
 import { decideTranscode, type TranscodeSourceSpec } from "../transcode/decide.js"
+import { ensureArtifactNotInUse } from "../transcode/artifactPlayback.js"
 import { httpFromError } from "./httpError.js"
 import { transcodeMode, type AppContext, type AppRuntime } from "../runtime.js"
 import type { AuthService } from "../services/Auth.js"
@@ -89,6 +90,13 @@ export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = nu
           }
 
           const decision = decideTranscode(source, config.screen, config.transcode.target_codec)
+          if (decision.kind === "transcode") {
+            const storage = yield* Storage
+            const root = yield* storage.mediaRoot()
+            yield* ensureArtifactNotInUse(
+              resolve(root, config.paths.optimized_dir, `${row.workshop_id}.mp4`)
+            )
+          }
           yield* queue.enqueue(row.workshop_id, decision, row.source_path)
           return {
             kind: decision.kind === "skip" ? "skipped" : "queued",
@@ -213,7 +221,13 @@ export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = nu
           let invalid = 0
           for (const row of rows) {
             if (!isSweepEligible(row.transcode_status)) continue
-            const result = yield* retrigger(row.workshop_id)
+            const result = yield* retrigger(row.workshop_id).pipe(
+              Effect.catchTag("StorageError", (error) =>
+                error.kind === "Busy"
+                  ? Effect.succeed({ kind: "skipped" } as const)
+                  : Effect.fail(error)
+              )
+            )
             if (result.kind === "invalid") invalid += 1
             else if (result.kind === "skipped") skipped += 1
             else if (result.kind === "queued") queued += 1
@@ -234,7 +248,7 @@ export const libraryRoutes = (runtime: AppRuntime, auth: AuthService | null = nu
           if (result.kind === "conflict") {
             set.status = 409
             return {
-              error: `Transcode can only be retriggered from failed or skipped (current: ${result.status}).`,
+              error: `Transcode is already active (current: ${result.status}).`,
             }
           }
           if (result.kind === "invalid") {

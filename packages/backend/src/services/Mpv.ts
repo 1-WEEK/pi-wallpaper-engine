@@ -1,4 +1,4 @@
-import { Context, Deferred, Effect, Layer, PubSub, Queue, Ref, Stream } from "effect"
+import { Context, Deferred, Effect, Layer, PubSub, Queue, Ref, Semaphore, Stream } from "effect"
 import { unlinkSync } from "node:fs"
 import type { DisplayMode } from "@pwe/shared"
 import { MpvIpcError, MpvSpawnError } from "@pwe/shared"
@@ -42,6 +42,10 @@ export interface MpvImpl {
 }
 
 export class Mpv extends Context.Service<Mpv, MpvImpl>()("Mpv") {}
+
+// Coordinate loadfile/status transitions with artifact check + rename: SMB
+// must not see a new playback handle open between those two operations.
+export const withPlaybackFileLock = Semaphore.makeUnsafe(1).withPermit
 
 // The compositor owns the fullscreen state and may strip it at runtime
 // (observed on labwc: after a display power cycle mpv can end up windowed
@@ -326,7 +330,7 @@ export const MpvLive = Layer.effect(
 
     return {
       play: (workshopId, path) =>
-        Effect.gen(function* () {
+        withPlaybackFileLock(Effect.gen(function* () {
           yield* send(["loadfile", path, "replace"])
           yield* send(["set_property", "pause", false])
           yield* Ref.update(statusRef, (s) => ({
@@ -335,7 +339,7 @@ export const MpvLive = Layer.effect(
             current_workshop_id: workshopId,
             path,
           }))
-        }),
+        })),
 
       pause: () =>
         Effect.gen(function* () {
@@ -350,7 +354,7 @@ export const MpvLive = Layer.effect(
         }),
 
       stop: () =>
-        Effect.gen(function* () {
+        withPlaybackFileLock(Effect.gen(function* () {
           yield* send(["stop"])
           yield* Ref.update(statusRef, (s) => ({
             ...s,
@@ -358,7 +362,7 @@ export const MpvLive = Layer.effect(
             current_workshop_id: null,
             path: null,
           }))
-        }),
+        })),
 
       setDisplayMode: (mode) =>
         Effect.gen(function* () {

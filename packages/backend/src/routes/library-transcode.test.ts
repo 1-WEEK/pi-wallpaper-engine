@@ -9,6 +9,8 @@ import { Library, type LibraryImpl } from "../services/Library.js"
 import { Logger, type LoggerImpl } from "../services/Logger.js"
 import { TranscodeQueueLive } from "../services/TranscodeQueue.js"
 import { TasksLive } from "../services/Tasks.js"
+import { Mpv, type MpvImpl } from "../services/Mpv.js"
+import { Storage, type StorageImpl } from "../services/Storage.js"
 import { libraryRoutes } from "./library.js"
 
 // The manual-retrigger routes gate on the same env switch as the worker
@@ -69,7 +71,11 @@ const makeRow = (overrides: Partial<LibraryItem>): LibraryItem => ({
 
 const makeStack = (
   rowList: LibraryItem[],
-  options: { readonly failPendingUpdate?: boolean } = {}
+  options: {
+    readonly failPendingUpdate?: boolean
+    readonly playerPath?: string
+    readonly playing?: boolean
+  } = {}
 ) => {
   const sqlite = new Database(":memory:")
   openDbs.push(sqlite)
@@ -139,6 +145,17 @@ const makeStack = (
 
   const layer = TranscodeQueueLive.pipe(
     Layer.provideMerge(TasksLive),
+    Layer.provideMerge(Layer.succeed(Mpv, {
+      status: () => Effect.succeed({
+        playing: options.playing ?? false,
+        current_workshop_id: options.playerPath ? "abc" : null,
+        path: options.playerPath ?? null,
+        display_mode: "fill",
+      }),
+    } as MpvImpl)),
+    Layer.provideMerge(Layer.succeed(Storage, {
+      mediaRoot: () => Effect.succeed("/tmp/pwe-test"),
+    } as unknown as StorageImpl)),
     Layer.provideMerge(Layer.succeed(Library, libImpl)),
     Layer.provideMerge(Layer.succeed(Logger, logImpl)),
     Layer.provideMerge(Layer.succeed(Db, dbImpl)),
@@ -231,6 +248,33 @@ describe("POST /api/library/:workshopId/transcode", () => {
     expect(stack.libRow("abc")?.transcoded_path).toBe("optimized/abc.mp4")
   })
 
+  test("refuses to re-transcode an artifact open in the player, including when paused", async () => {
+    for (const playing of [true, false]) {
+      const stack = makeStack([
+        makeRow({ transcode_status: "completed", transcoded_path: "optimized/abc.mp4" }),
+      ], { playerPath: "/tmp/pwe-test/optimized/abc.mp4", playing })
+
+      const response = await post(stack.app, "/api/library/abc/transcode")
+
+      expect(response.status).toBe(409)
+      expect((await response.json()).error).toMatch(/stop playback|switch.*wallpaper/i)
+      expect(stack.sqlite.query("SELECT id FROM transcode_jobs").all()).toHaveLength(0)
+      expect(stack.libRow("abc")?.transcode_status).toBe("completed")
+      expect(stack.libRow("abc")?.transcoded_path).toBe("optimized/abc.mp4")
+    }
+  })
+
+  test("allows a re-transcode while the same wallpaper's source is playing", async () => {
+    const stack = makeStack([
+      makeRow({ transcode_status: "completed", transcoded_path: "optimized/abc.mp4" }),
+    ], { playerPath: "/tmp/pwe-test/source/abc/wallpaper.mp4", playing: true })
+
+    const response = await post(stack.app, "/api/library/abc/transcode")
+
+    expect(response.status).toBe(200)
+    expect(stack.libRow("abc")?.transcode_status).toBe("pending")
+  })
+
   test("unknown workshop id returns 404", async () => {
     const stack = makeStack([])
     const res = await post(stack.app, "/api/library/nope/transcode")
@@ -281,6 +325,21 @@ describe("POST /api/library/:workshopId/transcode", () => {
 })
 
 describe("POST /api/library/transcode/retry-all", () => {
+  test("skips an artifact open in the player and continues retrying other items", async () => {
+    const stack = makeStack([
+      makeRow({ transcode_status: "failed", transcoded_path: "optimized/abc.mp4" }),
+      makeRow({ workshop_id: "other", transcode_status: "failed" }),
+    ], { playerPath: "/tmp/pwe-test/optimized/abc.mp4", playing: true })
+
+    const response = await post(stack.app, "/api/library/transcode/retry-all")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, queued: 1, skipped: 1, invalid: 0 })
+    expect(stack.libRow("abc")?.transcode_status).toBe("failed")
+    expect(stack.libRow("abc")?.transcoded_path).toBe("optimized/abc.mp4")
+    expect(stack.libRow("other")?.transcode_status).toBe("pending")
+  })
+
   test("sweeps only failed/skipped rows and reports counts", async () => {
     const stack = makeStack([
       makeRow({ workshop_id: "fourk", transcode_status: "failed" }), // → queued
