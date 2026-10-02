@@ -1730,7 +1730,7 @@ a {
 }
 
 /* Player sheet (MiniPlayer + Sheet, spec §9): the desktop PlayerBar's
-   instant controls — play mode / display mode / sleep — as ledger blocks
+   instant controls — play mode / display mode / play limit — as ledger blocks
    with ≥44px segmented targets. Reuses the settings .set-seg control. */
 .mps {
   padding: 18px 18px 28px;

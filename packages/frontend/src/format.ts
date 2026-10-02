@@ -1,16 +1,8 @@
 import type { LibraryItem } from "@pwe/shared"
 
-// Sleep-timer countdown as mm:ss, clamped at zero.
-export const formatSleepCountdown = (ms: number): string => {
-  const sec = Math.max(0, Math.floor(ms / 1000))
-  const m = Math.floor(sec / 60)
-  const s = sec % 60
-  return `${m}:${String(s).padStart(2, "0")}`
-}
-
 // Play-limit countdown as h:mm:ss past an hour, else mm:ss, clamped at zero.
-// The limit is minute-granular but can be tens of hours away, so the sleep
-// timer's mm:ss reads wrong once the remaining time exceeds 99 minutes.
+// The limit is minute-granular but can be tens of hours away, so a plain
+// mm:ss reads wrong once the remaining time exceeds 99 minutes.
 export const formatPlayLimitCountdown = (sec: number): string => {
   const total = Math.max(0, Math.floor(sec))
   const h = Math.floor(total / 3600)

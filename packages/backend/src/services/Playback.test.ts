@@ -18,7 +18,11 @@ interface FakeFailures {
 
 // Recording fakes: every dependency call appends to `events`, so the ordering
 // invariants of playback orchestration are asserted on one literal array.
-const makeRuntime = (failures: FakeFailures = {}, playLimitMinutes = 0) => {
+const makeRuntime = (
+  failures: FakeFailures = {},
+  playLimitMinutes = 0,
+  playLimitOnce = false
+) => {
   const events: string[] = []
   const warnings: string[] = []
   // Mutable so a test can change the stored policy mid-session the way the
@@ -26,7 +30,7 @@ const makeRuntime = (failures: FakeFailures = {}, playLimitMinutes = 0) => {
   // unit test needs a sub-minute deadline: the real store floors to whole
   // minutes, so a test that could not seed a fraction would have to wait a
   // real minute to watch the timer fire.
-  const prefsState = { play_limit_minutes: playLimitMinutes }
+  const prefsState = { play_limit_minutes: playLimitMinutes, play_limit_once: playLimitOnce }
   // A Queue rather than a PubSub so a test can hand the service a wallpaper
   // recovery without racing the subscription registration.
   const recoveries = Effect.runSync(Queue.unbounded<string>())
@@ -101,12 +105,14 @@ const makeRuntime = (failures: FakeFailures = {}, playLimitMinutes = 0) => {
         play_mode: "single" as const,
         rotation_interval_sec: 600,
         play_limit_minutes: prefsState.play_limit_minutes,
+        play_limit_once: prefsState.play_limit_once,
       }),
     setMode: () => Effect.void,
     setInterval: () => Effect.void,
-    setPlayLimit: (minutes: number) =>
+    setPlayLimit: (minutes: number, once: boolean) =>
       Effect.sync(() => {
         prefsState.play_limit_minutes = Math.max(0, Math.floor(minutes))
+        prefsState.play_limit_once = once
       }),
   })
 
@@ -115,8 +121,9 @@ const makeRuntime = (failures: FakeFailures = {}, playLimitMinutes = 0) => {
   return {
     events,
     warnings,
-    setLimit: (minutes: number) => {
+    setLimit: (minutes: number, once = false) => {
       prefsState.play_limit_minutes = minutes
+      prefsState.play_limit_once = once
     },
     /** Hand the orchestrator a wallpaper that PlayerPower restored on its own. */
     recovered: (workshopId: string) =>
@@ -321,12 +328,12 @@ describe("PlaybackLive", () => {
       const off = await runtime.runPromise(
         Effect.gen(function* () {
           const playback = yield* Playback
-          yield* playback.setPlayLimit(0)
+          yield* playback.setPlayLimit(0, false)
           return yield* playback.playLimitStatus()
         })
       )
       // Switching off clears any live deadline so the summary stops reporting one.
-      expect(off).toEqual({ minutes: 0, deadline: null })
+      expect(off).toEqual({ minutes: 0, deadline: null, once: false })
     } finally {
       await runtime.dispose()
     }
@@ -342,7 +349,7 @@ describe("PlaybackLive", () => {
           return yield* playback.playLimitStatus()
         })
       )
-      expect(status).toEqual({ minutes: 0, deadline: null })
+      expect(status).toEqual({ minutes: 0, deadline: null, once: false })
       expect(events).toEqual(["playerPower.play:123", "rotation.arm:123"])
     } finally {
       await runtime.dispose()
@@ -405,150 +412,6 @@ describe("PlaybackLive", () => {
     }
   })
 
-  test("sleep arms the countdown, sleepStatus agrees, and sleep(0) cancels", async () => {
-    const { runtime } = makeRuntime()
-    try {
-      const armed = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleep(5)))
-      expect(armed.active).toBe(true)
-      // deadline should be roughly 5 minutes from now (± a small tolerance)
-      const remaining = armed.deadline! - Date.now()
-      expect(remaining).toBeGreaterThan(4.9 * 60_000)
-      expect(remaining).toBeLessThan(5.1 * 60_000)
-
-      const status = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleepStatus()))
-      expect(status).toEqual(armed)
-
-      const cancelled = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleep(0)))
-      expect(cancelled).toEqual({ active: false, deadline: null })
-
-      const after = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleepStatus()))
-      expect(after).toEqual({ active: false, deadline: null })
-    } finally {
-      await runtime.dispose()
-    }
-  })
-
-  test("sleep elapse disarms rotation before turning the display off", async () => {
-    const { events, runtime, recovered } = makeRuntime()
-    try {
-      // Use a fractional minute to get a ~50 ms timeout
-      const shortMs = 50
-      await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleep(shortMs / 60_000)))
-
-      // Wait for the native timer to fire
-      await new Promise<void>((r) => setTimeout(r, shortMs + 150))
-
-      // Flush the Effect fiber queue to ensure the forked elapse completes
-      await runtime.runPromise(Effect.sleep("10 millis"))
-
-      expect(events).toEqual(["rotation.disarm", "playerPower.displayOff"])
-      const status = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleepStatus()))
-      expect(status).toEqual({ active: false, deadline: null })
-    } finally {
-      await runtime.dispose()
-    }
-  })
-
-  test("sleep elapse falls back to stopForIdle when displayOff fails", async () => {
-    const { events, runtime } = makeRuntime({ displayOffFails: true })
-    try {
-      const shortMs = 50
-      await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleep(shortMs / 60_000)))
-      await new Promise<void>((r) => setTimeout(r, shortMs + 150))
-      await runtime.runPromise(Effect.sleep("10 millis"))
-
-      expect(events).toEqual([
-        "rotation.disarm",
-        "playerPower.displayOff",
-        "playerPower.stopForIdle",
-      ])
-    } finally {
-      await runtime.dispose()
-    }
-  })
-
-  test("sleep elapse failure only warns and never crashes playback orchestration", async () => {
-    const { events, warnings, runtime } = makeRuntime({
-      displayOffFails: true,
-      stopForIdleFails: true,
-    })
-    try {
-      const shortMs = 50
-      await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleep(shortMs / 60_000)))
-      await new Promise<void>((r) => setTimeout(r, shortMs + 150))
-      await runtime.runPromise(Effect.sleep("10 millis"))
-
-      expect(events).toEqual([
-        "rotation.disarm",
-        "playerPower.displayOff",
-        "playerPower.stopForIdle",
-      ])
-      expect(warnings.length).toBe(1)
-      expect(warnings[0]).toContain("Sleep timer action failed")
-
-      // The service keeps answering after the failed elapse.
-      const status = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleepStatus()))
-      expect(status).toEqual({ active: false, deadline: null })
-    } finally {
-      await runtime.dispose()
-    }
-  })
-
-  test("the play limit elapsing disarms the sleep timer that loses the race", async () => {
-    // Both timers are armed from the same session; the play limit fires first
-    // here. The sleep timer must not stay reporting "active" for a session that
-    // has already stopped — the summary would contradict itself.
-    const { events, runtime } = makeRuntime({}, 50 / 60_000)
-    try {
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const playback = yield* Playback
-          yield* playback.play("123")
-          // A sleep timer that would fire far later than the play limit.
-          yield* playback.sleep(60)
-        })
-      )
-
-      // Wait for the native play-limit timer to fire, then flush the fiber.
-      await new Promise<void>((r) => setTimeout(r, 200))
-      await runtime.runPromise(Effect.sleep("10 millis"))
-
-      const sleep = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleepStatus()))
-      const limit = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.playLimitStatus()))
-      expect(sleep).toEqual({ active: false, deadline: null })
-      expect(limit.deadline).toBeNull()
-      expect(events).toEqual(["playerPower.play:123", "rotation.arm:123", "rotation.disarm", "playerPower.displayOff"])
-    } finally {
-      await runtime.dispose()
-    }
-  })
-
-  test("the sleep timer elapsing clears a live play-limit deadline", async () => {
-    // Mirror image: the sleep timer fires first, and the play limit must not be
-    // left reporting a deadline for a session that has already stopped.
-    const { events, runtime } = makeRuntime({}, 60)
-    try {
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const playback = yield* Playback
-          yield* playback.play("123")
-          yield* playback.sleep(50 / 60_000)
-        })
-      )
-
-      await new Promise<void>((r) => setTimeout(r, 200))
-      await runtime.runPromise(Effect.sleep("10 millis"))
-
-      const sleep = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.sleepStatus()))
-      const limit = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.playLimitStatus()))
-      expect(sleep).toEqual({ active: false, deadline: null })
-      expect(limit.deadline).toBeNull()
-      expect(events).toEqual(["playerPower.play:123", "rotation.arm:123", "rotation.disarm", "playerPower.displayOff"])
-    } finally {
-      await runtime.dispose()
-    }
-  })
-
   test("the play limit elapse under a degraded display only warns and keeps serving", async () => {
     // Both stop paths are unavailable: the display is unconfigured AND mpv's
     // socket is gone. The timer must swallow that the way the sleep timer does
@@ -575,7 +438,117 @@ describe("PlaybackLive", () => {
       // The service keeps answering after the failed elapse, and the deadline
       // is cleared so the summary does not claim a stopped session is armed.
       const status = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.playLimitStatus()))
-      expect(status).toEqual({ minutes: 50 / 60_000, deadline: null })
+      expect(status).toEqual({ minutes: 50 / 60_000, deadline: null, once: false })
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("setPlayLimit during a session re-arms the deadline from now", async () => {
+    const { runtime } = makeRuntime({}, 30)
+    try {
+      const status = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          yield* playback.setPlayLimit(120, false)
+          return yield* playback.playLimitStatus()
+        })
+      )
+      expect(status.minutes).toBe(120)
+      expect(status.once).toBe(false)
+      // The old 30m deadline is replaced, not kept: both surfaces show the same
+      // countdown, so a set means "N minutes from now".
+      const remaining = status.deadline! - Date.now()
+      expect(remaining).toBeGreaterThan(119.9 * 60_000)
+      expect(remaining).toBeLessThanOrEqual(120 * 60_000)
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("setPlayLimit with no session running stores the value without arming", async () => {
+    const { runtime } = makeRuntime({}, 30)
+    try {
+      const status = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.setPlayLimit(120, false)
+          return yield* playback.playLimitStatus()
+        })
+      )
+      expect(status).toEqual({ minutes: 120, deadline: null, once: false })
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("a one-shot limit is consumed when its session ends", async () => {
+    const { runtime, setLimit } = makeRuntime()
+    try {
+      const status = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          setLimit(30, true)
+          yield* playback.play("123")
+          yield* playback.stop()
+          return yield* playback.playLimitStatus()
+        })
+      )
+      // The value belonged to the session that just ended; the mode stays, so
+      // the next set is one-shot again.
+      expect(status).toEqual({ minutes: 0, deadline: null, once: true })
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("a permanent limit survives the session that armed it", async () => {
+    const { runtime } = makeRuntime({}, 30)
+    try {
+      const status = await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          yield* playback.play("123")
+          yield* playback.stop()
+          return yield* playback.playLimitStatus()
+        })
+      )
+      expect(status).toEqual({ minutes: 30, deadline: null, once: false })
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("a one-shot limit is consumed when it elapses", async () => {
+    const { runtime, setLimit } = makeRuntime()
+    try {
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const playback = yield* Playback
+          setLimit(50 / 60_000, true)
+          yield* playback.play("123")
+        })
+      )
+
+      await new Promise<void>((r) => setTimeout(r, 200))
+      await runtime.runPromise(Effect.sleep("10 millis"))
+
+      const status = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.playLimitStatus()))
+      expect(status).toEqual({ minutes: 0, deadline: null, once: true })
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  test("a one-shot left over from a previous process is cleared at boot", async () => {
+    // Nothing auto-plays after a restart, so a pending one-shot has no session
+    // to belong to; arming it on the next play would stop a session the
+    // administrator never asked to bound.
+    const { runtime } = makeRuntime({}, 30, true)
+    try {
+      const status = await runtime.runPromise(Effect.flatMap(Playback, (p) => p.playLimitStatus()))
+      expect(status).toEqual({ minutes: 0, deadline: null, once: true })
     } finally {
       await runtime.dispose()
     }

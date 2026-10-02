@@ -47,6 +47,7 @@ const makeDbLayer = () => {
       play_mode             TEXT NOT NULL DEFAULT 'single',
       rotation_interval_sec INTEGER NOT NULL DEFAULT 600,
       play_limit_minutes    INTEGER NOT NULL DEFAULT 0,
+      play_limit_once       INTEGER NOT NULL DEFAULT 0,
       updated_at            INTEGER NOT NULL
     );
   `)
@@ -91,6 +92,7 @@ describe("PlaybackPrefsLive", () => {
             play_mode: "single",
             rotation_interval_sec: 600,
             play_limit_minutes: 0,
+            play_limit_once: false,
           })
 
           yield* prefs.setMode("shuffle")
@@ -98,6 +100,7 @@ describe("PlaybackPrefsLive", () => {
             play_mode: "shuffle",
             rotation_interval_sec: 600,
             play_limit_minutes: 0,
+            play_limit_once: false,
           })
 
           yield* prefs.setInterval(120)
@@ -105,13 +108,15 @@ describe("PlaybackPrefsLive", () => {
             play_mode: "shuffle",
             rotation_interval_sec: 120,
             play_limit_minutes: 0,
+            play_limit_once: false,
           })
 
-          yield* prefs.setPlayLimit(45)
+          yield* prefs.setPlayLimit(45, false)
           expect(yield* prefs.get()).toEqual({
             play_mode: "shuffle",
             rotation_interval_sec: 120,
             play_limit_minutes: 45,
+            play_limit_once: false,
           })
 
           yield* prefs.setMode("sequential")
@@ -119,14 +124,17 @@ describe("PlaybackPrefsLive", () => {
             play_mode: "sequential",
             rotation_interval_sec: 120,
             play_limit_minutes: 45,
+            play_limit_once: false,
           })
 
-          // A negative limit would arm an auto-stop in the past; it clamps to off.
-          yield* prefs.setPlayLimit(-10)
+          // A negative limit would arm an auto-stop in the past; it clamps to off,
+          // and the mode still follows the last set so the next set keeps it.
+          yield* prefs.setPlayLimit(-10, true)
           expect(yield* prefs.get()).toEqual({
             play_mode: "sequential",
             rotation_interval_sec: 120,
             play_limit_minutes: 0,
+            play_limit_once: true,
           })
         })
       )

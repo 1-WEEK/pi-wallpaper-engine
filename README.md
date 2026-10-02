@@ -7,7 +7,7 @@ A Wallpaper Engine video player for the Raspberry Pi 4B. Use the web interface f
 ## Features
 
 - **Direct Playback**: Downloads and plays original Workshop video files directly on the Pi.
-- **Remote Control**: Mobile-friendly web UI for managing your library, rotating playlists (sequential, shuffle, or single loop), and setting sleep timers.
+- **Remote Control**: Mobile-friendly web UI for managing your library, rotating playlists (sequential, shuffle, or single loop), and setting a play limit that stops playback on time.
 - **Display Power Management**: With display commands configured, turns the monitor on when playback starts and off when idle.
 - **Storage Management**: Store wallpapers anywhere on the Pi. The UI includes a directory browser to safely move your media library across drives.
 - **Optional NAS Transcoding**: Avoid overloading the Pi's CPU. Deploy a companion Docker worker to an Intel NAS to handle heavy HEVC conversions.

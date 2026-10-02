@@ -35,10 +35,8 @@ describe("displayRoutes", () => {
       prev: () => Effect.void,
       setMode: () => Effect.void,
       setRotationInterval: () => Effect.void,
-      sleep: () => Effect.succeed({ active: false, deadline: null }),
-      sleepStatus: () => Effect.succeed({ active: false, deadline: null }),
       setPlayLimit: () => Effect.void,
-      playLimitStatus: () => Effect.succeed({ minutes: 0, deadline: null }),
+      playLimitStatus: () => Effect.succeed({ minutes: 0, deadline: null, once: false }),
     })
 
     const testLayer = Layer.mergeAll(displayLayer, playbackLayer)

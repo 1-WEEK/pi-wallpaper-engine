@@ -158,7 +158,7 @@ test.describe("PlayerBar glass dock", () => {
     expect(popBox.x + popBox.width).toBeCloseTo(clusterBox.x + clusterBox.width, 0)
   })
 
-  test("display → sleep quick-switch lets the old popover exit while the new one enters", async ({
+  test("display → limit quick-switch lets the old popover exit while the new one enters", async ({
     page,
   }) => {
     await mockAllEndpoints(page, { value: playingSummary() })
@@ -168,9 +168,9 @@ test.describe("PlayerBar glass dock", () => {
     const displayPop = page.locator(".pbar-pop").filter({ hasText: "DISPLAY" })
     await expect(displayPop).toBeVisible()
 
-    await page.getByRole("button", { name: "Sleep timer" }).click()
-    const sleepPop = page.locator(".pbar-pop").filter({ hasText: "SLEEP" })
-    await expect(sleepPop).toBeVisible()
+    await page.getByRole("button", { name: "Play limit" }).click()
+    const limitPop = page.locator(".pbar-pop").filter({ hasText: "PLAY LIMIT" })
+    await expect(limitPop).toBeVisible()
     // The display popover leaves on its mirrored 150ms exit instead of
     // vanishing in the same frame (the mid-exit window is too short to
     // assert without races); it always ends up unmounted.
@@ -247,36 +247,53 @@ test.describe("PlayerBar glass dock", () => {
     await expect(pop).toHaveCount(0)
   })
 
-  test("SLEEP popover posts the chosen minutes and the subtitle reports sleep Nm", async ({
+  test("PLAY LIMIT popover posts the preset and the mode; the subtitle reports the countdown", async ({
     page,
   }) => {
     const summaryRef = { value: playingSummary() }
     await mockAllEndpoints(page, summaryRef)
 
-    let postedMinutes: number | null = null
-    await page.route("**/api/player/sleep", (r) => {
-      postedMinutes = (r.request().postDataJSON() as { minutes: number }).minutes
+    const posted: Array<{ minutes: number; once: boolean }> = []
+    await page.route("**/api/player/play-limit", (r) => {
+      const body = r.request().postDataJSON() as { minutes: number; once: boolean }
+      posted.push(body)
+      const deadline = Date.now() + body.minutes * 60_000
       const next = playingSummary()
-      next.status.sleep = { active: true, deadline: Date.now() + 30 * 60_000 }
+      next.status.play_limit = { minutes: body.minutes, deadline, once: body.once }
       summaryRef.value = next
       return r.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ active: true, deadline: Date.now() + 30 * 60_000 }),
+        body: JSON.stringify({ minutes: body.minutes, deadline, once: body.once }),
       })
     })
 
     await page.goto("/browse")
-    await page.getByRole("button", { name: "Sleep timer" }).click()
-    const pop = page.locator(".pbar-pop").filter({ hasText: "SLEEP" })
+    await page.getByRole("button", { name: "Play limit" }).click()
+    const pop = page.locator(".pbar-pop").filter({ hasText: "PLAY LIMIT" })
     await expect(pop).toBeVisible()
+    // Two right-aligned lines, not one long strip off the dock's left edge.
+    const box = await pop.boundingBox()
+    expect(box!.width).toBeLessThan(320)
     await expect(pop.getByRole("button", { name: "OFF" })).toHaveClass(/is-on/)
+    await expect(pop.getByRole("button", { name: "ALWAYS" })).toHaveClass(/is-on/)
 
     await pop.getByRole("button", { name: "30M" }).click()
-    await expect.poll(() => postedMinutes).toBe(30)
+    await expect.poll(() => posted.length).toBe(1)
+    expect(posted[0]).toEqual({ minutes: 30, once: false })
     // Selection commits and closes the popover (after its mirrored exit).
     await expect(pop).toHaveCount(0)
-    await expect(page.locator(".pbar-sub")).toContainText("sleep 30m")
+    await expect(page.locator(".pbar-sub")).toContainText("limit 30m")
+
+    // The mode is the other half of the same value: flipping it commits against
+    // the current minutes and leaves the popover open, like the display modes.
+    await page.getByRole("button", { name: "Play limit" }).click()
+    const pop2 = page.locator(".pbar-pop").filter({ hasText: "PLAY LIMIT" })
+    await expect(pop2).toBeVisible()
+    await pop2.getByRole("button", { name: "ONCE" }).click()
+    await expect.poll(() => posted.length).toBe(2)
+    expect(posted[1]).toEqual({ minutes: 30, once: true })
+    await expect(pop2.getByRole("button", { name: "ONCE" })).toHaveClass(/is-on/)
   })
 
   test("display power is a direct toggle against the API", async ({ page }) => {

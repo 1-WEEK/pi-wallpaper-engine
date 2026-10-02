@@ -54,23 +54,18 @@ discover and download Workshop items. It does not grant administrator access.
 ### Playback
 
 **Playback orchestration**: Coordination of wallpaper playback, stepping,
-rotation, sleep, and display power so that their effects stay consistent.
+rotation, the play limit, and display power so that their effects stay
+consistent.
 
-**Play limit**: The administrator's durable policy to stop playback after a
-number of minutes. It is a setting, not an instruction: it re-arms every time a
-playback session begins and survives restarts. Off means no limit.
+**Play limit**: The administrator's setting to stop playback after a number of
+minutes, edited from the PlayerBar or from Settings. It has two modes:
+**permanent**, which re-arms on every playback session and survives restarts,
+and **one-shot**, which applies to a single session and is consumed when that
+session ends. Off means no limit.
 
 **Playback session**: The span from one play to the next stop. A play limit
 counts down across the whole span, so pausing or stepping to another wallpaper
 does not restart it — only stopping and playing again does.
-
-**Sleep timer**: A one-shot instruction from the player to turn the display off
-after a delay. It is not a setting: it belongs to the current session and is
-gone once it fires or is cancelled.
-
-**Either-timer-wins**: When a play limit and a sleep timer are both counting
-down, the one that elapses first ends the session and disarms the other, so no
-surface reports a deadline for a session that has already stopped.
 
 ### Transcoding
 
