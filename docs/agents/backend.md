@@ -155,6 +155,16 @@ Conflicts leave the old artifact intact and remove the temporary upload; the Wor
 reports the job as failed so it can be retried after stopping or switching wallpapers.
 The bulk retry skips occupied artifacts and continues with the other eligible items.
 
+The per-item retry accepts `failed`, `skipped`, and `completed`; bulk retry targets
+only `failed` and `skipped`. Occupancy checks resolve relative artifact paths through
+`Storage.mediaRoot()`, not the configured default directory. Playing a source file
+does not block replacement of a different optimized artifact for the same wallpaper.
+The [artifact playback guard](../../packages/backend/src/transcode/artifactPlayback.ts)
+never interrupts playback automatically. Interrupted uploads also remove their
+temporary file and preserve the old artifact. The guard coordinates backend-owned
+mpv handles only; external file handles or actual filesystem permission failures
+still surface as upload errors.
+
 Every encoder path (QSV, VA-API, libx265/libx264) must crop-to-fill: take the centred
 window of the source matching the screen aspect ratio, then scale it to the screen box.
 The hardware scalers accept no aspect or crop options, so the crop runs in software on
