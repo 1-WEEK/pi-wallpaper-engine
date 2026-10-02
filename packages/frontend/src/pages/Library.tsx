@@ -5,7 +5,7 @@ import useSWR from "swr"
 import { api } from "../api.js"
 import { formatBytes, spaceSavedPercent } from "../format.js"
 import { appIcons } from "../icons.js"
-import { useLayout } from "../components/mobile/index.js"
+import { useLayout, MobileSheet } from "../components/mobile/index.js"
 import { VideoPreview } from "../components/VideoPreview.js"
 import { RailControls } from "../components/RailShell.js"
 import { RailRow } from "../components/RailRow.js"
@@ -847,20 +847,6 @@ const LibraryDetail = ({
   onRequestClose: () => void
   onStep: (dir: 1 | -1) => void
 }) => {
-  const [confirming, setConfirming] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current)
-    },
-    []
-  )
-
-  const saved = spaceSavedPercent(row)
-  const added = new Date(row.downloaded_at).toISOString().slice(0, 10)
-  const optimized = row.transcoded_resolution !== null && row.transcoded_size !== null
-
   return (
     <div className="ldet">
       <div
@@ -887,7 +873,62 @@ const LibraryDetail = ({
           {nowPlaying && <span className="lib-now ldet-now mono">NOW PLAYING</span>}
           <TxPill row={row} />
         </div>
+        <LibraryDetailBody
+          row={row}
+          nowPlaying={nowPlaying}
+          intents={intents}
+          onPreview={onPreview}
+          onDelete={onDelete}
+          onStep={onStep}
+        />
+      </div>
+    </div>
+  )
+}
+
+/* The detail body is shared: desktop renders it inside the ldet panel,
+   mobile (spec §9) inside the MobileSheet — same rows, same commands, the
+   ghost/VT chrome stays desktop-only. */
+const LibraryDetailBody = ({
+  row,
+  nowPlaying,
+  intents,
+  onPreview,
+  onDelete,
+  onStep,
+}: {
+  row: LibraryItem
+  nowPlaying: boolean
+  intents: Intents
+  onPreview: (row: LibraryItem) => void
+  onDelete: (id: string) => void
+  onStep: (dir: 1 | -1) => void
+}) => {
+  const [confirming, setConfirming] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+    },
+    []
+  )
+
+  const saved = spaceSavedPercent(row)
+  const added = new Date(row.downloaded_at).toISOString().slice(0, 10)
+  const optimized = row.transcoded_resolution !== null && row.transcoded_size !== null
+
+  const { mobile } = useLayout()
+
+  return (
         <div className="ldet-body">
+          {mobile && (
+            <div className="ldet-media">
+              {row.preview_url ? <img src={row.preview_url} alt={row.title} /> : null}
+              {nowPlaying && <span className="lib-now ldet-now mono">NOW PLAYING</span>}
+              <TxPill row={row} />
+            </div>
+          )}
           <h2 className="ldet-title">{row.title}</h2>
           <div className="ldet-meta mono">
             ID {row.workshop_id} · ADDED {added}
@@ -980,21 +1021,21 @@ const LibraryDetail = ({
             </div>
           </div>
         </div>
-      </div>
-    </div>
   )
 }
 
-/* ── Mobile: the pre-redesign layout stays untouched (mobile pages are
-     out of the redesign scope, spec §9). Grid only, same legacy classes. ── */
+/* ── Mobile (spec §9): the contact-sheet grid degraded to touch — 2-up
+     cards whose single tap target opens the desktop detail body inside a
+     Sheet. Page actions are understated mono commands; the discreet 18+
+     entry sits in the header (same resting grammar as the desktop rail). ── */
 
 const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
-  const [privacyOpen, setPrivacyOpen] = useState(false)
   const [showAdult, setShowAdult] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [previewItem, setPreviewItem] = useState<LibraryItem | null>(null)
-  const { data: rows = [], mutate } = useLibraryRows()
+  const [detailIdx, setDetailIdx] = useState<number | null>(null)
+  const { data: rows = [], isLoading, error: loadError, mutate } = useLibraryRows()
   const intents = useIntents(
     () => mutate().then(() => undefined),
     onSystemRefresh,
@@ -1002,7 +1043,6 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
     setNotice
   )
 
-  const adultCount = useMemo(() => rows.filter(isAdultRow).length, [rows])
   const visibleRows = useMemo(
     () => (showAdult ? rows : rows.filter((row) => !isAdultRow(row))),
     [rows, showAdult]
@@ -1034,190 +1074,138 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
       .libraryTranscodeRetryAll()
       .then(async (res) => {
         setError(null)
-        setNotice(`Transcode sweep: ${res.queued} queued, ${res.skipped} skipped`)
+        setNotice(`TRANSCODE SWEEP — ${res.queued} QUEUED · ${res.skipped} SKIPPED`)
         await mutate()
       })
       .catch((e: Error) => setError(e.message))
 
-  const countLabel = `${visibleRows.length} wallpaper${visibleRows.length === 1 ? "" : "s"} · ${formatBytes(totalSize)}`
+  const detailRow = detailIdx !== null ? (visibleRows[detailIdx] ?? null) : null
+
+  const stepDetail = (dir: 1 | -1) => {
+    setDetailIdx((idx) => {
+      if (idx === null || visibleRows.length === 0) return idx
+      return (idx + dir + visibleRows.length) % visibleRows.length
+    })
+  }
 
   return (
-    <div className="page library-page">
-      <header className="page-header library-page-header">
-        <div className="library-page-title-block">
-          <h1 className="page-title">Library</h1>
-          <span className="page-count mono">{countLabel}</span>
-        </div>
-        <div className="page-actions">
-          {visibleRows.length > 0 && (
-            <div className="library-rotation-actions">
-              <button
-                type="button"
-                className="btn library-rotation-btn"
-                onClick={() => playRotation("sequential")}
-              >
-                <span className="btn-icon">{appIcons.modeSequential}</span>
-                Play all
-              </button>
-              <button
-                type="button"
-                className="btn library-rotation-btn"
-                onClick={() => playRotation("shuffle")}
-              >
-                <span className="btn-icon">{appIcons.modeShuffle}</span>
-                Shuffle
-              </button>
-              {hasSweepable(rows) && (
-                <button
-                  type="button"
-                  className="btn library-rotation-btn"
-                  onClick={transcodeAll}
-                >
-                  Transcode all
-                </button>
-              )}
-            </div>
-          )}
+    <div className="mp">
+      <header className="mp-head pt-enter">
+        <h1 className="mp-title">
+          Library<span className="mp-title-slash"> / </span>Local
+        </h1>
+        <div className="lbm-head-side">
+          <span className="mp-count mono">
+            {visibleRows.length} ITEMS — {formatBytes(totalSize)}
+          </span>
           <button
             type="button"
-            className={`library-secret-trigger ${privacyOpen ? "active" : ""}`}
-            aria-label={privacyOpen ? "Hide privacy filter" : "Show privacy filter"}
-            aria-expanded={privacyOpen}
-            onClick={() => setPrivacyOpen((open) => !open)}
+            className={`mp-secret${showAdult ? " is-on" : ""}`}
+            aria-label="Toggle adult content"
+            aria-pressed={showAdult}
+            onClick={() => setShowAdult((s) => !s)}
           >
-            ••
+            {showAdult ? "● 18+" : "••"}
           </button>
         </div>
       </header>
 
-      <div className={`library-privacy-shell ${privacyOpen ? "open" : ""}`}>
-        <div className="library-privacy-panel">
-          <div className="library-privacy-copy">
-            <div className="library-privacy-title mono">safe shelf</div>
-            <div className="library-privacy-note">
-              {adultCount > 0
-                ? showAdult
-                  ? "All saved wallpapers are visible in this session."
-                  : `${adultCount} mature item${adultCount === 1 ? "" : "s"} hidden in this session.`
-                : "No mature-marked wallpapers found."}
-            </div>
-          </div>
-          <div className="segmented segmented-compact library-privacy-toggle">
-            <button
-              type="button"
-              className={`segmented-button ${!showAdult ? "active" : ""}`}
-              aria-pressed={!showAdult}
-              onClick={() => setShowAdult(false)}
-            >
-              Safe
+      {visibleRows.length > 0 && (
+        <div className="lbm-actions">
+          <button type="button" className="mp-cmd mono" onClick={() => playRotation("sequential")}>
+            PLAY ALL →
+          </button>
+          <button type="button" className="mp-cmd mono" onClick={() => playRotation("shuffle")}>
+            SHUFFLE →
+          </button>
+          {hasSweepable(rows) && (
+            <button type="button" className="mp-cmd mono" onClick={transcodeAll}>
+              TRANSCODE ALL →
             </button>
-            <button
-              type="button"
-              className={`segmented-button ${showAdult ? "active" : ""}`}
-              aria-pressed={showAdult}
-              onClick={() => setShowAdult(true)}
-            >
-              All
-            </button>
-          </div>
+          )}
         </div>
+      )}
+
+      {notice && <p className="lbm-note mono">{notice}</p>}
+      {error && <p className="lbm-note lbm-note-err mono">ERR — {error}</p>}
+
+      {isLoading && <StateBlock kind="loading" text="FETCHING LIBRARY…" />}
+      {!isLoading && loadError && (
+        <StateBlock
+          kind="error"
+          text={`ERR — ${(loadError as Error).message}`}
+          onRetry={() => void mutate()}
+        />
+      )}
+      {!isLoading && !loadError && visibleRows.length === 0 && (
+        <StateBlock
+          kind="empty"
+          text={
+            rows.length > 0
+              ? "SAFE SHELF — REVEAL VIA ••"
+              : "LIBRARY EMPTY — PICK A WALLPAPER IN BROWSE"
+          }
+        />
+      )}
+
+      <div className="lbm-grid">
+        {visibleRows.map((row, i) => {
+          const active = row.workshop_id === nowPlayingId
+          const tx = txLabel(row)
+          return (
+            <button
+              key={row.workshop_id}
+              type="button"
+              className="lbm-card pt-enter"
+              style={{ "--pt-i": i } as React.CSSProperties}
+              onClick={() => setDetailIdx(i)}
+              aria-label={`Open ${row.title}`}
+            >
+              <span className="lbm-card-media">
+                {row.preview_url ? (
+                  <img src={row.preview_url} alt="" loading="lazy" />
+                ) : null}
+                {active && <span className="lbm-now mono">NOW PLAYING</span>}
+                {tx && (
+                  <span className={`lbm-tx mono${row.transcode_status === "failed" ? " lbm-tx-err" : ""}`}>
+                    {tx.toUpperCase()}
+                  </span>
+                )}
+              </span>
+              <span className="lbm-card-caption">
+                <span className="lbm-card-title">{row.title}</span>
+                <span className="lbm-card-meta mono">{playableMeta(row)}</span>
+              </span>
+            </button>
+          )
+        })}
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
-      {notice && <div className="info-banner">{notice}</div>}
-      {visibleRows.length === 0 && (
-        <div className="empty-state">Library is empty. Download some wallpapers in Browse.</div>
-      )}
-
-      {visibleRows.length > 0 && (
-        <div className="library-grid">
-          {visibleRows.map((row) => {
-            const active = row.workshop_id === nowPlayingId
-            const tx = txLabel(row)
-            const savedPct = spaceSavedPercent(row)
-            return (
-              <article
-                key={row.workshop_id}
-                className={`library-card ${active ? "library-card-active" : ""}`}
-              >
-                <div className="library-card-media">
-                  {row.preview_url ? (
-                    <img
-                      className="library-card-thumb"
-                      src={row.preview_url}
-                      alt={row.title}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="library-card-thumb library-card-thumb-empty" />
-                  )}
-                  {active && <span className="library-playing-pill">● Now playing</span>}
-                  {tx && (
-                    <span className={`library-card-badge status-pill-${row.transcode_status} mono`}>
-                      {row.transcode_status}
-                    </span>
-                  )}
-                  {!tx && savedPct !== null && (
-                    <span className="library-card-badge status-pill-completed mono">
-                      ↓ saved {savedPct}%
-                    </span>
-                  )}
-                  <div className="library-card-overlay">
-                    <div className="library-card-title" title={row.title}>
-                      {row.title}
-                    </div>
-                    <div className="library-card-meta mono">
-                      {playableResolution(row)} · {playableCodec(row)} ·{" "}
-                      {formatBytes(playableSize(row))}
-                    </div>
-                  </div>
-                </div>
-                <div className="library-card-body">
-                  <button
-                    type="button"
-                    className="btn btn-primary library-card-play"
-                    onClick={() => intents.play(row.workshop_id)}
-                  >
-                    <span className="library-card-play-icon">{appIcons.play}</span>
-                    Play
-                  </button>
-                  {canPreview(row) && (
-                    <button
-                      type="button"
-                      className="btn library-card-preview"
-                      onClick={() => setPreviewItem(row)}
-                      aria-label="Preview this wallpaper in the browser"
-                    >
-                      ▶
-                    </button>
-                  )}
-                  {canRetranscode(row.transcode_status) && (
-                    <button
-                      type="button"
-                      className="btn library-card-transcode"
-                      onClick={() => intents.transcode(row.workshop_id)}
-                      aria-label="Transcode this wallpaper"
-                    >
-                      ⟳
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-ghost-danger library-card-delete"
-                    onClick={() => {
-                      if (confirm("Delete this wallpaper from library? Source file will be removed."))
-                        intents.remove(row.workshop_id)
-                    }}
-                    aria-label="Delete from library"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </article>
-            )
-          })}
-        </div>
-      )}
+      {/* Detail = the desktop ldet-* body inside the Sheet; prev/next steps
+          through the visible list. No ghost/VT on mobile (spec §9). */}
+      <MobileSheet
+        open={detailRow !== null}
+        onClose={() => setDetailIdx(null)}
+        title={detailRow?.title}
+        height="94%"
+      >
+        {detailRow && (
+          <LibraryDetailBody
+            row={detailRow}
+            nowPlaying={detailRow.workshop_id === nowPlayingId}
+            intents={intents}
+            onPreview={(r) => {
+              setDetailIdx(null)
+              setPreviewItem(r)
+            }}
+            onDelete={(id) => {
+              intents.remove(id)
+              setDetailIdx(null)
+            }}
+            onStep={stepDetail}
+          />
+        )}
+      </MobileSheet>
 
       {previewItem && <VideoPreview item={previewItem} onClose={() => setPreviewItem(null)} />}
     </div>

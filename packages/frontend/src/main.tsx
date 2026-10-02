@@ -13,6 +13,7 @@ import "./library.css"
 import "./settings.css"
 import "./activity.css"
 import "./auth.css"
+import "./mobilePages.css"
 
 const root = document.getElementById("root")
 if (!root) throw new Error("#root not found")
