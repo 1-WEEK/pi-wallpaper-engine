@@ -1,0 +1,855 @@
+/* ── Mobile page adaptations (spec §9) ─────────────────────────────
+   The redesign's remaining mobile fallbacks: Browse, Library and Activity
+   render the same `--pt-*` language as their desktop counterparts, degraded
+   to touch grammar. Shared page grammar (`mp-*`): compact Clash header with
+   mono count + `pt-enter` mount, StateBlock for loading/error/empty. Per
+   page: Browse keeps a 2-up contact sheet whose cards open a detail Sheet;
+   Library keeps a 2-up grid whose cards open the desktop `ldet-*` body
+   inside a Sheet; Activity reuses the desktop `.act-*` ledger with tighter
+   measure and ≥44px action targets. Every interactive target is ≥44px. */
+
+/* ── Shared page grammar ───────────────────────────────────────────
+   Mobile drops the mount choreography (spec §9: no degraded substitute for
+   the desktop's motion layer): pt-enter stays, but runs as an instant cut —
+   the 550ms blur trail reads as a smear on touch scroll. */
+.mobile-shell .pt-enter {
+  animation: none;
+}
+
+.mp {
+  padding: 14px 16px 28px;
+}
+
+.mp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0 14px;
+}
+
+.mp-title {
+  margin: 0;
+  font-family: var(--pf-display);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: var(--pt-text);
+}
+
+/* The count reading sits on the title's first baseline regardless of how
+   the display line wraps. */
+.mp-count {
+  padding-top: 3px;
+}
+
+.mp-title-slash {
+  color: var(--pt-faint);
+  font-weight: 400;
+}
+
+.mp-count {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
+  white-space: nowrap;
+}
+
+/* Discreet 18+ entry (spec §4.1): two faint dots at rest, amber when the
+   adult set is revealed — same resting grammar as the desktop rail. */
+.mp-secret {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--pt-faint);
+  font-size: 12px;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+
+.mp-secret.is-on {
+  color: var(--pt-accent);
+}
+
+/* Understated command (spec §3.1): dim mono + underline; press = committed
+   inverse flash. Touch: the command stays visible — no hover reveal. */
+.mp-cmd {
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pt-dim);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-dim);
+  padding: 0 0 1px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out);
+}
+
+a.mp-cmd,
+span.mp-cmd {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  border-bottom: none;
+  text-decoration: underline;
+  text-decoration-color: var(--pt-dim);
+  text-underline-offset: 3px;
+}
+
+button.mp-cmd {
+  /* tap target: the underline sits inside a 44px hit area */
+  min-height: 44px;
+  padding: 0;
+}
+
+.mp-cmd:active:not(:disabled) {
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  border-bottom-color: var(--pt-inv-bg);
+}
+
+a.mp-cmd:active,
+span.mp-cmd:active {
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  text-decoration-color: var(--pt-inv-text);
+}
+
+.mp-cmd:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mp-cmd-primary {
+  color: var(--pt-text);
+  border-bottom-color: var(--pt-text);
+}
+
+.mp-cmd-primary:active:not(:disabled) {
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+}
+
+.mp-cmd-danger {
+  color: var(--pt-danger);
+  border-bottom-color: transparent;
+}
+
+/* ── Browse mobile ───────────────────────────────────────────────── */
+
+/* Query row: mono placeholder, hairline rule that brightens on focus. */
+.bwm-query {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--pt-line);
+  transition: border-color var(--dur-micro) var(--ease-out);
+}
+
+.bwm-query:focus-within {
+  border-bottom-color: var(--pt-text);
+}
+
+.bwm-query input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  background: none;
+  border: none;
+  color: var(--pt-text);
+  font-size: 14px;
+}
+
+.bwm-query input::placeholder {
+  color: var(--pt-faint);
+}
+
+.bwm-query-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  color: var(--pt-faint);
+  flex-shrink: 0;
+}
+
+.bwm-query:focus-within .bwm-query-icon {
+  color: var(--pt-dim);
+}
+
+.bwm-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 4px;
+}
+
+/* Filter pill: hairline + fill at rest; active = signal amber tick (the
+   badge), not a purple fill. */
+.bwm-filters-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--pt-fill);
+  border: 1px solid var(--pt-line-soft);
+  color: var(--pt-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.bwm-filters-pill.has-active {
+  color: var(--pt-text);
+  border-color: var(--pt-line);
+}
+
+.bwm-filters-pill-badge {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  padding: 0 5px;
+  background: var(--pt-accent);
+  color: var(--pt-on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* Selected-tag preview row: hairline chips, active tag marked by the amber
+   ✕ (signal ≤10%, spec §2.1). */
+.bwm-selected-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 4px -16px 0;
+  padding: 2px 16px 6px;
+  scrollbar-width: none;
+}
+
+.bwm-selected-row::-webkit-scrollbar {
+  display: none;
+}
+
+.bwm-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--pt-line);
+  background: var(--pt-fill);
+  color: var(--pt-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bwm-chip-x {
+  margin-left: 8px;
+  color: var(--pt-accent);
+  font-size: 11px;
+}
+
+/* 2-up contact sheet: same caption grammar as the desktop contact card —
+   media hairline, title, mono ID · SIZE meta. The whole card is one 44px+
+   target; per-card download state rides along as a pill / hairline. */
+.bwm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 10px;
+  margin-top: 12px;
+}
+
+.bwm-card {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bwm-card-media {
+  position: relative;
+  aspect-ratio: 1200 / 1080;
+  overflow: hidden;
+  background: var(--pt-fill);
+  box-shadow: inset 0 0 0 1px var(--pt-line-soft);
+}
+
+.bwm-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.bwm-card-pill {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  color: var(--pt-scrim-ink);
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  padding: 3px 6px;
+}
+
+.bwm-card-pill-done {
+  background: var(--pt-accent);
+  color: var(--pt-on-accent);
+}
+
+.bwm-card-pill-err {
+  background: transparent;
+  color: #ffb1b1;
+  box-shadow: inset 0 0 0 1px rgba(255, 124, 124, 0.5);
+}
+
+.bwm-card-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.bwm-card-bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  background: var(--pt-scrim-ink);
+  transform-origin: left;
+  transition: transform var(--dur-base) linear;
+}
+
+.bwm-card-bar-indet::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 18%;
+  background: var(--pt-scrim-ink);
+  opacity: 0.7;
+  animation: act-scan 1400ms linear infinite;
+}
+
+.bwm-card-caption {
+  padding-top: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bwm-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bwm-card-meta {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--pt-faint);
+}
+
+.bwm-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+/* Filters sheet body */
+.bwm-sheet-body {
+  padding: 6px 18px 18px;
+}
+
+.bwm-sheet-group {
+  margin-bottom: 20px;
+}
+
+.bwm-sheet-label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pt-faint);
+  border-bottom: 1px solid var(--pt-line);
+  padding-bottom: 7px;
+  margin-bottom: 12px;
+}
+
+.bwm-sheet-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bwm-sheet-chips .bwm-chip {
+  min-height: 44px;
+}
+
+.bwm-chip-on {
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  border-color: transparent;
+}
+
+.bwm-sheet-footer {
+  padding: 14px 18px 22px;
+  border-top: 1px solid var(--pt-line-soft);
+}
+
+.bwm-apply {
+  width: 100%;
+  min-height: 48px;
+  border: none;
+  border-radius: 8px;
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.bwm-apply:active:not(:disabled) {
+  opacity: 0.85;
+}
+
+.bwm-reset {
+  min-height: 44px;
+  padding: 0 8px;
+  background: none;
+  border: none;
+  color: var(--pt-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Card detail sheet: contact-sheet hero + Clash title + mono ledger meta. */
+.bwd-hero {
+  margin: 6px 16px 0;
+  position: relative;
+  aspect-ratio: 1200 / 1080;
+  overflow: hidden;
+  background: var(--pt-fill);
+  box-shadow: inset 0 0 0 1px var(--pt-line-soft);
+}
+
+.bwd-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.bwd-title-block {
+  padding: 14px 20px 0;
+}
+
+.bwd-title {
+  font-family: var(--pf-display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: var(--pt-text);
+}
+
+.bwd-id {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-faint);
+  margin-top: 6px;
+}
+
+.bwd-meta {
+  margin: 14px 20px 0;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--pt-line);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  row-gap: 12px;
+  column-gap: 14px;
+}
+
+.bwd-meta-k {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pt-faint);
+}
+
+.bwd-meta-v {
+  font-size: 12px;
+  margin-top: 3px;
+  color: var(--pt-text);
+}
+
+.bwd-desc {
+  padding: 14px 20px 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--pt-dim);
+}
+
+.bwd-actions {
+  padding: 18px 20px 22px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bwd-err {
+  margin: 0 20px;
+  font-size: 11px;
+  color: var(--pt-danger);
+}
+
+/* ── Library mobile ──────────────────────────────────────────────── */
+
+.lbm-head-side {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.lbm-actions {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 2px 0 12px;
+}
+
+.lbm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 10px;
+  margin-top: 4px;
+}
+
+.lbm-card {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lbm-card-media {
+  position: relative;
+  aspect-ratio: 1200 / 1080;
+  overflow: hidden;
+  background: var(--pt-fill);
+  box-shadow: inset 0 0 0 1px var(--pt-line-soft);
+}
+
+.lbm-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Now-playing = the amber tick (same weight as the tab bar's). */
+.lbm-now {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  color: var(--pt-on-accent);
+  background: var(--pt-accent);
+  border-radius: 2px;
+  padding: 3px 6px;
+}
+
+/* Transcode state sits top-right as a scrim chip; failed gets the danger
+   hairline. */
+.lbm-tx {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  color: var(--pt-scrim-ink);
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  padding: 3px 6px;
+}
+
+.lbm-tx-err {
+  background: transparent;
+  color: #ffb1b1;
+  box-shadow: inset 0 0 0 1px rgba(255, 124, 124, 0.5);
+}
+
+.lbm-card-caption {
+  padding-top: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lbm-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lbm-card-meta {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--pt-faint);
+}
+
+.lbm-note {
+  margin: 10px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+}
+
+.lbm-note-err {
+  color: var(--pt-danger);
+}
+
+/* The desktop detail body (ldet-*) inside the mobile Sheet: full-width
+   media, roomy touch targets, no fixed-height split scroll. The sheet is
+   already an opaque token surface (§9), so the body's transparent
+   backgrounds stay and the desktop panel's glass never enters. */
+.mobile-sheet-panel .ldet-media {
+  border-radius: 12px;
+  margin: 6px 16px 0;
+  view-transition-name: none;
+}
+
+.mobile-sheet-panel .ldet-body {
+  padding: 14px 20px 22px;
+}
+
+.mobile-sheet-panel .ldet-actions {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.mobile-sheet-panel .ldet-play {
+  width: 100%;
+  min-height: 48px;
+  font-size: 12px;
+}
+
+.mobile-sheet-panel .ldet-cmd {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mobile-sheet-panel .ldet-steam {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mobile-sheet-panel .ldet-step {
+  margin-left: 0;
+  width: 100%;
+}
+
+.mobile-sheet-panel .ldet-step button {
+  flex: 1;
+  min-height: 44px;
+}
+
+/* ── Activity mobile: the desktop .act-* ledger at a tighter measure ── */
+.mobile-shell .act {
+  margin: 0;
+  padding: 14px 16px 28px;
+}
+
+.mobile-shell .act-head {
+  padding: 6px 0 14px;
+  margin-bottom: 18px;
+  gap: 12px;
+}
+
+.mobile-shell .act-title {
+  font-size: 26px;
+}
+
+.mobile-shell .act-count {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-align: right;
+}
+
+.mobile-shell .act-sec-head {
+  font-size: 9px;
+}
+
+.mobile-shell .act-sec-finished {
+  margin-top: 30px;
+}
+
+.mobile-shell .act-row {
+  grid-template-columns: 56px minmax(0, 1fr);
+  column-gap: 12px;
+  padding: 12px 0;
+}
+
+.mobile-shell .act-thumb {
+  width: 56px;
+  height: 36px;
+}
+
+.mobile-shell .act-row-title {
+  font-size: 12.5px;
+}
+
+.mobile-shell .act-bar {
+  grid-column: 1 / -1;
+}
+
+/* Actions wrap to their own row and grow to ≥44px touch targets. */
+.mobile-shell .act-actions {
+  grid-column: 1 / -1;
+  grid-row: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: 2px;
+}
+
+.mobile-shell .act-actions .act-act {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+}
+
+.mobile-shell .act-phases {
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.mobile-shell .act-more {
+  margin: 16px auto 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  border-bottom: none;
+  text-decoration: underline;
+  text-decoration-color: var(--pt-dim);
+  text-underline-offset: 3px;
+}
+
+/* Housekeeping + the discreet 18+ entry live behind one sheet. */
+.actm-sheet-body {
+  padding: 4px 18px 22px;
+  display: flex;
+  flex-direction: column;
+}
+
+.actm-sheet-body .mp-cmd {
+  align-self: flex-start;
+}
+
+.actm-privacy {
+  margin-top: 18px;
+  border-top: 1px solid var(--pt-line);
+  padding-top: 14px;
+}
+
+.actm-privacy-title {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pt-faint);
+}
+
+.actm-privacy-note {
+  font-size: 12px;
+  color: var(--pt-dim);
+  line-height: 1.5;
+  margin: 8px 0 12px;
+}
+
+/* New-design segmented control for the mobile sheets (Safe/All, sort):
+   hairline shell, inverse-filled active segment — replaces the legacy
+   purple `.segmented` inside the mobile surface only. */
+.mpm-seg {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--pt-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mpm-seg button {
+  min-height: 44px;
+  padding: 0 16px;
+  background: none;
+  border: none;
+  color: var(--pt-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mpm-seg button + button {
+  border-left: 1px solid var(--pt-line);
+}
+
+.mpm-seg button.is-on {
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+}
+
+.mpm-seg button:active:not(:disabled):not(.is-on) {
+  background: var(--pt-fill);
+}

@@ -218,6 +218,22 @@ bash scripts/check-boot-recovery.sh
   `SettingsDesktop.tsx`. The legacy `DirectoryPickerDialog` is gone — the
   glass directory-change focused flow (`DirectorySheet` in
   `SettingsDesktop.tsx`) serves both layouts.
+- The mobile page adaptations live in
+  [mobilePages.css](../../packages/frontend/src/mobilePages.css): a shared
+  `mp-*` page grammar (compact Clash header + mono count, StateBlock for
+  loading/error/empty, `mp-cmd` understated commands, `mpm-seg` hairline
+  segmented control) plus per-page blocks. Browse renders a 2-up
+  contact-sheet (`bwm-*`) whose cards open a detail Sheet (`bwd-*`); the
+  rail's QUERY/SORT/FILTERS collapse into a search row + filters Sheet.
+  Library keeps a 2-up grid (`lbm-*`) that opens the desktop `ldet-*`
+  detail body inside a Sheet (media block included, prev/next retained);
+  the rail's rotation/transcode commands become `mp-cmd` rows and the
+  discreet 18+ entry sits in the header as `mp-secret`. Activity reuses the
+  desktop `.act-*` ledger verbatim at a tighter measure
+  (`.mobile-shell .act-*` overrides), with HOUSEKEEPING and the 18+ toggle
+  behind a QUEUE… Sheet (`actm-*`). Mobile drops the `pt-enter` mount
+  choreography — on touch scroll the 550ms blur trail reads as a smear, so
+  the class renders as an instant cut.
 - Keep the existing plain CSS system for not-yet-migrated pages. Reuse
   controls and icons from
   [icons.tsx](../../packages/frontend/src/icons.tsx).
