@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime, Stream } from "effect"
 import { Database } from "bun:sqlite"
 import { Elysia } from "elysia"
 import { DbError, LibraryNotFoundError, type LibraryItem } from "@pwe/shared"
@@ -44,6 +44,8 @@ const DDL = `
 `
 
 let openDbs: Database[] = []
+let runtimes: Array<{ dispose: () => Promise<void> }> = []
+const ACTIVE_MEDIA_ROOT = "/tmp/pwe-selected-root"
 
 const makeRow = (overrides: Partial<LibraryItem>): LibraryItem => ({
   workshop_id: "abc",
@@ -143,19 +145,38 @@ const makeStack = (
     server: { host: "0.0.0.0", port: 8080 },
   }
 
+  const mpvImpl: MpvImpl = {
+    play: () => Effect.void,
+    pause: () => Effect.void,
+    resume: () => Effect.void,
+    stop: () => Effect.void,
+    setDisplayMode: () => Effect.void,
+    ended: () => Stream.empty,
+    status: () => Effect.succeed({
+      playing: options.playing ?? false,
+      current_workshop_id: options.playerPath ? "abc" : null,
+      path: options.playerPath ?? null,
+      display_mode: "fill",
+    }),
+  }
+  const storageState = {
+    available: true,
+    data_root: ACTIVE_MEDIA_ROOT,
+    default_root: configImpl.paths.data_root,
+    using_default: false,
+    last_error: null,
+  }
+  const storageImpl: StorageImpl = {
+    status: () => Effect.succeed(storageState),
+    mediaRoot: () => Effect.succeed(ACTIVE_MEDIA_ROOT),
+    mediaRootOrNull: () => Effect.succeed(ACTIVE_MEDIA_ROOT),
+    saveRoot: () => Effect.succeed(storageState),
+  }
+
   const layer = TranscodeQueueLive.pipe(
     Layer.provideMerge(TasksLive),
-    Layer.provideMerge(Layer.succeed(Mpv, {
-      status: () => Effect.succeed({
-        playing: options.playing ?? false,
-        current_workshop_id: options.playerPath ? "abc" : null,
-        path: options.playerPath ?? null,
-        display_mode: "fill",
-      }),
-    } as MpvImpl)),
-    Layer.provideMerge(Layer.succeed(Storage, {
-      mediaRoot: () => Effect.succeed("/tmp/pwe-test"),
-    } as unknown as StorageImpl)),
+    Layer.provideMerge(Layer.succeed(Mpv, mpvImpl)),
+    Layer.provideMerge(Layer.succeed(Storage, storageImpl)),
     Layer.provideMerge(Layer.succeed(Library, libImpl)),
     Layer.provideMerge(Layer.succeed(Logger, logImpl)),
     Layer.provideMerge(Layer.succeed(Db, dbImpl)),
@@ -163,11 +184,14 @@ const makeStack = (
   )
 
   const runtime = ManagedRuntime.make(layer)
+  runtimes.push(runtime)
   const app = new Elysia().use(libraryRoutes(runtime as never))
   return { app, sqlite, libRow: (id: string) => rows.get(id) }
 }
 
-afterEach(() => {
+afterEach(async () => {
+  for (const runtime of runtimes) await runtime.dispose()
+  runtimes = []
   for (const db of openDbs) db.close()
   openDbs = []
 })
@@ -252,7 +276,7 @@ describe("POST /api/library/:workshopId/transcode", () => {
     for (const playing of [true, false]) {
       const stack = makeStack([
         makeRow({ transcode_status: "completed", transcoded_path: "optimized/abc.mp4" }),
-      ], { playerPath: "/tmp/pwe-test/optimized/abc.mp4", playing })
+      ], { playerPath: `${ACTIVE_MEDIA_ROOT}/optimized/abc.mp4`, playing })
 
       const response = await post(stack.app, "/api/library/abc/transcode")
 
@@ -267,7 +291,7 @@ describe("POST /api/library/:workshopId/transcode", () => {
   test("allows a re-transcode while the same wallpaper's source is playing", async () => {
     const stack = makeStack([
       makeRow({ transcode_status: "completed", transcoded_path: "optimized/abc.mp4" }),
-    ], { playerPath: "/tmp/pwe-test/source/abc/wallpaper.mp4", playing: true })
+    ], { playerPath: `${ACTIVE_MEDIA_ROOT}/source/abc/wallpaper.mp4`, playing: true })
 
     const response = await post(stack.app, "/api/library/abc/transcode")
 
@@ -329,7 +353,7 @@ describe("POST /api/library/transcode/retry-all", () => {
     const stack = makeStack([
       makeRow({ transcode_status: "failed", transcoded_path: "optimized/abc.mp4" }),
       makeRow({ workshop_id: "other", transcode_status: "failed" }),
-    ], { playerPath: "/tmp/pwe-test/optimized/abc.mp4", playing: true })
+    ], { playerPath: `${ACTIVE_MEDIA_ROOT}/optimized/abc.mp4`, playing: true })
 
     const response = await post(stack.app, "/api/library/transcode/retry-all")
 

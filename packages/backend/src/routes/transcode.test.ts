@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime, Stream } from "effect"
 import { Database } from "bun:sqlite"
 import { Elysia } from "elysia"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -47,6 +47,7 @@ const DDL = `
 
 let openDbs: Database[] = []
 let tempDirs: string[] = []
+let runtimes: Array<{ dispose: () => Promise<void> }> = []
 
 const baseLibraryRow: LibraryItem = {
   workshop_id: "abc",
@@ -158,7 +159,19 @@ const makeStack = (opts: { migrationRunning?: boolean; onPlayerStatus?: () => vo
   }
 
   const player = { path: null as string | null, playing: false }
-  const mpvImpl = {
+  const mpvImpl: MpvImpl = {
+    play: (_id, path) => withPlaybackFileLock(Effect.sync(() => {
+      player.path = path
+      player.playing = true
+    })),
+    pause: () => Effect.sync(() => { player.playing = false }),
+    resume: () => Effect.sync(() => { player.playing = true }),
+    stop: () => withPlaybackFileLock(Effect.sync(() => {
+      player.path = null
+      player.playing = false
+    })),
+    setDisplayMode: () => Effect.void,
+    ended: () => Stream.empty,
     status: () => Effect.sync(() => {
       const status = {
         ...player,
@@ -168,7 +181,7 @@ const makeStack = (opts: { migrationRunning?: boolean; onPlayerStatus?: () => vo
       opts.onPlayerStatus?.()
       return status
     }),
-  } as MpvImpl
+  }
 
   // The route handler also yields shared services directly. `provideMerge`
   // keeps them visible in the runtime's context
@@ -185,10 +198,13 @@ const makeStack = (opts: { migrationRunning?: boolean; onPlayerStatus?: () => vo
   )
 
   const runtime = ManagedRuntime.make(layer)
+  runtimes.push(runtime)
   return { runtime, sqlite, mediaRoot, player, libRow: () => row }
 }
 
-afterEach(() => {
+afterEach(async () => {
+  for (const runtime of runtimes) await runtime.dispose()
+  runtimes = []
   for (const db of openDbs) db.close()
   openDbs = []
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true })
@@ -369,23 +385,33 @@ describe("transcode routes — full lifecycle", () => {
       yield* lib.update("abc", { transcoded_path: "optimized/abc.mp4" })
     }))
     stack.player.path = output
-    stack.player.playing = false
     stack.sqlite.prepare(
       "INSERT INTO transcode_jobs (id, workshop_id, status, created_at) VALUES ('J1', 'abc', 'running', ?)"
     ).run(Date.now())
 
-    const response = await app.handle(new Request("http://localhost/api/transcode/J1/artifact", {
+    const upload = () => app.handle(new Request("http://localhost/api/transcode/J1/artifact", {
       method: "PUT",
       headers: { "x-worker-key": TEST_KEY },
       body: "new-artifact",
     }))
 
-    expect(response.status).toBe(409)
-    expect((await response.json()).error).toMatch(/stop playback|switch.*wallpaper/i)
-    expect(readFileSync(output, "utf-8")).toBe("old-artifact")
+    for (const playing of [true, false]) {
+      stack.player.playing = playing
+      const response = await upload()
+      expect(response.status).toBe(409)
+      expect((await response.json()).error).toMatch(/stop playback|switch.*wallpaper/i)
+      expect(readFileSync(output, "utf-8")).toBe("old-artifact")
+      expect(existsSync(`${output}.partial.J1`)).toBe(false)
+      expect(stack.libRow().transcoded_path).toBe("optimized/abc.mp4")
+      expect(stack.sqlite.query("SELECT status FROM transcode_jobs WHERE id = 'J1'").get()).not.toEqual({ status: "completed" })
+    }
+
+    await stack.runtime.runPromise(Effect.flatMap(Mpv, (mpv) => mpv.stop()))
+    expect((await upload()).status).toBe(200)
+    expect(readFileSync(output, "utf-8")).toBe("new-artifact")
     expect(existsSync(`${output}.partial.J1`)).toBe(false)
-    expect(stack.libRow().transcoded_path).toBe("optimized/abc.mp4")
-    expect(stack.sqlite.query("SELECT status FROM transcode_jobs WHERE id = 'J1'").get()).not.toEqual({ status: "completed" })
+    expect(stack.libRow().transcode_status).toBe("completed")
+    expect(stack.sqlite.query("SELECT status FROM transcode_jobs WHERE id = 'J1'").get()).toEqual({ status: "completed" })
   })
 
   test("rechecks playback after streaming the upload and cleans up the partial file on conflict", async () => {
@@ -455,6 +481,37 @@ describe("transcode routes — full lifecycle", () => {
     expect(playedBytes).toBeDefined()
     expect(await playedBytes).toBe("new-artifact")
     expect(stack.libRow().transcode_status).toBe("completed")
+  })
+
+  test("failed artifact stream removes the partial file and preserves the old artifact", async () => {
+    const output = join(stack.mediaRoot, "optimized/abc.mp4")
+    mkdirSync(dirname(output), { recursive: true })
+    writeFileSync(output, "old-artifact")
+    await stack.runtime.runPromise(Effect.flatMap(Library, (lib) =>
+      lib.update("abc", { transcoded_path: "optimized/abc.mp4" })
+    ))
+    stack.sqlite.prepare(
+      "INSERT INTO transcode_jobs (id, workshop_id, status, created_at) VALUES ('J1', 'abc', 'running', ?)"
+    ).run(Date.now())
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("incomplete-artifact"))
+        controller.error(new Error("upload interrupted"))
+      },
+    })
+
+    const response = await app.handle(new Request("http://localhost/api/transcode/J1/artifact", {
+      method: "PUT",
+      headers: { "x-worker-key": TEST_KEY },
+      body,
+    }))
+
+    expect(response.status).toBe(500)
+    expect(readFileSync(output, "utf-8")).toBe("old-artifact")
+    expect(existsSync(`${output}.partial.J1`)).toBe(false)
+    expect(stack.libRow().transcoded_path).toBe("optimized/abc.mp4")
+    expect(stack.libRow().transcode_status).not.toBe("completed")
+    expect(stack.sqlite.query("SELECT status FROM transcode_jobs WHERE id = 'J1'").get()).not.toEqual({ status: "completed" })
   })
 
   test("/fail marks job and library failed", async () => {
