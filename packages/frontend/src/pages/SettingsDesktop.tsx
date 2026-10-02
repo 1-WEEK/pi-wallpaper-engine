@@ -37,6 +37,7 @@ import {
 import { RailControls } from "../components/RailShell.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { getInterfaceSounds, setInterfaceSounds } from "../interfaceSounds.js"
+import { formatPlayLimitCountdown } from "../format.js"
 import { sounds } from "../sound.js"
 
 interface Props {
@@ -166,6 +167,17 @@ const MODE_LABEL: Record<string, string> = {
   shuffle: "SHUFFLE",
 }
 
+/* Play limit presets (ticket 03): minutes per playback session, 0 = off. The
+   row submits the same way the duration row does — immediate, with the value
+   derived from the server summary — so the two controls share one commit
+   grammar and one failure fallback. */
+const PLAY_LIMITS = [
+  { label: "OFF", minutes: 0 },
+  { label: "30M", minutes: 30 },
+  { label: "1H", minutes: 60 },
+  { label: "2H", minutes: 120 },
+] as const
+
 export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; onRefresh: () => void }) => {
   const player = summary.status.player
   const playMode = player?.play_mode ?? "single"
@@ -174,6 +186,20 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
   const [committed, setCommitted] = useState<number | null>(null)
   const [commitError, setCommitError] = useState<string | null>(null)
   const [sounds, setSounds] = useState(getInterfaceSounds)
+  const serverLimit = summary.status.play_limit?.minutes ?? null
+  const limitDeadline = summary.status.play_limit?.deadline ?? null
+  const [limitPending, setLimitPending] = useState<number | null>(null)
+  const [limitCommitted, setLimitCommitted] = useState<number | null>(null)
+  const [limitError, setLimitError] = useState<string | null>(null)
+  // The countdown ticks locally between summary polls so the remaining time
+  // reads as live rather than stepping every 5s.
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (limitDeadline === null) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [limitDeadline])
 
   // Once the server summary confirms the committed value, hand display back
   // to the server value so later external changes show up.
@@ -206,6 +232,33 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
   }
 
   const knownPreset = serverSec !== null && DURATIONS.some((d) => d.sec === serverSec)
+
+  // Same commit grammar as the duration row: immediate submit, server value
+  // owns the display, a failure falls back to the server's actual value.
+  useEffect(() => {
+    if (limitCommitted !== null && serverLimit === limitCommitted) setLimitCommitted(null)
+  }, [limitCommitted, serverLimit])
+
+  const shownLimit = limitPending ?? limitCommitted ?? serverLimit
+  const limitKnownPreset = serverLimit !== null && PLAY_LIMITS.some((p) => p.minutes === serverLimit)
+  const limitRemainingSec =
+    limitDeadline !== null ? Math.max(0, Math.round((limitDeadline - now) / 1000)) : null
+
+  const commitLimit = async (minutes: number) => {
+    if (limitPending !== null || minutes === shownLimit) return
+    setLimitPending(minutes)
+    setLimitError(null)
+    try {
+      await api.setPlayLimit(minutes)
+      setLimitCommitted(minutes)
+      onRefresh()
+    } catch (e) {
+      // Nothing was committed locally: the control keeps the server value.
+      setLimitError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLimitPending(null)
+    }
+  }
 
   return (
     <>
@@ -244,6 +297,44 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
           <Note>{`CURRENT — ${serverSec}S`}</Note>
         )}
         {commitError && <Note warn>{`COMMIT FAILED — ${commitError}`}</Note>}
+      </Block>
+
+      <Block label="PLAY LIMIT">
+        <div className="set-row">
+          <span className="set-row-name">Stop after</span>
+          <span className="set-row-dots" aria-hidden="true" />
+          <span className="set-seg mono" role="radiogroup" aria-label="Stop playback after">
+            {PLAY_LIMITS.map(({ label, minutes }) => {
+              const on = shownLimit === minutes && limitPending === null
+              const busy = limitPending === minutes
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  className={`${on ? "is-on" : ""}${busy ? " set-pending" : ""}`}
+                  onClick={() => void commitLimit(minutes)}
+                >
+                  {busy ? "◌" : label}
+                </button>
+              )
+            })}
+          </span>
+        </div>
+        {limitRemainingSec !== null && (
+          <Note>{`AUTO-STOP IN ${formatPlayLimitCountdown(limitRemainingSec)} — ONE SHOT, PAUSE AND NEXT KEEP IT COUNTING`}</Note>
+        )}
+        {limitRemainingSec === null && shownLimit === 0 && (
+          <Note>NO LIMIT — PLAYBACK RUNS UNTIL YOU STOP IT</Note>
+        )}
+        {limitRemainingSec === null && shownLimit !== null && shownLimit > 0 && (
+          <Note>ARMED ON NEXT PLAY — COUNTDOWN STARTS WITH PLAYBACK, NOT WITH THIS SWITCH</Note>
+        )}
+        {!limitKnownPreset && limitCommitted === null && serverLimit !== null && (
+          <Note>{`CURRENT — ${serverLimit}M`}</Note>
+        )}
+        {limitError && <Note warn>{`COMMIT FAILED — ${limitError}`}</Note>}
       </Block>
 
       <Block label="INTERFACE">

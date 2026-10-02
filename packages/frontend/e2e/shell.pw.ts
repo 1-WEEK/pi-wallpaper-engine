@@ -540,3 +540,65 @@ test.describe("Desktop no-leak (ticket 14)", () => {
     await expect(page.locator(".set-title")).toContainText("Settings")
   })
 })
+
+test.describe("Shell theme surface (ticket 01)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } })
+
+  /* Every page box stops at the scroller's content box (its own bleed padding
+   * keeps the dock clear), so a short page leaves a band between the box and
+   * the viewport bottom. That band belongs to the shell and MUST resolve to
+   * the page's theme colour — it used to fall through to the legacy hardcoded
+   * dark, painting a black strip under a light page and a second black under
+   * a dark one. Probe the real composited colour per pixel row, including the
+   * rows the page box does not reach. */
+  const backgroundBands = (page: Page, x: number) =>
+    page.evaluate((probeX) => {
+      const bands: string[] = []
+      for (let y = 4; y < window.innerHeight - 4; y += 4) {
+        let el = document.elementFromPoint(probeX, y) as HTMLElement | null
+        let bg = ""
+        while (el) {
+          const cs = getComputedStyle(el).backgroundColor
+          if (cs && cs !== "rgba(0, 0, 0, 0)") {
+            bg = cs
+            break
+          }
+          el = el.parentElement
+        }
+        bands.push(bg)
+      }
+      return bands
+    }, x)
+
+  // The dock's translucent fill and the rail's hairline overlay the theme, so
+  // only the opaque readings are compared — an opaque legacy dark appearing in
+  // the column is exactly the regression.
+  const opaqueOnly = (bands: string[]) => [...new Set(bands.filter((b) => b.startsWith("rgb(")))]
+
+  for (const path of ["/settings", "/library", "/browse", "/activity"]) {
+    test(`${path} paints one theme background at every depth, both themes`, async ({ page }) => {
+      await mockAllEndpoints(page)
+      await page.goto(path)
+
+      for (const theme of ["dark", "light"] as const) {
+        await page.evaluate((t) => {
+          localStorage.setItem("pwe-theme", t)
+          document.documentElement.dataset.theme = t
+          document.documentElement.style.colorScheme = t
+        }, theme)
+        // The theme flip is transitioned on the shell and page boxes.
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+        await expect
+          .poll(async () => opaqueOnly(await backgroundBands(page, 900)))
+          .toEqual([theme === "dark" ? "rgb(0, 0, 0)" : "rgb(251, 250, 244)"])
+
+        // The shell's inherited ink follows the theme too (a page box that
+        // stops short no longer hands legacy cream text to the shell).
+        const shellInk = await page.evaluate(() => getComputedStyle(document.body).color)
+        expect(shellInk).toBe(
+          theme === "dark" ? "rgba(255, 255, 255, 0.88)" : "rgba(0, 0, 0, 0.86)"
+        )
+      }
+    })
+  }
+})

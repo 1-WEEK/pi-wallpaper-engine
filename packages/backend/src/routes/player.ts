@@ -166,6 +166,21 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
         body: t.Object({ seconds: t.Number() }),
       }
     )
+    .post(
+      "/play-limit",
+      ({ body, set }) =>
+        runRoute(
+          set,
+          Effect.gen(function* () {
+            const playback = yield* Playback
+            yield* playback.setPlayLimit(body.minutes)
+            return yield* playback.playLimitStatus()
+          })
+        ),
+      {
+        body: t.Object({ minutes: t.Number() }),
+      }
+    )
     .ws("/watch", {
       open: async (ws) => {
         // WebSocket frames bypass the global sessionGuard onBeforeHandle, so

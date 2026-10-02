@@ -7,9 +7,9 @@ naming concepts or changing ownership boundaries, then the ADRs for the area inv
 | --- | --- |
 | Administrator access | [0001: Passkey auth](../adr/0001-auth-passkey.md) |
 | Download intake and cancellation | [0002: Persistent progress](../adr/0002-downloads-progress-sqlite.md), [0007: Process registry](../adr/0007-download-process-registry.md) |
-| Playback and display | [0003: Power linkage](../adr/0003-display-power-linkage.md), [0004: Rotation](../adr/0004-playback-rotation.md), [0009: Orchestration](../adr/0009-playback-orchestration.md) |
+| Playback and display | [0003: Power linkage](../adr/0003-display-power-linkage.md), [0004: Rotation](../adr/0004-playback-rotation.md), [0009: Orchestration](../adr/0009-playback-orchestration.md), [0010: Play limit](../adr/0010-play-limit.md) |
 | Storage selection | [0008: Root selection](../adr/0008-storage-root-selection.md) |
-| Software validation | [0005: Acceptance-free testing](../adr/0005-acceptance-free-testing.md), [0006: Browser route mocking](../adr/0006-e2e-route-mocking.md) |
+| Software validation | [0005: Acceptance-free testing](../adr/0005-acceptance-free-testing.md), [0006: Browser route mocking](../adr/0006-e2e-route-mocking.md), [0011: Local machine gates](../adr/0011-local-machine-gates.md) |
 
 ## Where Information Belongs
 

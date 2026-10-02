@@ -137,6 +137,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
             )
 
           const sleepStatus = yield* playbackService.sleepStatus()
+          const playLimit = yield* playbackService.playLimitStatus()
 
           return {
             config: {
@@ -171,6 +172,7 @@ export const systemRoutes = (runtime: AppRuntime) =>
                 finished: allDlTasks.total - activeDlTasks.total,
               },
               sleep: sleepStatus,
+              play_limit: playLimit,
               transcode,
             },
           }

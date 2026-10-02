@@ -73,5 +73,6 @@ CREATE TABLE IF NOT EXISTS playback_prefs (
   id                    TEXT PRIMARY KEY CHECK (id = 'singleton'),
   play_mode             TEXT NOT NULL DEFAULT 'single',
   rotation_interval_sec INTEGER NOT NULL DEFAULT 600,
+  play_limit_minutes    INTEGER NOT NULL DEFAULT 0,
   updated_at            INTEGER NOT NULL
 );

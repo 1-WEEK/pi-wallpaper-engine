@@ -3,7 +3,38 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { Database } from "bun:sqlite"
 import { DbError } from "@pwe/shared"
 import { Db, type DbImpl } from "./Db.js"
-import { PlaybackPrefs, PlaybackPrefsLive } from "./PlaybackPrefs.js"
+import {
+  MAX_PLAY_LIMIT_MINUTES,
+  PlaybackPrefs,
+  PlaybackPrefsLive,
+  clampPlayLimitMinutes,
+} from "./PlaybackPrefs.js"
+
+describe("clampPlayLimitMinutes", () => {
+  test("passes values in range through unchanged", () => {
+    expect(clampPlayLimitMinutes(45)).toBe(45)
+    expect(clampPlayLimitMinutes(0)).toBe(0)
+  })
+
+  test("clamps negatives to off", () => {
+    expect(clampPlayLimitMinutes(-10)).toBe(0)
+  })
+
+  test("caps above the native timer ceiling", () => {
+    // Above 2^31-1 ms a native timer fires after ~1 ms, so an uncapped value
+    // would stop playback instantly — and keep doing so after every restart.
+    expect(clampPlayLimitMinutes(MAX_PLAY_LIMIT_MINUTES + 1)).toBe(MAX_PLAY_LIMIT_MINUTES)
+    expect(clampPlayLimitMinutes(Number.MAX_SAFE_INTEGER)).toBe(MAX_PLAY_LIMIT_MINUTES)
+    // The ceiling itself must stay inside the platform timer range.
+    expect(MAX_PLAY_LIMIT_MINUTES * 60_000).toBeLessThan(2 ** 31 - 1)
+  })
+
+  test("treats non-finite input as off rather than arming a NaN timer", () => {
+    expect(clampPlayLimitMinutes(Number.NaN)).toBe(0)
+    expect(clampPlayLimitMinutes(Number.POSITIVE_INFINITY)).toBe(0)
+    expect(clampPlayLimitMinutes(Number.NEGATIVE_INFINITY)).toBe(0)
+  })
+})
 
 let openDbs: Database[] = []
 
@@ -15,6 +46,7 @@ const makeDbLayer = () => {
       id                    TEXT PRIMARY KEY CHECK (id = 'singleton'),
       play_mode             TEXT NOT NULL DEFAULT 'single',
       rotation_interval_sec INTEGER NOT NULL DEFAULT 600,
+      play_limit_minutes    INTEGER NOT NULL DEFAULT 0,
       updated_at            INTEGER NOT NULL
     );
   `)
@@ -55,16 +87,47 @@ describe("PlaybackPrefsLive", () => {
         Effect.gen(function* () {
           const prefs = yield* PlaybackPrefs
 
-          expect(yield* prefs.get()).toEqual({ play_mode: "single", rotation_interval_sec: 600 })
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "single",
+            rotation_interval_sec: 600,
+            play_limit_minutes: 0,
+          })
 
           yield* prefs.setMode("shuffle")
-          expect(yield* prefs.get()).toEqual({ play_mode: "shuffle", rotation_interval_sec: 600 })
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "shuffle",
+            rotation_interval_sec: 600,
+            play_limit_minutes: 0,
+          })
 
           yield* prefs.setInterval(120)
-          expect(yield* prefs.get()).toEqual({ play_mode: "shuffle", rotation_interval_sec: 120 })
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "shuffle",
+            rotation_interval_sec: 120,
+            play_limit_minutes: 0,
+          })
+
+          yield* prefs.setPlayLimit(45)
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "shuffle",
+            rotation_interval_sec: 120,
+            play_limit_minutes: 45,
+          })
 
           yield* prefs.setMode("sequential")
-          expect(yield* prefs.get()).toEqual({ play_mode: "sequential", rotation_interval_sec: 120 })
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "sequential",
+            rotation_interval_sec: 120,
+            play_limit_minutes: 45,
+          })
+
+          // A negative limit would arm an auto-stop in the past; it clamps to off.
+          yield* prefs.setPlayLimit(-10)
+          expect(yield* prefs.get()).toEqual({
+            play_mode: "sequential",
+            rotation_interval_sec: 120,
+            play_limit_minutes: 0,
+          })
         })
       )
     } finally {

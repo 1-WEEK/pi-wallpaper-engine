@@ -18,6 +18,8 @@ describe("playerRoutes", () => {
     setRotationInterval: () => Effect.void,
     sleep: (minutes: number) => Effect.succeed({ active: minutes > 0, deadline: null }),
     sleepStatus: () => Effect.succeed({ active: false, deadline: null }),
+    setPlayLimit: () => Effect.void,
+    playLimitStatus: () => Effect.succeed({ minutes: 0, deadline: null }),
   }
 
   const mockMpv = {
