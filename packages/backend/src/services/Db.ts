@@ -29,8 +29,12 @@ const ensureLibraryColumns = (db: Database) => {
 // in place; CREATE TABLE IF NOT EXISTS will not touch an existing table.
 const ensurePlaybackPrefsColumns = (db: Database) => {
   if (!tableExists(db, "playback_prefs")) return
-  if (!columnNames(db, "playback_prefs").includes("play_limit_minutes")) {
+  const columns = columnNames(db, "playback_prefs")
+  if (!columns.includes("play_limit_minutes")) {
     db.exec(`ALTER TABLE playback_prefs ADD COLUMN play_limit_minutes INTEGER NOT NULL DEFAULT 0`)
+  }
+  if (!columns.includes("play_limit_once")) {
+    db.exec(`ALTER TABLE playback_prefs ADD COLUMN play_limit_once INTEGER NOT NULL DEFAULT 0`)
   }
 }
 

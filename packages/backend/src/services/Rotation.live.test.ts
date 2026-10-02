@@ -64,6 +64,7 @@ const buildHarness = (ids: string[], missing: Set<string>, adultIds: Set<string>
         play_mode: "sequential" as const,
         rotation_interval_sec: 600,
         play_limit_minutes: 0,
+        play_limit_once: false,
       }),
     setMode: () => Effect.void,
     setInterval: () => Effect.void,

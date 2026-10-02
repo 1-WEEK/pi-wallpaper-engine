@@ -51,7 +51,7 @@ export const StorageStatus = Schema.Struct({
 })
 export type StorageStatus = typeof StorageStatus.Type
 
-// ── Library / Downloads / Sleep / Transcode ────────
+// ── Library / Downloads / Play limit / Transcode ──
 
 export const LibraryCounts = Schema.Struct({
   total: Schema.Number,
@@ -64,22 +64,17 @@ export const DownloadsCounts = Schema.Struct({
 })
 export type DownloadsCounts = typeof DownloadsCounts.Type
 
-export const SleepStatus = Schema.Struct({
-  active: Schema.Boolean,
-  deadline: Schema.NullOr(Schema.Number),
-})
-export type SleepStatus = typeof SleepStatus.Type
-
 /**
- * The persistent "stop playback after N minutes" policy. `minutes` is the
- * stored setting (0 = off); `deadline` is the epoch-ms auto-stop the currently
- * active playback session is counting down to, or null when no session is
- * armed. Separate from `SleepStatus`: sleep is a one-shot instruction from the
- * PlayerBar, this is a durable setting that re-arms on every playback start.
+ * The "stop playback after N minutes" policy, edited from both the PlayerBar
+ * and Settings. `minutes` is the stored setting (0 = off); `once` is the mode
+ * (true = the value applies to one session and is consumed when it ends);
+ * `deadline` is the epoch-ms auto-stop the currently active playback session
+ * is counting down to, or null when no session is armed.
  */
 export const PlayLimitStatus = Schema.Struct({
   minutes: Schema.Number,
   deadline: Schema.NullOr(Schema.Number),
+  once: Schema.Boolean,
 })
 export type PlayLimitStatus = typeof PlayLimitStatus.Type
 
@@ -121,7 +116,6 @@ export const SummaryStatus = Schema.Struct({
   storage: StorageStatus,
   library: LibraryCounts,
   downloads: DownloadsCounts,
-  sleep: SleepStatus,
   play_limit: PlayLimitStatus,
   transcode: TranscodeCounts,
 })

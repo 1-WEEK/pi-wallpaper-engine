@@ -2,7 +2,8 @@
 // Fixed across the bottom of the content column: preview + title/status,
 // transport, play-mode tri-state, codec readout, and a compressed icon
 // cluster (DISPLAY popover FILL/FIT/STRETCH · display power direct toggle ·
-// SLEEP popover OFF/15/30/60M). The dock tucks away on downward scroll and
+// PLAY LIMIT popover, the durable value Settings also edits). The dock tucks
+// away on downward scroll and
 // returns on upward scroll (350ms, registered §5 exception); tucking
 // explicitly nulls the popover so a recall never resurrects a ghost.
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
@@ -11,6 +12,7 @@ import type { SystemSummary } from "../api.js"
 import { appIcons } from "../icons.js"
 import { duration } from "../motionTokens.js"
 import { useReducedMotion } from "../reducedMotion.js"
+import { PLAY_LIMIT_MODES, PLAY_LIMIT_OPTIONS, playLimitMinutesLeft } from "../playLimit.js"
 import { sounds } from "../sound.js"
 import { DisplayPowerToggle } from "./DisplayPowerToggle.js"
 
@@ -26,13 +28,6 @@ const PLAY_MODES = [
 ] as const
 
 const DISPLAY_MODES = ["fill", "fit", "stretch"] as const
-
-const SLEEP_OPTIONS = [
-  { label: "OFF", minutes: 0 },
-  { label: "15M", minutes: 15 },
-  { label: "30M", minutes: 30 },
-  { label: "60M", minutes: 60 },
-] as const
 
 /** Display-mode (FILL/FIT/STRETCH): a frame with corner marks — NOT the
  *  monitor+power glyph, which is the display-power toggle. */
@@ -52,13 +47,7 @@ const IconMoon = () => (
   </svg>
 )
 
-type PopoverKind = "display" | "sleep" | null
-
-/** Remaining whole minutes on the sleep timer, for the `sleep Nm` subtitle. */
-const sleepMinutesLeft = (sleep: { active: boolean; deadline: number | null } | null): number | null =>
-  sleep?.active && sleep.deadline != null
-    ? Math.max(0, Math.ceil((sleep.deadline - Date.now()) / 60000))
-    : null
+type PopoverKind = "display" | "limit" | null
 
 export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const [pending, setPending] = useState(false)
@@ -91,7 +80,7 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const openPop = (kind: Exclude<PopoverKind, null>) => {
     // Re-opening mid-exit: cancel the pending unmount — the CSS transition
     // reverses from the presented value, no flash back to zero. Switching
-    // straight across (display ↔ sleep) lets the old popover finish its
+    // straight across (display ↔ limit) lets the old popover finish its
     // mirrored exit while the new one enters from its own trigger.
     if (closeAnimTimer.current) clearTimeout(closeAnimTimer.current)
     const prev = popoverRef.current
@@ -113,7 +102,9 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const player = summary?.status.player ?? null
   const display = summary?.status.display ?? null
   const hasCurrent = !!player?.current_workshop_id
-  const sleepLeft = sleepMinutesLeft(summary?.status.sleep ?? null)
+  const limitLeft = playLimitMinutesLeft(summary?.status.play_limit ?? null)
+  const limitMinutes = summary?.status.play_limit?.minutes ?? null
+  const limitOnce = summary?.status.play_limit?.once ?? false
   // Ticket 01 (media-root resilience): a wallpapered player that is sitting
   // idle with the media root gone must not read as "idle". The dock is the one
   // surface visible on every page, so the outage is named here; the status text
@@ -238,9 +229,9 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
   // glass out against the dock's.
   const clusterRef = useRef<HTMLDivElement>(null)
   const displayBtnRef = useRef<HTMLButtonElement>(null)
-  const sleepBtnRef = useRef<HTMLButtonElement>(null)
+  const limitBtnRef = useRef<HTMLButtonElement>(null)
   const displayPopRef = useRef<HTMLDivElement>(null)
-  const sleepPopRef = useRef<HTMLDivElement>(null)
+  const limitPopRef = useRef<HTMLDivElement>(null)
   const [popPos, setPopPos] = useState<{ right: number; bottom: number } | null>(null)
   // Layout effect, not a passive one: measure position AND the trigger-anchored
   // transform-origin synchronously before paint — the popover never renders a
@@ -256,8 +247,8 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
       const rr = r.getBoundingClientRect()
       const ir = inner.getBoundingClientRect()
       setPopPos({ right: rr.right - cr.right, bottom: rr.bottom - ir.top + 12 })
-      const pop = (popover === "display" ? displayPopRef : sleepPopRef).current
-      const btn = (popover === "display" ? displayBtnRef : sleepBtnRef).current
+      const pop = (popover === "display" ? displayPopRef : limitPopRef).current
+      const btn = (popover === "display" ? displayBtnRef : limitBtnRef).current
       if (pop && btn) {
         // The popover's CSS fallback pins it to the dock root's right edge;
         // its inline right/bottom lands only after this effect's setState.
@@ -284,13 +275,13 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
     const isDisplay = kind === "display"
     return (
       <div
-        ref={isDisplay ? displayPopRef : sleepPopRef}
-        className={`pbar-pop mono ${open ? "" : "pbar-pop-out"}`}
+        ref={isDisplay ? displayPopRef : limitPopRef}
+        className={`pbar-pop mono${isDisplay ? "" : " pbar-pop-limit"} ${open ? "" : "pbar-pop-out"}`}
         role="menu"
-        aria-label={isDisplay ? "Display mode" : "Sleep timer"}
+        aria-label={isDisplay ? "Display mode" : "Play limit"}
         style={popPos ? { right: popPos.right, bottom: popPos.bottom } : { visibility: "hidden" }}
       >
-        <span className="pbar-pop-label">{isDisplay ? "DISPLAY" : "SLEEP"}</span>
+        <span className="pbar-pop-label">{isDisplay ? "DISPLAY" : "PLAY LIMIT"}</span>
         {isDisplay
           ? DISPLAY_MODES.map((mode) => (
               <button
@@ -307,25 +298,41 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
                 {mode.toUpperCase()}
               </button>
             ))
-          : SLEEP_OPTIONS.map((o) => (
-              <button
-                key={o.label}
-                type="button"
-                className={
-                  (o.minutes === 0 && !summary?.status.sleep.active) ||
-                  (o.minutes > 0 && sleepLeft != null && Math.abs(sleepLeft - o.minutes) <= 1)
-                    ? "is-on"
-                    : ""
-                }
-                disabled={pending}
-                onClick={() => {
-                  void runAction(() => api.setSleep(o.minutes))
-                  closePop()
-                }}
-              >
-                {o.label}
-              </button>
-            ))}
+          : (
+              <>
+                {PLAY_LIMIT_OPTIONS.map((o) => (
+                  <button
+                    key={o.label}
+                    type="button"
+                    className={limitMinutes === o.minutes ? "is-on" : ""}
+                    disabled={pending}
+                    onClick={() => {
+                      void runAction(() => api.setPlayLimit(o.minutes, limitOnce))
+                      closePop()
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+                <span className="pbar-pop-label">MODE</span>
+                {PLAY_LIMIT_MODES.map((m) => (
+                  <button
+                    key={m.label}
+                    type="button"
+                    className={limitOnce === m.once ? "is-on" : ""}
+                    disabled={pending}
+                    onClick={() => {
+                      // The mode is half of the stored value, so it commits
+                      // against the current minutes and stays open for a
+                      // second look, like the display segments above.
+                      void runAction(() => api.setPlayLimit(limitMinutes ?? 0, m.once))
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </>
+            )}
       </div>
     )
   }
@@ -347,7 +354,7 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
       ref={rootRef}
     >
       {renderPopover("display")}
-      {renderPopover("sleep")}
+      {renderPopover("limit")}
 
       <div className="pbar-inner" ref={innerRef}>
         <div className="pbar-media">
@@ -366,7 +373,7 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
                 : `${player.current_workshop_id ?? "waiting"} · ${
                     player.playing ? "looping" : hasCurrent ? "paused" : "idle"
                   }`}
-              {!storageDown && sleepLeft != null ? ` · sleep ${sleepLeft}m` : ""}
+              {!storageDown && limitLeft != null ? ` · limit ${limitLeft}m` : ""}
             </div>
           </div>
         </div>
@@ -454,11 +461,11 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
           />
           <button
             type="button"
-            aria-label="Sleep timer"
-            title={sleepLeft != null ? `Sleep in ${sleepLeft}m` : "Sleep timer"}
-            className={popover === "sleep" || sleepLeft != null ? "active" : ""}
-            ref={sleepBtnRef}
-            onClick={() => togglePopover("sleep")}
+            aria-label="Play limit"
+            title={limitLeft != null ? `Auto-stop in ${limitLeft}m` : "Play limit"}
+            className={popover === "limit" || limitLeft != null ? "active" : ""}
+            ref={limitBtnRef}
+            onClick={() => togglePopover("limit")}
           >
             <IconMoon />
           </button>

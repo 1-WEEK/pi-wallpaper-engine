@@ -138,20 +138,6 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
       )
     )
     .post(
-      "/sleep",
-      ({ body, set }) =>
-        runRoute(
-          set,
-          Effect.gen(function* () {
-            const playback = yield* Playback
-            return yield* playback.sleep(body.minutes)
-          })
-        ),
-      {
-        body: t.Object({ minutes: t.Number() }),
-      }
-    )
-    .post(
       "/interval",
       ({ body, set }) =>
         runRoute(
@@ -173,12 +159,12 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
           set,
           Effect.gen(function* () {
             const playback = yield* Playback
-            yield* playback.setPlayLimit(body.minutes)
+            yield* playback.setPlayLimit(body.minutes, body.once)
             return yield* playback.playLimitStatus()
           })
         ),
       {
-        body: t.Object({ minutes: t.Number() }),
+        body: t.Object({ minutes: t.Number(), once: t.Boolean() }),
       }
     )
     .ws("/watch", {

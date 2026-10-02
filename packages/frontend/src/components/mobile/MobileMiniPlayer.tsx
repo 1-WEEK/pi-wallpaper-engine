@@ -2,11 +2,12 @@
 // degradation: MiniPlayer + Sheet. The bar keeps the transport and the
 // display-power toggle; tapping the media/copy area opens a Sheet with
 // the PlayerBar's remaining instant controls (play mode / display mode /
-// sleep), so no control is lost in the degradation.
+// play limit), so no control is lost in the degradation.
 import { useState } from "react"
 import { api } from "../../api.js"
 import type { SystemSummary } from "../../api.js"
 import { appIcons } from "../../icons.js"
+import { PLAY_LIMIT_MODES, PLAY_LIMIT_OPTIONS, playLimitMinutesLeft } from "../../playLimit.js"
 import { DisplayPowerToggle } from "../DisplayPowerToggle.js"
 import { MobileSheet } from "./MobileSheet.js"
 
@@ -23,20 +24,15 @@ const PLAY_MODES = [
 
 const DISPLAY_MODES = ["fill", "fit", "stretch"] as const
 
-const SLEEP_OPTIONS = [
-  { label: "OFF", minutes: 0 },
-  { label: "15M", minutes: 15 },
-  { label: "30M", minutes: 30 },
-  { label: "60M", minutes: 60 },
-] as const
-
 export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
   const [pending, setPending] = useState(false)
   const [displayPending, setDisplayPending] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
   const player = summary?.status.player ?? null
   const display = summary?.status.display ?? null
-  const sleep = summary?.status.sleep ?? null
+  const limit = summary?.status.play_limit ?? null
+  const limitOnce = limit?.once ?? false
+  const limitLeft = playLimitMinutesLeft(limit)
   const hasCurrent = !!player?.current_workshop_id
   // Ticket 01 (media-root resilience): same rule as the desktop dock — an
   // idle-looking mini player on a device whose media root is gone has to name
@@ -198,16 +194,11 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
 
           <div>
             <div className="mps-label">
-              <span>SLEEP</span>
+              <span>PLAY LIMIT</span>
             </div>
-            <div className="set-seg mono" role="radiogroup" aria-label="Sleep timer">
-              {SLEEP_OPTIONS.map((o) => {
-                const on =
-                  (o.minutes === 0 && !sleep?.active) ||
-                  (o.minutes > 0 &&
-                    !!sleep?.active &&
-                    sleep.deadline != null &&
-                    Math.abs(Math.ceil((sleep.deadline - Date.now()) / 60000) - o.minutes) <= 1)
+            <div className="set-seg mono" role="radiogroup" aria-label="Play limit">
+              {PLAY_LIMIT_OPTIONS.map((o) => {
+                const on = limit?.minutes === o.minutes
                 return (
                   <button
                     key={o.label}
@@ -216,17 +207,35 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
                     aria-checked={on}
                     className={on ? "is-on" : ""}
                     disabled={pending}
-                    onClick={() => void runAction(() => api.setSleep(o.minutes))}
+                    onClick={() => void runAction(() => api.setPlayLimit(o.minutes, limitOnce))}
                   >
                     {o.label}
                   </button>
                 )
               })}
             </div>
+            <div className="set-seg mono" role="radiogroup" aria-label="Play limit repeat mode">
+              {PLAY_LIMIT_MODES.map((m) => {
+                const on = limitOnce === m.once
+                return (
+                  <button
+                    key={m.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    className={on ? "is-on" : ""}
+                    disabled={pending}
+                    onClick={() => void runAction(() => api.setPlayLimit(limit?.minutes ?? 0, m.once))}
+                  >
+                    {m.label}
+                  </button>
+                )
+              })}
+            </div>
             <div className="mps-note">
-              {sleep?.active && sleep.deadline != null
-                ? `OFF IN ${Math.max(0, Math.ceil((sleep.deadline - Date.now()) / 60000))}M`
-                : "SLEEP TIMER INACTIVE"}
+              {limitLeft != null
+                ? `OFF IN ${limitLeft}M`
+                : "NO LIMIT SET"}
             </div>
           </div>
         </div>

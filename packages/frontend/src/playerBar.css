@@ -318,13 +318,13 @@ html[data-theme="light"] .pbar-cluster button.active {
   overflow: hidden;
 }
 
-/* ── DISPLAY / SLEEP popovers (spec §5 F2) ──────────────────────────
+/* ── DISPLAY / PLAY LIMIT popovers (spec §5 F2) ─────────────────────
    Same glass recipe as the dock. They render as siblings of .pbar-inner
    (nested backdrop-filter is dropped in Chromium). Position is measured
    in JS: bottom edge 12px above the glass top edge, right edge flush
    with the cluster's right edge, transform-origin on the trigger icon's
    center bottom. Enter = transition + @starting-style (interruptible —
-   a display↔sleep quick-switch re-targets from the presented value);
+   a display↔limit quick-switch re-targets from the presented value);
    exit mirrors enter at 150ms translateY(6px)+fade. */
 .pbar-pop {
   position: absolute;
@@ -354,6 +354,14 @@ html[data-theme="light"] .pbar-cluster button.active {
   transition:
     opacity var(--dur-hover) var(--ease-out),
     transform var(--dur-hover) var(--ease-out);
+}
+
+/* The play-limit popover carries two groups (presets, then the mode pair), so
+   it wraps into two right-aligned lines instead of one long strip. */
+.pbar-pop-limit {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 260px;
 }
 
 .pbar-pop::before {

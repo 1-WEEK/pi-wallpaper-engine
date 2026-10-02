@@ -110,8 +110,7 @@ export const mockSystemSummary = (): SystemSummary => ({
     },
     library: { total: 0 },
     downloads: { active: 0, finished: 0 },
-    sleep: { active: false, deadline: null },
-    play_limit: { minutes: 0, deadline: null },
+    play_limit: { minutes: 0, deadline: null, once: false },
     transcode: {
       pending: 0,
       claimed: 0,

@@ -16,10 +16,8 @@ describe("playerRoutes", () => {
     prev: () => Effect.void,
     setMode: () => Effect.void,
     setRotationInterval: () => Effect.void,
-    sleep: (minutes: number) => Effect.succeed({ active: minutes > 0, deadline: null }),
-    sleepStatus: () => Effect.succeed({ active: false, deadline: null }),
     setPlayLimit: () => Effect.void,
-    playLimitStatus: () => Effect.succeed({ minutes: 0, deadline: null }),
+    playLimitStatus: () => Effect.succeed({ minutes: 0, deadline: null, once: false }),
   }
 
   const mockMpv = {
@@ -32,7 +30,7 @@ describe("playerRoutes", () => {
   }
 
   const mockPlayerWatch = {
-    current: () => Effect.succeed({ path: null, paused: false, sleep: { active: false, deadline: null } }),
+    current: () => Effect.succeed({ path: null, paused: false }),
     stream: () => Stream.empty,
   }
 
@@ -83,26 +81,26 @@ describe("playerRoutes", () => {
     expect(stopCalled).toBe(true)
   })
 
-  test("POST /api/player/sleep calls Playback.sleep", async () => {
-    let sleepCalledWith = -1
+  test("POST /api/player/play-limit passes minutes and once through", async () => {
+    const calls: Array<{ minutes: number; once: boolean }> = []
     const app = getApp({
-      sleep: (mins) =>
+      setPlayLimit: (minutes, once) =>
         Effect.sync(() => {
-          sleepCalledWith = mins
-          return { active: true, deadline: 123_456_789 }
+          calls.push({ minutes, once })
         }),
+      playLimitStatus: () => Effect.succeed({ minutes: 30, deadline: null, once: true }),
     })
 
     const response = await app.handle(
-      new Request("http://localhost/api/player/sleep", {
+      new Request("http://localhost/api/player/play-limit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ minutes: 30 }),
+        body: JSON.stringify({ minutes: 30, once: true }),
       })
     )
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ active: true, deadline: 123_456_789 })
-    expect(sleepCalledWith).toBe(30)
+    expect(await response.json()).toEqual({ minutes: 30, deadline: null, once: true })
+    expect(calls).toEqual([{ minutes: 30, once: true }])
   })
 })

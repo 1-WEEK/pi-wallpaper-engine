@@ -80,7 +80,8 @@ library rows.
 ## Playback and Display
 
 [Playback](../../packages/backend/src/services/Playback.ts) coordinates play, stop,
-stepping, rotation mode, sleep, and display power. Routes call it for these intents.
+stepping, rotation mode, the play limit, and display power. Routes call it for these
+intents.
 [PlayerPower](../../packages/backend/src/services/PlayerPower.ts) owns player/display
 linkage; [Rotation](../../packages/backend/src/services/Rotation.ts) owns sequences.
 
@@ -91,19 +92,19 @@ linkage; [Rotation](../../packages/backend/src/services/Rotation.ts) owns sequen
 - Disarm rotation before stop or display-off; arm it after an explicit play.
   Display-on restore re-arms rotation best-effort. Startup restore does not re-arm
   it; that distinction is recorded in [ADR 0009](../adr/0009-playback-orchestration.md).
-- `sleep(minutes)` replaces the previous timer; `minutes <= 0` cancels it. Expiry
-  disarms rotation, calls display-off, and falls back to `stopForIdle` on failure.
-  The summary exposes `sleep: { active, deadline }`, with an epoch-ms deadline.
-  It is a one-shot instruction from the PlayerBar, not a persisted setting.
-- The play limit is the durable counterpart: `playback_prefs.play_limit_minutes`
-  (`0` = off) is armed per playback session by `play()` and by a display-on
-  restore, and deliberately **not** re-armed by `next`/`prev`/pause, so the
-  deadline is not pushed out by every rotation tick. `setPlayLimit` persists and
-  clears a live deadline when set to off. Expiry reuses the sleep timer's
-  stop recipe, and each timer disarms the other on elapse so the summary never
-  reports a deadline for a stopped session. Routes: `POST /api/player/play-limit`;
-  the summary exposes `play_limit: { minutes, deadline }`. See
-  [ADR 0010](../adr/0010-play-limit.md).
+- The play limit is the single stop timer: `playback_prefs.play_limit_minutes`
+  (`0` = off) and `play_limit_once` (the mode) are armed per playback session by
+  `play()` and by a display-on restore, and deliberately **not** re-armed by
+  `next`/`prev`/pause, so the deadline is not pushed out by every rotation tick.
+  `setPlayLimit(minutes, once)` persists both and re-arms a running session from
+  now. A one-shot value is consumed when its session ends (elapse, stop,
+  display-off) and is cleared at boot, since the session it belonged to died with
+  the process; a permanent value survives both. Expiry disarms rotation, calls
+  display-off, and falls back to `stopForIdle` on failure. Routes:
+  `POST /api/player/play-limit`; the summary exposes
+  `play_limit: { minutes, deadline, once }`. See
+  [ADR 0010](../adr/0010-play-limit.md) and
+  [ADR 0012](../adr/0012-one-play-limit-two-modes.md).
 - Display commands are optional argv arrays executed directly with `Bun.spawn`.
   Keep them non-interactive (including any required sudo configuration) and retain
   the five-second timeout. An unconfigured display operation returns 503.

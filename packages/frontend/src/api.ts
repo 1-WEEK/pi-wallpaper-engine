@@ -212,18 +212,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ seconds }),
     }).then(json<unknown>),
-  setSleep: (minutes: number) =>
-    fetchWithTimeout(`/api/player/sleep`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ minutes }),
-    }).then(json<{ active: boolean; deadline: number | null }>),
-  setPlayLimit: (minutes: number) =>
+  setPlayLimit: (minutes: number, once: boolean) =>
     fetchWithTimeout(`/api/player/play-limit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ minutes }),
-    }).then(json<{ minutes: number; deadline: number | null }>),
+      body: JSON.stringify({ minutes, once }),
+    }).then(json<{ minutes: number; deadline: number | null; once: boolean }>),
   playerStatus: () =>
     fetchWithTimeout(`/api/player/status`).then(
       json<{

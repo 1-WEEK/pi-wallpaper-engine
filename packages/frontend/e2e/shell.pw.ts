@@ -486,7 +486,7 @@ test.describe("Mobile shell", () => {
     await expect(
       sheet.getByRole("radiogroup", { name: "Display mode", exact: true })
     ).toBeVisible()
-    await expect(sheet.getByRole("radiogroup", { name: "Sleep timer" })).toBeVisible()
+    await expect(sheet.getByRole("radiogroup", { name: "Play limit", exact: true })).toBeVisible()
 
     // The sheet controls commit against the same endpoints as the dock.
     await sheet.getByRole("radio", { name: "SHUFFLE" }).click()

@@ -1,18 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { LibraryItem } from "@pwe/shared"
-import { formatPlayLimitCountdown, formatSleepCountdown, spaceSavedPercent } from "./format.js"
-
-describe("formatSleepCountdown", () => {
-  test("formats milliseconds as mm:ss", () => {
-    expect(formatSleepCountdown(272_000)).toBe("4:32")
-    expect(formatSleepCountdown(65_000)).toBe("1:05")
-  })
-
-  test("clamps zero and negative to 0:00", () => {
-    expect(formatSleepCountdown(0)).toBe("0:00")
-    expect(formatSleepCountdown(-5_000)).toBe("0:00")
-  })
-})
+import { formatPlayLimitCountdown, spaceSavedPercent } from "./format.js"
 
 describe("formatPlayLimitCountdown", () => {
   test("drops the hour field below an hour", () => {

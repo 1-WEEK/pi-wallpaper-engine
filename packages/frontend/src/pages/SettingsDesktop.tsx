@@ -38,6 +38,7 @@ import { RailControls } from "../components/RailShell.js"
 import { StateBlock } from "../components/StateBlock.js"
 import { getInterfaceSounds, setInterfaceSounds } from "../interfaceSounds.js"
 import { formatPlayLimitCountdown } from "../format.js"
+import { PLAY_LIMIT_MODES, PLAY_LIMIT_OPTIONS } from "../playLimit.js"
 import { sounds } from "../sound.js"
 
 interface Props {
@@ -167,16 +168,9 @@ const MODE_LABEL: Record<string, string> = {
   shuffle: "SHUFFLE",
 }
 
-/* Play limit presets (ticket 03): minutes per playback session, 0 = off. The
-   row submits the same way the duration row does — immediate, with the value
-   derived from the server summary — so the two controls share one commit
-   grammar and one failure fallback. */
-const PLAY_LIMITS = [
-  { label: "OFF", minutes: 0 },
-  { label: "30M", minutes: 30 },
-  { label: "1H", minutes: 60 },
-  { label: "2H", minutes: 120 },
-] as const
+/* The play-limit rows submit the same way the duration row does — immediate,
+   with the value derived from the server summary — and share their presets and
+   mode with the PlayerBar and the mobile sheet, so the surfaces agree. */
 
 export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; onRefresh: () => void }) => {
   const player = summary.status.player
@@ -187,9 +181,17 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
   const [commitError, setCommitError] = useState<string | null>(null)
   const [sounds, setSounds] = useState(getInterfaceSounds)
   const serverLimit = summary.status.play_limit?.minutes ?? null
+  const serverOnce = summary.status.play_limit?.once ?? false
   const limitDeadline = summary.status.play_limit?.deadline ?? null
-  const [limitPending, setLimitPending] = useState<number | null>(null)
-  const [limitCommitted, setLimitCommitted] = useState<number | null>(null)
+  const [limitPending, setLimitPending] = useState<{
+    minutes: number
+    once: boolean
+    kind: "value" | "mode"
+  } | null>(null)
+  const [limitCommitted, setLimitCommitted] = useState<{
+    minutes: number
+    once: boolean
+  } | null>(null)
   const [limitError, setLimitError] = useState<string | null>(null)
   // The countdown ticks locally between summary polls so the remaining time
   // reads as live rather than stepping every 5s.
@@ -236,21 +238,32 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
   // Same commit grammar as the duration row: immediate submit, server value
   // owns the display, a failure falls back to the server's actual value.
   useEffect(() => {
-    if (limitCommitted !== null && serverLimit === limitCommitted) setLimitCommitted(null)
-  }, [limitCommitted, serverLimit])
+    if (
+      limitCommitted !== null &&
+      serverLimit === limitCommitted.minutes &&
+      serverOnce === limitCommitted.once
+    ) {
+      setLimitCommitted(null)
+    }
+  }, [limitCommitted, serverLimit, serverOnce])
 
-  const shownLimit = limitPending ?? limitCommitted ?? serverLimit
-  const limitKnownPreset = serverLimit !== null && PLAY_LIMITS.some((p) => p.minutes === serverLimit)
+  const shownLimit = limitPending?.minutes ?? limitCommitted?.minutes ?? serverLimit
+  const shownOnce = limitPending?.once ?? limitCommitted?.once ?? serverOnce
+  const limitKnownPreset =
+    serverLimit !== null && PLAY_LIMIT_OPTIONS.some((p) => p.minutes === serverLimit)
   const limitRemainingSec =
     limitDeadline !== null ? Math.max(0, Math.round((limitDeadline - now) / 1000)) : null
 
-  const commitLimit = async (minutes: number) => {
-    if (limitPending !== null || minutes === shownLimit) return
-    setLimitPending(minutes)
+  const commitLimit = async (minutes: number, once: boolean) => {
+    if (limitPending !== null || (minutes === shownLimit && once === shownOnce)) return
+    // Which control is spinning: a mode flip keeps the minutes and only the
+    // repeat changes, so the two rows do not both show the pending mark.
+    const kind = once === shownOnce ? "value" : "mode"
+    setLimitPending({ minutes, once, kind })
     setLimitError(null)
     try {
-      await api.setPlayLimit(minutes)
-      setLimitCommitted(minutes)
+      await api.setPlayLimit(minutes, once)
+      setLimitCommitted({ minutes, once })
       onRefresh()
     } catch (e) {
       // Nothing was committed locally: the control keeps the server value.
@@ -304,9 +317,9 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
           <span className="set-row-name">Stop after</span>
           <span className="set-row-dots" aria-hidden="true" />
           <span className="set-seg mono" role="radiogroup" aria-label="Stop playback after">
-            {PLAY_LIMITS.map(({ label, minutes }) => {
+            {PLAY_LIMIT_OPTIONS.map(({ label, minutes }) => {
               const on = shownLimit === minutes && limitPending === null
-              const busy = limitPending === minutes
+              const busy = limitPending?.kind === "value" && limitPending.minutes === minutes
               return (
                 <button
                   key={label}
@@ -314,7 +327,29 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
                   role="radio"
                   aria-checked={on}
                   className={`${on ? "is-on" : ""}${busy ? " set-pending" : ""}`}
-                  onClick={() => void commitLimit(minutes)}
+                  onClick={() => void commitLimit(minutes, shownOnce)}
+                >
+                  {busy ? "◌" : label}
+                </button>
+              )
+            })}
+          </span>
+        </div>
+        <div className="set-row">
+          <span className="set-row-name">Repeat</span>
+          <span className="set-row-dots" aria-hidden="true" />
+          <span className="set-seg mono" role="radiogroup" aria-label="Play limit repeat mode">
+            {PLAY_LIMIT_MODES.map(({ label, once }) => {
+              const on = shownOnce === once && limitPending === null
+              const busy = limitPending?.kind === "mode" && limitPending.once === once
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  className={`${on ? "is-on" : ""}${busy ? " set-pending" : ""}`}
+                  onClick={() => void commitLimit(shownLimit ?? 0, once)}
                 >
                   {busy ? "◌" : label}
                 </button>
@@ -323,13 +358,16 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
           </span>
         </div>
         {limitRemainingSec !== null && (
-          <Note>{`AUTO-STOP IN ${formatPlayLimitCountdown(limitRemainingSec)} — ONE SHOT, PAUSE AND NEXT KEEP IT COUNTING`}</Note>
+          <Note>{`AUTO-STOP IN ${formatPlayLimitCountdown(limitRemainingSec)} — PAUSE AND NEXT KEEP IT COUNTING`}</Note>
         )}
         {limitRemainingSec === null && shownLimit === 0 && (
           <Note>NO LIMIT — PLAYBACK RUNS UNTIL YOU STOP IT</Note>
         )}
-        {limitRemainingSec === null && shownLimit !== null && shownLimit > 0 && (
-          <Note>ARMED ON NEXT PLAY — COUNTDOWN STARTS WITH PLAYBACK, NOT WITH THIS SWITCH</Note>
+        {limitRemainingSec === null && shownLimit !== null && shownLimit > 0 && shownOnce && (
+          <Note>ONE SHOT — ARMED ON NEXT PLAY AND CLEARED WHEN THAT SESSION ENDS</Note>
+        )}
+        {limitRemainingSec === null && shownLimit !== null && shownLimit > 0 && !shownOnce && (
+          <Note>ALWAYS — ARMED ON NEXT PLAY AND RE-ARMED EVERY SESSION</Note>
         )}
         {!limitKnownPreset && limitCommitted === null && serverLimit !== null && (
           <Note>{`CURRENT — ${serverLimit}M`}</Note>
@@ -1029,7 +1067,7 @@ export const buildHealthItems = (summary: SystemSummary): HealthItem[] => {
       name: "Display control",
       warn: displayWarn,
       reason: !display.configured
-        ? "ON/OFF COMMANDS NOT CONFIGURED — SLEEP FALLS BACK TO STOPPING PLAYBACK"
+        ? "ON/OFF COMMANDS NOT CONFIGURED — AUTO-STOP FALLS BACK TO STOPPING PLAYBACK"
         : display.error_kind
           ? `LAST COMMAND FAILED — ${display.error_kind.toUpperCase()}`
           : null,

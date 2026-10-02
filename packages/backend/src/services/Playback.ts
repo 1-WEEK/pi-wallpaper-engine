@@ -12,25 +12,27 @@ import { PlaybackPrefs, clampPlayLimitMinutes } from "./PlaybackPrefs.js"
 import { PlayerPower, type PowerOnResult } from "./PlayerPower.js"
 import { Rotation } from "./Rotation.js"
 
-export interface SleepStatus {
-  readonly active: boolean
-  readonly deadline: number | null // epoch ms when the display turns off
-}
-
 /**
  * The durable "stop playback after N minutes" policy as the orchestrator sees
- * it: the stored setting plus the deadline the CURRENT playback session is
- * counting down to.
+ * it: the stored setting, its mode, and the deadline the CURRENT playback
+ * session is counting down to. It is the only stop timer — the PlayerBar and
+ * the Settings row both edit this one value.
  *
  * The limit is armed per playback SESSION, not per wallpaper: it starts when a
  * session begins and is deliberately NOT re-armed by pause/next/prev, so a
  * session can actually reach its end (otherwise rotating every N minutes would
  * push the deadline out forever). It survives rotation ticks for free — the
- * rotation timer calls mpv directly and never re-enters this module.
+ * rotation timer calls mpv directly and never re-enters this module. An
+ * explicit set from either surface does re-arm a running session, because that
+ * is what the user just asked for.
+ *
+ * `once` is the one-shot mode: the value applies to a single session and is
+ * consumed when that session ends, so it never leaks into the next one.
  */
 export interface PlayLimitStatus {
   readonly minutes: number
   readonly deadline: number | null // epoch ms when playback auto-stops
+  readonly once: boolean
 }
 
 // Playback orchestration (ADR 0009): the single owner of the rotation linkage
@@ -52,9 +54,7 @@ export interface PlaybackImpl {
   readonly prev: () => Effect.Effect<void, DbError>
   readonly setMode: (mode: PlayMode) => Effect.Effect<void, DbError>
   readonly setRotationInterval: (sec: number) => Effect.Effect<void, DbError>
-  readonly sleep: (minutes: number) => Effect.Effect<SleepStatus>
-  readonly sleepStatus: () => Effect.Effect<SleepStatus>
-  readonly setPlayLimit: (minutes: number) => Effect.Effect<void, DbError>
+  readonly setPlayLimit: (minutes: number, once: boolean) => Effect.Effect<void, DbError>
   readonly playLimitStatus: () => Effect.Effect<PlayLimitStatus>
 }
 
@@ -68,11 +68,11 @@ export const PlaybackLive = Layer.effect(
     const rotation = yield* Rotation
     const prefs = yield* PlaybackPrefs
 
-    const timerRef = yield* Ref.make<Timer | null>(null)
-    const deadlineRef = yield* Ref.make<number | null>(null)
-    // Play limit: armed per playback session, separate from the one-shot sleep.
     const limitTimerRef = yield* Ref.make<Timer | null>(null)
     const limitDeadlineRef = yield* Ref.make<number | null>(null)
+    // Whether a playback session is running, so an explicit setPlayLimit knows
+    // whether there is a live deadline to re-arm.
+    const sessionActiveRef = yield* Ref.make(false)
 
     const clearPlayLimit = Effect.gen(function* () {
       const pending = yield* Ref.get(limitTimerRef)
@@ -81,44 +81,14 @@ export const PlaybackLive = Layer.effect(
       yield* Ref.set(limitDeadlineRef, null)
     })
 
-    const clearSleep = Effect.gen(function* () {
-      const t = yield* Ref.get(timerRef)
-      if (t) clearTimeout(t)
-      yield* Ref.set(timerRef, null)
-      yield* Ref.set(deadlineRef, null)
-    })
-
-    const sleepStatus = (): Effect.Effect<SleepStatus> =>
-      Effect.gen(function* () {
-        const deadline = yield* Ref.get(deadlineRef)
-        return { active: deadline !== null, deadline }
-      })
-
-    // The stop recipe shared by the sleep timer and the play limit: disarm the
-    // sequence, then power the display off, falling back to a plain stop when
-    // display commands are not configured. Both timers racing to the same
-    // deadline must land on the same effect.
+    // The one stop recipe: disarm the sequence, then power the display off,
+    // falling back to a plain stop when display commands are not configured.
     const stopPlayback = Effect.gen(function* () {
       yield* rotation.disarm()
       yield* playerPower
         .displayOff()
         .pipe(Effect.catch(() => playerPower.stopForIdle().pipe(Effect.asVoid)))
     })
-
-    // On elapse: stop rotation, then power the display off. Fall back to a plain
-    // stop when display commands are not configured.
-    const onSleepElapsed = Effect.gen(function* () {
-      yield* Ref.set(timerRef, null)
-      yield* Ref.set(deadlineRef, null)
-      // Whichever of the two deadlines lands first owns the shutdown; the other
-      // must not stay armed and keep reporting "active".
-      yield* clearPlayLimit
-      yield* stopPlayback
-    }).pipe(
-      Effect.catch((e) =>
-        logger.warn(`Sleep timer action failed: ${String(e)}`).pipe(Effect.ignore)
-      )
-    )
 
     // prefs.get() reads a Ref and only fails on a DB read at boot, but the type
     // carries DbError; every caller here wants the same conservative fallback
@@ -130,15 +100,41 @@ export const PlaybackLive = Layer.effect(
             play_mode: "single" as const,
             rotation_interval_sec: 600,
             play_limit_minutes: 0,
+            play_limit_once: false,
           })
         )
       )
 
     const playLimitStatus = (): Effect.Effect<PlayLimitStatus> =>
       Effect.gen(function* () {
-        const { play_limit_minutes } = yield* readPrefs()
-        return { minutes: play_limit_minutes, deadline: yield* Ref.get(limitDeadlineRef) }
+        const { play_limit_minutes, play_limit_once } = yield* readPrefs()
+        return {
+          minutes: play_limit_minutes,
+          deadline: yield* Ref.get(limitDeadlineRef),
+          once: play_limit_once,
+        }
       })
+
+    // A one-shot limit belongs to the session that set it: when that session
+    // ends (elapse, explicit stop, display-off) the value is consumed and the
+    // policy reads off again. The mode itself stays, so the next set is once
+    // again unless the administrator switches back to permanent.
+    const consumeOnceLimit = Effect.gen(function* () {
+      const { play_limit_minutes, play_limit_once } = yield* readPrefs()
+      if (play_limit_once && play_limit_minutes > 0) {
+        yield* prefs.setPlayLimit(0, true).pipe(Effect.catch(() => Effect.void))
+      }
+    })
+
+    // A one-shot set before the process died has no session left to belong to:
+    // clear it at boot so the next play does not arm a limit the administrator
+    // meant for a session that is already over. Permanent values are untouched.
+    yield* Effect.gen(function* () {
+      const { play_limit_minutes, play_limit_once } = yield* readPrefs()
+      if (play_limit_once && play_limit_minutes > 0) {
+        yield* prefs.setPlayLimit(0, true)
+      }
+    }).pipe(Effect.catch(() => Effect.void))
 
     // Arm the limit for a NEW playback session. Never called by pause/next/prev:
     // re-arming on every wallpaper change would push the deadline out forever
@@ -165,9 +161,8 @@ export const PlaybackLive = Layer.effect(
     const onPlayLimitElapsed = Effect.gen(function* () {
       yield* Ref.set(limitTimerRef, null)
       yield* Ref.set(limitDeadlineRef, null)
-      // Symmetric with the sleep timer: the loser of the race is disarmed so the
-      // summary never reports a deadline for a session that has already stopped.
-      yield* clearSleep
+      yield* Ref.set(sessionActiveRef, false)
+      yield* consumeOnceLimit
       yield* stopPlayback
     }).pipe(
       Effect.catch((e) =>
@@ -175,13 +170,14 @@ export const PlaybackLive = Layer.effect(
       )
     )
 
-    // Either timer elapsing ends the playback session, so an explicit stop drops
-    // the limit too — a later play re-arms it from zero.
-    const clearSessionTimers = Effect.all([clearPlayLimit, clearSleep], {
-      discard: true,
+    // An explicit stop or display-off ends the playback session, so it drops the
+    // live deadline and consumes a one-shot — a later play re-arms from zero.
+    const clearSessionTimers = Effect.gen(function* () {
+      yield* clearPlayLimit
+      yield* Ref.set(sessionActiveRef, false)
+      yield* consumeOnceLimit
     })
 
-    yield* Effect.addFinalizer(() => clearSleep)
     yield* Effect.addFinalizer(() => clearPlayLimit)
 
     // Ticket 01 (media-root recovery): PlayerPower restores a wallpaper on its
@@ -216,6 +212,7 @@ export const PlaybackLive = Layer.effect(
           yield* rotation.arm(workshopId).pipe(Effect.catch(() => Effect.void))
           // A play starts a new session, so the limit is armed from zero here —
           // and only here (plus display-on restore below).
+          yield* Ref.set(sessionActiveRef, true)
           yield* armPlayLimit.pipe(Effect.catch(() => Effect.void))
           return result
         }),
@@ -241,6 +238,7 @@ export const PlaybackLive = Layer.effect(
           // signed off 2026-07-06). Best-effort, like arming after play.
           if (result.restored && restored_workshop_id) {
             yield* rotation.arm(restored_workshop_id).pipe(Effect.catch(() => Effect.void))
+            yield* Ref.set(sessionActiveRef, true)
             yield* armPlayLimit.pipe(Effect.catch(() => Effect.void))
           }
           return result
@@ -251,34 +249,21 @@ export const PlaybackLive = Layer.effect(
       setMode: (mode) => rotation.setMode(mode),
       setRotationInterval: (sec) => rotation.setInterval(sec),
 
-      sleep: (minutes) =>
-        Effect.gen(function* () {
-          yield* clearSleep
-          if (minutes <= 0) return yield* sleepStatus()
-          const ms = minutes * 60_000
-          const deadline = Date.now() + ms
-          const timer = setTimeout(() => {
-            Effect.runFork(onSleepElapsed)
-          }, ms)
-          ;(timer as { unref?: () => void }).unref?.()
-          yield* Ref.set(timerRef, timer)
-          yield* Ref.set(deadlineRef, deadline)
-          return yield* sleepStatus()
-        }),
-
-      sleepStatus,
       // The status is read through prefs + the live deadline on every call, so
       // this reads the setting rather than a cached copy.
       playLimitStatus,
-      setPlayLimit: (minutes) =>
+      setPlayLimit: (minutes, once) =>
         Effect.gen(function* () {
-          yield* prefs.setPlayLimit(minutes)
-          // Turning the limit off (or changing it) applies from now on, not to a
-          // session already running: an in-flight deadline keeps its original
-          // value, which is what the UI is already counting down. Clear it only
-          // when the setting is switched off, so "off" cannot strand a live
-          // deadline in the summary.
-          if (minutes <= 0) yield* clearPlayLimit
+          yield* prefs.setPlayLimit(minutes, once)
+          // The PlayerBar and the Settings row edit this one value and both show
+          // the same countdown, so a set while a session runs means "N minutes
+          // from now": re-arm the live deadline instead of leaving the old one
+          // ticking. With no session running there is nothing to arm and the
+          // next play picks the value up; off always clears a live deadline so
+          // it cannot strand one in the summary.
+          const sessionActive = yield* Ref.get(sessionActiveRef)
+          if (minutes > 0 && sessionActive) yield* armPlayLimit
+          else yield* clearPlayLimit
         }),
     }
   })

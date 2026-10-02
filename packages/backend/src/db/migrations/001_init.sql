@@ -74,5 +74,6 @@ CREATE TABLE IF NOT EXISTS playback_prefs (
   play_mode             TEXT NOT NULL DEFAULT 'single',
   rotation_interval_sec INTEGER NOT NULL DEFAULT 600,
   play_limit_minutes    INTEGER NOT NULL DEFAULT 0,
+  play_limit_once       INTEGER NOT NULL DEFAULT 0,
   updated_at            INTEGER NOT NULL
 );
