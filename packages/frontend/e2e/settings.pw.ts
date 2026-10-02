@@ -114,7 +114,7 @@ test.describe("Settings page", () => {
   }) => {
     const summary = baseSummary()
     // A limit is already set and a session is counting down: 90 minutes left.
-    summary.status.play_limit = { minutes: 60, deadline: Date.now() + 90 * 60_000 }
+    summary.status.play_limit = { minutes: 60, once: false, deadline: Date.now() + 90 * 60_000 }
     await mockBase(page, summary)
 
     let postedMinutes: number | null = null
@@ -124,7 +124,7 @@ test.describe("Settings page", () => {
       return r.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ minutes, deadline: null }),
+        body: JSON.stringify({ minutes, once: false, deadline: null }),
       })
     })
 
@@ -403,6 +403,67 @@ test.describe("Settings page", () => {
 
 test.describe("Settings mobile (ticket 14)", () => {
   test.use({ viewport: { width: 390, height: 844 } })
+
+  test("play limit has touch-sized controls, commits, and reverts a failed change", async ({ page }) => {
+    const summary = baseSummary()
+    await mockBase(page, summary)
+    let postedLimit: { minutes: unknown; once: unknown } | undefined
+    let failCommit = false
+    await page.route("**/api/player/play-limit", (route) => {
+      const body: unknown = route.request().postDataJSON()
+      const minutes = postedField(body, "minutes")
+      const once = postedField(body, "once")
+      postedLimit = { minutes, once }
+      if (failCommit) {
+        return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"db locked"}' })
+      }
+      if (typeof minutes === "number" && typeof once === "boolean") {
+        summary.status.play_limit = { minutes, once, deadline: Date.now() + minutes * 60_000 }
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(summary.status.play_limit),
+      })
+    })
+
+    await page.goto("/settings")
+    await page.locator(".setm-row", { hasText: "Playback" }).click()
+    const segment = page.getByRole("radiogroup", { name: "Stop playback after" })
+    const modes = page.getByRole("radiogroup", { name: "Play limit repeat mode" })
+    await expect(segment.getByRole("radio", { name: "OFF" })).toHaveAttribute("aria-checked", "true")
+    await expect(modes.getByRole("radio", { name: "ALWAYS" })).toHaveAttribute("aria-checked", "true")
+    for (const control of [segment, modes]) {
+      for (const radio of await control.getByRole("radio").all()) {
+        const box = await radio.boundingBox()
+        expect(box).not.toBeNull()
+        expect(box!.height).toBeGreaterThanOrEqual(44)
+        expect(box!.width).toBeGreaterThanOrEqual(44)
+        expect(box!.x).toBeGreaterThanOrEqual(0)
+        expect(box!.x + box!.width).toBeLessThanOrEqual(390)
+      }
+    }
+
+    await segment.getByRole("radio", { name: "30M" }).click()
+    await expect.poll(() => postedLimit).toEqual({ minutes: 30, once: false })
+    await expect(segment.getByRole("radio", { name: "30M" })).toHaveAttribute("aria-checked", "true")
+    await expect(page.getByText(/AUTO-STOP IN/)).toBeVisible()
+    await modes.getByRole("radio", { name: "ONCE" }).click()
+    await expect.poll(() => postedLimit).toEqual({ minutes: 30, once: true })
+    await expect(modes.getByRole("radio", { name: "ONCE" })).toHaveAttribute("aria-checked", "true")
+    failCommit = true
+    await modes.getByRole("radio", { name: "ALWAYS" }).click()
+    await expect.poll(() => postedLimit).toEqual({ minutes: 30, once: false })
+    await expect(page.getByText(/COMMIT FAILED/)).toBeVisible()
+    await expect(modes.getByRole("radio", { name: "ONCE" })).toHaveAttribute("aria-checked", "true")
+    await expect(modes.getByRole("radio", { name: "ALWAYS" })).toHaveAttribute("aria-checked", "false")
+    await segment.getByRole("radio", { name: "1H" }).click()
+    await expect.poll(() => postedLimit).toEqual({ minutes: 60, once: true })
+    await expect(page.getByText(/COMMIT FAILED/)).toBeVisible()
+    await expect(segment.getByRole("radio", { name: "30M" })).toHaveAttribute("aria-checked", "true")
+    await expect(segment.getByRole("radio", { name: "1H" })).toHaveAttribute("aria-checked", "false")
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  })
 
   test("degrades to a section list → detail two-layer flow", async ({ page }) => {
     await mockBase(page)
