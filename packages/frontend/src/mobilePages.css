@@ -297,6 +297,7 @@ span.mp-cmd:active {
 }
 
 .bwm-card-media {
+  display: block;
   position: relative;
   aspect-ratio: 1200 / 1080;
   overflow: hidden;
@@ -708,6 +709,7 @@ span.mp-cmd:active {
 
 /* ── Activity mobile: the desktop .act-* ledger at a tighter measure ── */
 .mobile-shell .act {
+  position: static;
   margin: 0;
   padding: 14px 16px 28px;
 }

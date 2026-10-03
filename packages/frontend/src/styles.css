@@ -260,10 +260,25 @@ a {
 
 }
 
-/* ── Mobile shell (rendered when container width < 720px) ─────────────
+/* ── Mobile shell (selected by LayoutContext) ────────────────────────
    Ticket 14 (spec §9): the mobile fallbacks consume the --pt-* token
    layer like every other redesigned surface. Navigation degrades to the
-   bottom TabBar, the PlayerBar degrades to MiniPlayer + Sheet. Touch
+   bottom TabBar, the PlayerBar degrades to MiniPlayer + Sheet. */
+.mobile-shell {
+  --mobile-safe-top: env(safe-area-inset-top, 0px);
+  --mobile-safe-right: env(safe-area-inset-right, 0px);
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-safe-left: env(safe-area-inset-left, 0px);
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+  min-width: 0;
+  padding: var(--mobile-safe-top) var(--mobile-safe-right) 0 var(--mobile-safe-left);
+}
 
 /* Top bar */
 .mobile-top-bar {
@@ -324,7 +339,9 @@ a {
 /* Main — no position:relative so MobileSheet's `position:absolute` anchors to
    `.mobile-shell` instead of scrolling with main content. */
 .mobile-main {
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   min-width: 0;
   min-height: 0;
 }
@@ -416,6 +433,7 @@ a {
   min-width: 0;
 }
 .mobile-mini-player-title {
+  display: block;
   font-size: 12px;
   font-weight: 600;
   color: var(--pt-text);
@@ -424,6 +442,10 @@ a {
   white-space: nowrap;
 }
 .mobile-mini-player-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 10px;
   letter-spacing: 0.04em;
   color: var(--pt-faint);
@@ -480,7 +502,7 @@ a {
   grid-template-columns: repeat(4, 1fr);
   background: var(--pt-bg);
   border-top: 1px solid var(--pt-line-soft);
-  padding: 6px 4px 14px;
+  padding: 6px 4px max(14px, var(--mobile-safe-bottom));
 }
 .mobile-tab-bar-item {
   display: flex;
@@ -572,6 +594,8 @@ a {
   right: 0;
   bottom: 0;
   height: var(--mobile-sheet-height, 88%);
+  max-height: calc(100% - var(--mobile-safe-top));
+  padding: 0 var(--mobile-safe-right) var(--mobile-safe-bottom) var(--mobile-safe-left);
   background: var(--pt-bg);
   border-top: 1px solid var(--pt-line);
   border-top-left-radius: 18px;
@@ -587,6 +611,7 @@ a {
   transition: transform var(--dur-base) var(--ease-out) 60ms;
 }
 .mobile-sheet-grabber {
+  flex-shrink: 0;
   width: 40px;
   height: 4px;
   border-radius: 2px;
@@ -594,6 +619,7 @@ a {
   margin: 8px auto 2px;
 }
 .mobile-sheet-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -626,6 +652,7 @@ a {
 .mobile-sheet-body {
   flex: 1;
   overflow: auto;
+  overscroll-behavior-y: contain;
   min-height: 0;
 }
 .mobile-sheet-footer {

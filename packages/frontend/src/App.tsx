@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, type RefObject } from "react"
 import { Redirect, Route, Switch, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
 import { SWRConfig, useSWRConfig } from "swr"
@@ -193,15 +193,21 @@ const DesktopShell = ({
   )
 }
 
+const ShellFrame = ({ shellRef }: { shellRef: RefObject<HTMLDivElement | null> }) => {
+  const { mobile } = useLayout()
+  return (
+    <div ref={shellRef} className={mobile ? "mobile-shell" : "app"}>
+      <ShellBody />
+    </div>
+  )
+}
+
 const AppShell = () => {
   const [ref, width] = useContainerWidth()
-  const mobile = width > 0 && width < 720
   return (
-    <div ref={ref} className={mobile ? "mobile-shell" : "app"}>
-      <LayoutProvider width={width}>
-        <ShellBody />
-      </LayoutProvider>
-    </div>
+    <LayoutProvider width={width}>
+      <ShellFrame shellRef={ref} />
+    </LayoutProvider>
   )
 }
 
