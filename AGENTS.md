@@ -45,6 +45,6 @@ mpv, and an optional NAS transcode worker.
 ## Maintaining These Docs
 
 Keep this file as the entry point and put subsystem details in the linked guides.
-Use [CONTEXT.md](CONTEXT.md) for domain definitions and ADRs for decision history.
+Use [GLOSSARY.md](GLOSSARY.md) for domain definitions and ADRs for decision history.
 Commands and dependency versions come from scripts and manifests. When changing
 behavior, update its owning guide and check any links affected by moved files.
