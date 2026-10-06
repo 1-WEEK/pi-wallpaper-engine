@@ -641,8 +641,8 @@ test.describe("Mobile shell", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          total: 8,
-          items: Array.from({ length: 8 }, (_, i) => ({
+          total: 24,
+          items: Array.from({ length: 24 }, (_, i) => ({
             publishedfileid: `100${i}`,
             title: `Wallpaper ${i}`,
             preview_url: null,
@@ -677,15 +677,21 @@ test.describe("Mobile shell", () => {
     expect(tabZ).toBe(16)
 
     // Tuck: scroll down → the lozenge slides down behind the TabBar
-    // (translate only, never a fade); scroll up → it returns.
-    const main = page.locator(".mobile-main")
-    await main.evaluate((el) => el.scrollTo({ top: 600 }))
+    // (translate only, never a fade); scroll up → it returns. Real wheel
+    // events so the scroll listener's delta detection fires.
+    const mainBox = (await page.locator(".mobile-main").boundingBox())!
+    const scrollable = await page
+      .locator(".mobile-main")
+      .evaluate((el) => el.scrollHeight > el.clientHeight + 100)
+    expect(scrollable).toBe(true)
+    await page.mouse.move(mainBox.x + mainBox.width / 2, mainBox.y + mainBox.height / 2)
+    await page.mouse.wheel(0, 800)
     await expect(mpl).toHaveClass(/tucked/, { timeout: 1500 })
     const tuckedTransform = await mpl.evaluate((el) => getComputedStyle(el).transform)
     expect(tuckedTransform).not.toBe("none")
     const tuckedOpacity = await mpl.evaluate((el) => getComputedStyle(el).opacity)
     expect(tuckedOpacity).toBe("1") // a pocket slide, not a fade
-    await main.evaluate((el) => el.scrollTo({ top: 0 }))
+    await page.mouse.wheel(0, -800)
     await expect(mpl).not.toHaveClass(/tucked/, { timeout: 1500 })
   })
 
@@ -715,13 +721,15 @@ test.describe("Mobile shell", () => {
 
     await sheet.getByRole("button", { name: "Close" }).click()
     await expect(page.locator(".mobile-sheet.open")).toHaveCount(0)
-    const exiting = await page.locator(".mobile-sheet").evaluate((el) => {
-      const panel = el.querySelector(".mobile-sheet-panel")!
-      return {
-        duration: getComputedStyle(panel).transitionDuration,
-        delay: getComputedStyle(panel).transitionDelay,
-      }
-    })
+    const exiting = await page
+      .locator(".mobile-sheet", { hasText: "No wallpaper selected" })
+      .evaluate((el) => {
+        const panel = el.querySelector(".mobile-sheet-panel")!
+        return {
+          duration: getComputedStyle(panel).transitionDuration,
+          delay: getComputedStyle(panel).transitionDelay,
+        }
+      })
     expect(exiting.duration).toBe("0.2s") // 200ms out
     expect(exiting.delay).toBe("0s")
   })
@@ -737,7 +745,7 @@ test.describe("Mobile shell", () => {
 
     // A bare synthetic click on the scrim must NOT dismiss (§8.1 phantom-
     // click contract).
-    await page.locator(".mobile-sheet-scrim").evaluate((el) => {
+    await sheet.locator(".mobile-sheet-scrim").evaluate((el) => {
       el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
     })
     await expect(sheet).toBeVisible()
@@ -750,7 +758,7 @@ test.describe("Mobile shell", () => {
     await expect(sheet).toBeVisible()
 
     // A paired down+up on the scrim itself dismisses.
-    const scrimBox = (await page.locator(".mobile-sheet-scrim").boundingBox())!
+    const scrimBox = (await sheet.locator(".mobile-sheet-scrim").boundingBox())!
     await page.mouse.move(scrimBox.width / 2, 40)
     await page.mouse.down()
     await page.mouse.up()

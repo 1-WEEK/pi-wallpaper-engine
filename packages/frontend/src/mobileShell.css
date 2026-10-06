@@ -245,6 +245,11 @@
   --mobile-tabbar-h: 76px;
 }
 .mobile-main {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  min-width: 0;
+  min-height: 0;
   padding-bottom: calc(var(--mobile-tabbar-h) + 16px + 64px + 18px);
 }
 .mobile-mini-player {
