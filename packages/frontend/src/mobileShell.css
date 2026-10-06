@@ -145,7 +145,7 @@
   z-index: 16; /* above the MiniPlayer (15): the tuck hides behind it */
   background: var(--pt-bg);
   border-top: 1px solid var(--pt-line-soft);
-  padding: 2px 4px max(6px, var(--mobile-safe-bottom));
+  padding: 2px 4px max(14px, var(--mobile-safe-bottom));
 }
 .mobile-tab-bar-cells {
   position: relative;
@@ -253,9 +253,11 @@
   padding-bottom: calc(var(--mobile-tabbar-h) + 16px + 64px + 18px);
 }
 .mobile-mini-player {
-  position: absolute;
+  position: fixed;
   left: calc(12px + var(--mobile-safe-left));
   right: calc(12px + var(--mobile-safe-right));
+  /* --mobile-tabbar-h is authored on .mobile-shell (the layout owner); it
+     inherits through the fixed element's DOM ancestry. */
   bottom: calc(var(--mobile-tabbar-h) + 16px + var(--mobile-safe-bottom));
   z-index: 15;
   display: flex;
@@ -279,6 +281,9 @@
     0 2px 8px rgba(0, 0, 0, 0.3);
   transition: transform 350ms var(--ease-out);
   will-change: transform;
+  /* Pans starting on the lozenge are forwarded to the main scroller by the
+     component (the player floats outside the scroll chain). */
+  touch-action: none;
 }
 html[data-theme="light"] .mobile-mini-player {
   background: rgba(255, 255, 255, 0.32);

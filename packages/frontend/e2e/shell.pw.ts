@@ -663,13 +663,14 @@ test.describe("Mobile shell", () => {
     )
     expect(backdrop).toContain("blur(28px)")
 
-    // Floating: absolutely positioned over the scroll area, z 15 under the
-    // TabBar's 16, offset from the viewport bottom.
+    // Floating: out-of-flow over the scroll area, z 15 under the
+    // TabBar's 16, offset from the viewport bottom. `fixed` (viewport-
+    // anchored) so the sheet's own scroll chain never carries it.
     const geom = await mpl.evaluate((el) => {
       const cs = getComputedStyle(el)
       return { position: cs.position, z: cs.zIndex }
     })
-    expect(geom.position).toBe("absolute")
+    expect(["absolute", "fixed"]).toContain(geom.position)
     expect(Number(geom.z)).toBe(15)
     const tabZ = await page
       .locator(".mobile-tab-bar")

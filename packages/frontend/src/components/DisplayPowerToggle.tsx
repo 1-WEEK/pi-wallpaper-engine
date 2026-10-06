@@ -6,6 +6,9 @@ interface Props {
   pending: boolean
   onToggle: () => void
   compact?: boolean
+  /** Opt into the mobile press→release vocabulary (spec §2.1 #9). Desktop
+     dock faces never set it. */
+  pressVocabulary?: boolean
 }
 
 export const DisplayPowerToggle = ({
@@ -14,6 +17,7 @@ export const DisplayPowerToggle = ({
   pending,
   onToggle,
   compact = false,
+  pressVocabulary = false,
 }: Props) => {
   const isOn = state === "on"
   const disabled = !configured || pending
@@ -35,6 +39,7 @@ export const DisplayPowerToggle = ({
       }
       title={title}
       disabled={disabled}
+      {...(pressVocabulary ? { "data-press": "icon" } : {})}
       className={`display-toggle display-toggle-${tone} ${compact ? "display-toggle-compact" : ""}`}
     >
       <span className="display-toggle-icon">{appIcons.display}</span>
