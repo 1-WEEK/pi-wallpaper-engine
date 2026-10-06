@@ -68,8 +68,40 @@ type QueueRow =
       migration: MigrationProgress
     }
 
-const ActivityDesktop = () => {
-  const [showAdult, setShowAdult] = useState(false)
+/* ── Shared queue state machine (mobile spec §8.4) ─────────────────
+   useActivityQueue is the single owner of the Activity state machine:
+   task-feed polling (infinite history pages + the 1s active overlay),
+   storage-migration polling + row synthesis, the settle beat (1.4s dwell
+   + COMPLETE pill inverse flash, skipped under reduced motion at the TS
+   layer), the done/fail sound receipts, and every mutation action
+   (dismiss / cancel / retry / clear / migration cancel). Both
+   ActivityDesktop and ActivityMobile consume it — the mobile page gets
+   the settle beat, the migration row and the header count by wiring this
+   hook, not by re-deriving them. */
+
+interface ActivityQueue {
+  rows: QueueRow[]
+  settling: ReadonlySet<string>
+  activeRows: QueueRow[]
+  finishedRows: QueueRow[]
+  activeCount: number
+  finishedCount: number
+  failedCount: number
+  nowTick: number
+  hasMoreDl: boolean
+  loadMore: () => void
+  combinedError: unknown
+  hasAnyData: boolean
+  dismissTask: (id: string) => Promise<void>
+  cancelTask: (id: string) => Promise<void>
+  retryTask: (task: ActivityTask) => Promise<void>
+  dismissAll: (stage: "complete" | "error") => Promise<void>
+  retryAllTranscodes: () => Promise<void>
+  cancelMigration: () => Promise<void>
+  revalidate: () => void
+}
+
+const useActivityQueue = (showAdult: boolean): ActivityQueue => {
   const reducedMotion = useReducedMotion()
 
   const getDlKey = (pageIndex: number, previousPageData: PaginatedTasks | null) => {
@@ -154,7 +186,7 @@ const ActivityDesktop = () => {
     return Array.from(map.values()).sort((a, b) => b.started_at - a.started_at)
   }, [dData, activePageData])
 
-  const hasMoreDl = dData && dData[dData.length - 1]?.items.length === PAGE_SIZE
+  const hasMoreDl = !!(dData && dData[dData.length - 1]?.items.length === PAGE_SIZE)
 
   const visibleTasks = useMemo(
     () => (showAdult ? allTasks : allTasks.filter((t) => !isAdultTask(t))),
@@ -186,7 +218,7 @@ const ActivityDesktop = () => {
      class), then release it into FINISHED. Timers live outside the effect
      lifecycle so the 1s polling re-render never cancels a beat mid-flight;
      reduced motion skips the hold entirely — the row moves on the next poll
-     and no information is lost. */
+     and no information is lost (mobile spec §5.1 D8 table, TS layer). */
   const [settling, setSettling] = useState<ReadonlySet<string>>(new Set())
   const prevTerminal = useRef(new Map<string, boolean>())
   const settleTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
@@ -217,11 +249,13 @@ const ActivityDesktop = () => {
     []
   )
 
-  // Interface sound (ticket 13, spec §6): a row crossing running → terminal
-  // is the state-receipt trigger — complete lands the transition family on
-  // the settle beat, failed lands warn on the error-line expand. Rows that
+  // Interface sound (spec §5.2 matrix — shared into mobile with the state
+  // machine per §8.4): a row crossing running → terminal is the
+  // state-receipt trigger — complete lands the transition family on the
+  // settle beat, failed lands warn on the error-line expand. Rows that
   // arrive already terminal (history pages) never fire, and the engine
-  // itself drops these while hidden / under reduced motion (transition only).
+  // itself drops these while hidden / under reduced motion (transition
+  // only).
   const prevRowState = useRef(new Map<string, "running" | "done" | "failed">())
   useEffect(() => {
     const prev = prevRowState.current
@@ -294,6 +328,55 @@ const ActivityDesktop = () => {
   const combinedError = dError || activeError
   const hasAnyData = dData !== undefined || activePageData !== undefined
 
+  return {
+    rows,
+    settling,
+    activeRows,
+    finishedRows,
+    activeCount,
+    finishedCount,
+    failedCount,
+    nowTick,
+    hasMoreDl,
+    loadMore: () => setDSize(dSize + 1),
+    combinedError,
+    hasAnyData,
+    dismissTask,
+    cancelTask,
+    retryTask,
+    dismissAll,
+    retryAllTranscodes,
+    cancelMigration,
+    revalidate: () => {
+      dMutate()
+      activeMutate()
+    },
+  }
+}
+
+const ActivityDesktop = () => {
+  const [showAdult, setShowAdult] = useState(false)
+  const {
+    settling,
+    activeRows,
+    finishedRows,
+    activeCount,
+    finishedCount,
+    failedCount,
+    nowTick,
+    hasMoreDl,
+    loadMore,
+    combinedError,
+    hasAnyData,
+    dismissTask,
+    cancelTask,
+    retryTask,
+    dismissAll,
+    retryAllTranscodes,
+    cancelMigration,
+    revalidate,
+  } = useActivityQueue(showAdult)
+
   return (
     <div className="act">
       <RailControls>
@@ -338,10 +421,7 @@ const ActivityDesktop = () => {
         <StateBlock
           kind="error"
           text={`ERR — ${(combinedError as Error).message}`}
-          onRetry={() => {
-            dMutate()
-            activeMutate()
-          }}
+          onRetry={revalidate}
         />
       )}
 
@@ -413,7 +493,7 @@ const ActivityDesktop = () => {
               <button
                 type="button"
                 className="act-more mono"
-                onClick={() => setDSize(dSize + 1)}
+                onClick={loadMore}
               >
                 LOAD MORE →
               </button>
@@ -615,121 +695,24 @@ const MigrationRow = ({
   )
 }
 
-/* ── Mobile (spec §9): the same `.act-*` ledger at a tighter measure —
-     rows, settle beat and stage pills are identical to desktop; the rail's
+
+/* ── Mobile (spec §4.3): the same `.act-*` ledger as desktop — same
+     useActivityQueue state machine (settle beat, migration row, header
+     count, done/fail receipts), same row components. The rail's
      HOUSEKEEPING commands and the discreet 18+ entry move into a Sheet
-     behind one header command. ─────────────────────────────────────────── */
-
-const useActivityQueue = () => {
-  const getDlKey = (pageIndex: number, previousPageData: PaginatedTasks | null) => {
-    if (previousPageData && !previousPageData.items.length) return null
-    return ["tasks", pageIndex * PAGE_SIZE, PAGE_SIZE] as const
-  }
-  const fetcher = ([_, offset, limit]: readonly [string, number, number]) => api.tasks({ offset, limit })
-
-  const { data: dData, error: dError, mutate: dMutate, size: dSize, setSize: setDSize } = useSWRInfinite(getDlKey, fetcher, {
-    revalidateIfStale: true,
-  })
-
-  // Only the active set polls continuously; history pages are fetched on
-  // demand so finished rows never shift under the user.
-  const { data: activePageData, error: activeError, mutate: activeMutate } = useSWR(
-    "active-tasks",
-    () => api.tasks({ active: true, limit: PAGE_SIZE }),
-    { refreshInterval: REFRESH_MS }
-  )
-
-  // When a task leaves the active set it just reached a terminal stage (or
-  // was dismissed) — revalidate the static history pages once to pick it up.
-  const prevActiveIds = useRef<ReadonlySet<string>>(new Set())
-  useEffect(() => {
-    const ids = new Set((activePageData?.items ?? []).map((t) => t.task_id))
-    const prev = prevActiveIds.current
-    prevActiveIds.current = ids
-    if ([...prev].some((id) => !ids.has(id))) dMutate()
-  }, [activePageData, dMutate])
-
-  const [nowTick, setNowTick] = useState(Date.now())
-  useEffect(() => {
-    const h = setInterval(() => setNowTick(Date.now()), 1000)
-    return () => clearInterval(h)
-  }, [])
-
-  // iOS Safari aborts in-flight fetches when the page is backgrounded, and
-  // SWR's resume-time focus revalidation can dedupe into that dying request,
-  // leaving the history hook stuck on an AbortError. mutate() bypasses
-  // deduping, so force a clean revalidation when we return to the foreground.
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return
-      dMutate()
-      activeMutate()
-    }
-    document.addEventListener("visibilitychange", onVisible)
-    return () => document.removeEventListener("visibilitychange", onVisible)
-  }, [dMutate, activeMutate])
-
-  const allTasks = useMemo(() => {
-    const history = dData ? dData.flatMap(page => page.items) : []
-    const active = activePageData?.items || []
-    const map = new Map<string, ActivityTask>()
-    for (const t of history) map.set(t.task_id, t)
-    // The active overlay wins: it carries the freshest state for its ids.
-    for (const t of active) map.set(t.task_id, t)
-    return Array.from(map.values()).sort((a, b) => b.started_at - a.started_at)
-  }, [dData, activePageData])
-
-  const hasMoreDl = !!(dData && dData[dData.length - 1]?.items.length === PAGE_SIZE)
-
-  const dismissTask = async (id: string) => {
-    await api.dismissTask(id)
-    dMutate()
-    activeMutate()
-  }
-
-  const cancelTask = async (id: string) => {
-    await api.cancelDownload(id).catch(() => {})
-    dMutate()
-    activeMutate()
-  }
-
-  const retryTask = async (task: ActivityTask) => {
-    if (task.task_type === "download") {
-      await api.download(task.workshop_id).catch(() => {})
-    } else {
-      await api.libraryTranscode(task.workshop_id).catch(() => {})
-    }
-    dMutate()
-    activeMutate()
-  }
-
-  const combinedError = dError || activeError
-  const hasAnyData = dData !== undefined || activePageData !== undefined
-
-  return {
-    allTasks,
-    activeTotal: activePageData?.total,
-    nowTick,
-    hasMoreDl,
-    loadMore: () => setDSize(dSize + 1),
-    combinedError,
-    hasAnyData,
-    dismissTask,
-    cancelTask,
-    retryTask,
-    revalidate: () => {
-      dMutate()
-      activeMutate()
-    },
-  }
-}
+     behind one QUEUE… command under the header. ─────────────────────── */
 
 const ActivityMobile = () => {
   const [showAdult, setShowAdult] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
   const {
-    allTasks,
-    activeTotal,
+    rows,
+    settling,
+    activeRows,
+    finishedRows,
+    activeCount,
+    finishedCount,
+    failedCount,
     nowTick,
     hasMoreDl,
     loadMore,
@@ -738,41 +721,41 @@ const ActivityMobile = () => {
     dismissTask,
     cancelTask,
     retryTask,
+    dismissAll,
+    retryAllTranscodes,
+    cancelMigration,
     revalidate,
-  } = useActivityQueue()
+  } = useActivityQueue(showAdult)
 
-  const adultCount = useMemo(() => allTasks.filter(isAdultTask).length, [allTasks])
-
-  const visibleTasks = useMemo(
-    () => (showAdult ? allTasks : allTasks.filter((t) => !isAdultTask(t))),
-    [allTasks, showAdult]
+  // The SAFE QUEUE note reads against the unfiltered set (§4.3 session
+  // filter — hiding must not erase the "n mature tasks hidden" count).
+  const adultCount = useMemo(
+    () =>
+      rows.filter((r) => (r.kind === "task" ? isAdultTask(r.task) : false)).length,
+    [rows]
   )
-
-  const activeTasks = visibleTasks.filter((t) => !isTaskFinished(t))
-  const finishedTasks = visibleTasks.filter((t) => isTaskFinished(t))
-  const failedCount = visibleTasks.filter(isTaskFailed).length
-  const activeCount = activeTotal ?? activeTasks.length
-
-  const dismissAll = async (stage: "complete" | "error") => {
-    await api.dismissAllTasks(stage).catch(() => {})
-    revalidate()
-  }
-
-  const retryAllTranscodes = async () => {
-    await api.libraryTranscodeRetryAll().catch(() => {})
-    revalidate()
-  }
 
   return (
     <div className="act">
+      {/* §4.3 corrections: single-slot title ("Activity" only — the
+          "/ Queue" slash is desktop rail chrome), the restored 10px mono
+          count, and QUEUE… as a 44px command row below the header. */}
       <header className="act-head pt-enter">
-        <h1 className="act-title">
-          Activity<span className="act-title-slash"> / </span>Queue
-        </h1>
-        <button type="button" className="mp-cmd mono" onClick={() => setQueueOpen(true)}>
+        <h1 className="act-title">Activity</h1>
+        <span className="act-count mono">
+          {activeCount} ACTIVE — {finishedCount} FINISHED — {failedCount} FAILED
+        </span>
+      </header>
+      <div className="act-query">
+        <button
+          type="button"
+          className="mp-cmd mono"
+          data-press="cmd"
+          onClick={() => setQueueOpen(true)}
+        >
           QUEUE…
         </button>
-      </header>
+      </div>
 
       {!hasAnyData && !combinedError && <StateBlock kind="loading" text="FETCHING QUEUE…" />}
       {/* A transient poll failure keeps the cached list on screen — the
@@ -790,22 +773,32 @@ const ActivityMobile = () => {
           <section aria-label="Active tasks">
             <div className="act-sec-head mono">
               <span>ACTIVE</span>
-              <span>{activeTasks.length}</span>
+              <span>{activeRows.length}</span>
             </div>
             <ul className="act-list">
-              {activeTasks.map((t) => (
-                <TaskRow
-                  key={t.task_id}
-                  task={t}
-                  settling={false}
-                  nowTick={nowTick}
-                  onDismiss={dismissTask}
-                  onCancel={cancelTask}
-                  onRetry={retryTask}
-                />
-              ))}
+              {activeRows.map((row) =>
+                row.kind === "task" ? (
+                  <TaskRow
+                    key={row.id}
+                    task={row.task}
+                    settling={settling.has(row.id)}
+                    nowTick={nowTick}
+                    onDismiss={dismissTask}
+                    onCancel={cancelTask}
+                    onRetry={retryTask}
+                  />
+                ) : (
+                  <MigrationRow
+                    key={row.id}
+                    migration={row.migration}
+                    settling={settling.has(row.id)}
+                    onCancel={cancelMigration}
+                    onDismiss={cancelMigration}
+                  />
+                )
+              )}
             </ul>
-            {activeTasks.length === 0 && (
+            {activeRows.length === 0 && (
               <StateBlock kind="empty" text="QUEUE IDLE — NOTHING IN FLIGHT" />
             )}
           </section>
@@ -813,22 +806,32 @@ const ActivityMobile = () => {
           <section className="act-sec-finished" aria-label="Finished tasks">
             <div className="act-sec-head mono">
               <span>FINISHED</span>
-              <span>{finishedTasks.length}</span>
+              <span>{finishedRows.length}</span>
             </div>
             <ul className="act-list">
-              {finishedTasks.map((t) => (
-                <TaskRow
-                  key={t.task_id}
-                  task={t}
-                  settling={false}
-                  nowTick={nowTick}
-                  onDismiss={dismissTask}
-                  onCancel={cancelTask}
-                  onRetry={retryTask}
-                />
-              ))}
+              {finishedRows.map((row) =>
+                row.kind === "task" ? (
+                  <TaskRow
+                    key={row.id}
+                    task={row.task}
+                    settling={false}
+                    nowTick={nowTick}
+                    onDismiss={dismissTask}
+                    onCancel={cancelTask}
+                    onRetry={retryTask}
+                  />
+                ) : (
+                  <MigrationRow
+                    key={row.id}
+                    migration={row.migration}
+                    settling={false}
+                    onCancel={cancelMigration}
+                    onDismiss={cancelMigration}
+                  />
+                )
+              )}
             </ul>
-            {finishedTasks.length === 0 && <StateBlock kind="empty" text="NO HISTORY" />}
+            {finishedRows.length === 0 && <StateBlock kind="empty" text="NO HISTORY" />}
             {hasMoreDl && (
               <button type="button" className="act-more mono" onClick={loadMore}>
                 LOAD MORE →
@@ -839,57 +842,69 @@ const ActivityMobile = () => {
       )}
 
       {/* Housekeeping + the discreet 18+ entry (the desktop rail's
-          HOUSEKEEPING block, spec §4.1/§9). */}
+          HOUSEKEEPING block, spec §4.3): §3.4 skeleton auto detent,
+          three 52px ledger command rows, then the SAFE QUEUE section
+          with the Safe/All segmented control (session-scoped). */}
       <MobileSheet open={queueOpen} onClose={() => setQueueOpen(false)} title="Queue" height="auto">
         <div className="actm-sheet-body">
+          <div className="actm-sec mono">HOUSEKEEPING</div>
           <button
             type="button"
-            className="mp-cmd mono"
+            className="actm-ledger"
+            data-press="row"
             onClick={() => void dismissAll("complete")}
           >
-            CLEAR COMPLETED →
+            <span className="actm-ledger-name">Clear completed</span>
+            <span className="actm-ledger-dots" aria-hidden="true" />
+            <span className="actm-ledger-mark">→</span>
           </button>
           <button
             type="button"
-            className="mp-cmd mono"
+            className="actm-ledger"
+            data-press="row"
             onClick={() => void dismissAll("error")}
           >
-            CLEAR FAILED →
+            <span className="actm-ledger-name">Clear failed</span>
+            <span className="actm-ledger-dots" aria-hidden="true" />
+            <span className="actm-ledger-mark">→</span>
           </button>
           <button
             type="button"
-            className="mp-cmd mono"
+            className="actm-ledger"
+            data-press="row"
             onClick={() => void retryAllTranscodes()}
           >
-            RETRY FAILED TRANSCODES →
+            <span className="actm-ledger-name">Retry failed transcodes</span>
+            <span className="actm-ledger-dots" aria-hidden="true" />
+            <span className="actm-ledger-mark">→</span>
           </button>
-          <div className="actm-privacy">
-            <div className="actm-privacy-title mono">Safe queue</div>
-            <p className="actm-privacy-note">
-              {adultCount > 0
-                ? showAdult
-                  ? "All queued and finished tasks are visible in this session."
-                  : `${adultCount} mature task${adultCount === 1 ? "" : "s"} hidden in this session.`
-                : "No mature-marked tasks found."}
-            </p>
-            <div className="mpm-seg">
-              <button
-                type="button"
-                className={!showAdult ? "is-on" : ""}
-                aria-pressed={!showAdult}
-                onClick={() => setShowAdult(false)}
-              >
-                Safe
-              </button>
-              <button
-                type="button"
-                className={showAdult ? "is-on" : ""}
-                aria-pressed={showAdult}
-                onClick={() => setShowAdult(true)}
-              >
-                All
-              </button>
-            </div>
+          <div className="actm-sec mono">SAFE QUEUE</div>
+          <p className="actm-privacy-note">
+            {adultCount > 0
+              ? showAdult
+                ? "All queued and finished tasks are visible in this session."
+                : `${adultCount} mature task${adultCount === 1 ? "" : "s"} hidden in this session.`
+              : "No mature-marked tasks found."}
+          </p>
+          <div className="mpm-seg">
+            <button
+              type="button"
+              data-press="seg"
+              className={!showAdult ? "is-on" : ""}
+              aria-pressed={!showAdult}
+              onClick={() => setShowAdult(false)}
+            >
+              Safe
+            </button>
+            <button
+              type="button"
+              data-press="seg"
+              className={showAdult ? "is-on" : ""}
+              aria-pressed={showAdult}
+              onClick={() => setShowAdult(true)}
+            >
+              All
+            </button>
           </div>
         </div>
       </MobileSheet>
