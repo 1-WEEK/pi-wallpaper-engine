@@ -9,9 +9,12 @@
    measure and ≥44px action targets. Every interactive target is ≥44px. */
 
 /* ── Shared page grammar ───────────────────────────────────────────
-   Mobile drops the mount choreography (spec §9: no degraded substitute for
-   the desktop's motion layer): pt-enter stays, but runs as an instant cut —
-   the 550ms blur trail reads as a smear on touch scroll. */
+   The desktop pt-enter mount (550ms + blur trail) never runs on touch —
+   blur reads as a smear under scroll. The mobile mount choreography is
+   `mp-enter` (mobile spec §5.1 D1: 240ms --ease-out, opacity +
+   translateY(8px), stagger 30ms cap 6, page mount / tab switch only),
+   declared in mobileShell.css and applied by the page at mount; appends
+   and filter refreshes re-render without the class (no replay). */
 .mobile-shell .pt-enter {
   animation: none;
 }
@@ -116,18 +119,9 @@ button.mp-cmd {
   padding: 0;
 }
 
-.mp-cmd:active:not(:disabled) {
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
-  border-bottom-color: var(--pt-inv-bg);
-}
-
-a.mp-cmd:active,
-span.mp-cmd:active {
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
-  text-decoration-color: var(--pt-inv-text);
-}
+/* §3.5 death penalty: no :active flat-fill inversion on the mobile shell —
+   the pressed state is the press→release dither ([data-press].pressing)
+   and nothing else. Commands opt into the vocabulary with data-press="cmd". */
 
 .mp-cmd:disabled {
   opacity: 0.45;
@@ -137,11 +131,6 @@ span.mp-cmd:active {
 .mp-cmd-primary {
   color: var(--pt-text);
   border-bottom-color: var(--pt-text);
-}
-
-.mp-cmd-primary:active:not(:disabled) {
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
 }
 
 .mp-cmd-danger {
@@ -447,10 +436,6 @@ span.mp-cmd:active {
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
-}
-
-.bwm-apply:active:not(:disabled) {
-  opacity: 0.85;
 }
 
 .bwm-reset {
@@ -850,8 +835,4 @@ span.mp-cmd:active {
 .mpm-seg button.is-on {
   background: var(--pt-inv-bg);
   color: var(--pt-inv-text);
-}
-
-.mpm-seg button:active:not(:disabled):not(.is-on) {
-  background: var(--pt-fill);
 }

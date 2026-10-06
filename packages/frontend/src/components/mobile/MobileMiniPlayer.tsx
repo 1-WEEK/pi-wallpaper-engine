@@ -3,7 +3,7 @@
 // display-power toggle; tapping the media/copy area opens a Sheet with
 // the PlayerBar's remaining instant controls (play mode / display mode /
 // play limit), so no control is lost in the degradation.
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { api } from "../../api.js"
 import type { SystemSummary } from "../../api.js"
 import { appIcons } from "../../icons.js"
@@ -28,6 +28,72 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
   const [pending, setPending] = useState(false)
   const [displayPending, setDisplayPending] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const sheetOpenRef = useRef(sheetOpen)
+  sheetOpenRef.current = sheetOpen
+
+  // Tuck (§3.3): scrolling the main area DOWN slides the lozenge behind
+  // the opaque TabBar (z 15 < 16); scrolling UP brings it back. 350ms
+  // --ease-out translation — physical slide into a pocket, never a fade.
+  // The lozenge floats OUTSIDE the scroller (fixed, viewport-anchored), so
+  // a pan that starts on it has no scrollable ancestor and would die —
+  // forward touch pans to the main scroller by hand. `touch-action: none`
+  // keeps the pointer stream on the player (no browser takeover); the
+  // press engine's 10px slop still cancels any press the pan started on.
+  useEffect(() => {
+    const el = rootRef.current
+    const main = el?.parentElement?.querySelector<HTMLElement>(".mobile-main")
+    if (!el || !main) return
+    let lastST = main.scrollTop
+    const onScroll = () => {
+      // While the player sheet owns the tuck state, scroll deltas stand down.
+      if (sheetOpenRef.current) {
+        lastST = main.scrollTop
+        return
+      }
+      const st = main.scrollTop
+      // Tuck engages only past a real scroll commitment (240px ≈ a third of
+      // a portrait screen): shorter downward drags — e.g. a quick scan of
+      // the next rows — keep the transport reachable.
+      if (st > lastST + 6 && st > 240) el.classList.add("tucked")
+      else if (st < lastST - 6) el.classList.remove("tucked")
+      lastST = st
+    }
+    let panY: number | null = null
+    const onPanStart = (e: PointerEvent) => {
+      panY = e.pointerType === "touch" ? e.clientY : null
+    }
+    const onPanMove = (e: PointerEvent) => {
+      if (panY === null) return
+      main.scrollTop += panY - e.clientY
+      panY = e.clientY
+    }
+    const onPanEnd = () => {
+      panY = null
+    }
+    main.addEventListener("scroll", onScroll, { passive: true })
+    el.addEventListener("pointerdown", onPanStart)
+    el.addEventListener("pointermove", onPanMove)
+    el.addEventListener("pointerup", onPanEnd)
+    el.addEventListener("pointercancel", onPanEnd)
+    return () => {
+      main.removeEventListener("scroll", onScroll)
+      el.removeEventListener("pointerdown", onPanStart)
+      el.removeEventListener("pointermove", onPanMove)
+      el.removeEventListener("pointerup", onPanEnd)
+      el.removeEventListener("pointercancel", onPanEnd)
+    }
+  }, [])
+
+  // While the player sheet is up, the lozenge ducks behind the TabBar —
+  // the sheet owns the controls and a floating duplicate under it would
+  // only occlude (spec §3.3: the sheet IS the player's opened state).
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    el.classList.toggle("tucked", sheetOpen)
+  }, [sheetOpen])
+
   const player = summary?.status.player ?? null
   const display = summary?.status.display ?? null
   const limit = summary?.status.play_limit ?? null
@@ -69,10 +135,11 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
 
   return (
     <>
-      <div className="mobile-mini-player">
+      <div className="mobile-mini-player" ref={rootRef}>
         <button
           type="button"
           className="mobile-mini-player-open"
+          data-press="area"
           aria-label="Open player controls"
           onClick={() => setSheetOpen(true)}
         >
@@ -111,9 +178,11 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
           pending={displayPending}
           onToggle={togglePower}
           compact
+          pressVocabulary
         />
         <button
           type="button"
+          data-press="icon"
           className="mobile-mini-player-btn"
           aria-label="Previous wallpaper"
           disabled={pending}
@@ -123,6 +192,7 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
         </button>
         <button
           type="button"
+          data-press="icon"
           className="mobile-mini-player-btn mobile-mini-player-btn-primary"
           aria-label={player?.playing ? "Pause" : "Play"}
           disabled={!hasCurrent || pending}
@@ -134,6 +204,7 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
         </button>
         <button
           type="button"
+          data-press="icon"
           className="mobile-mini-player-btn"
           aria-label="Next wallpaper"
           disabled={pending}

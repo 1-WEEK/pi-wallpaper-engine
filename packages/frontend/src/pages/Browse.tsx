@@ -574,6 +574,7 @@ export const Browse = () => {
                 key={t}
                 type="button"
                 className="bwm-chip"
+                data-press="seg"
                 onClick={() => toggleTag(t)}
               >
                 {t}
@@ -1003,7 +1004,8 @@ const BrowseMobileCard = ({
   return (
     <button
       type="button"
-      className="bwm-card pt-enter"
+      data-press="card"
+              className="bwm-card pt-enter"
       style={{ "--pt-i": index } as React.CSSProperties}
       onClick={onOpen}
       aria-label={`Open ${item.title}`}
@@ -1100,7 +1102,8 @@ const FiltersSheetBody = ({
       <div className="bwm-sheet-footer">
         <button
           type="button"
-          className="bwm-apply"
+          data-press="cta"
+            className="bwm-apply"
           onClick={onApply}
         >
           {total > 0 ? `Show ${total.toLocaleString()} results` : "Apply"}

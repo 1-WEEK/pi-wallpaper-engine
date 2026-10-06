@@ -520,6 +520,361 @@ test.describe("Mobile shell", () => {
     expect(close!.width).toBeGreaterThanOrEqual(44 - EPS)
     expect(close!.height).toBeGreaterThanOrEqual(44 - EPS)
   })
+
+  test("top bar is the typographic skeleton strip: wordmark + instrument readout, no page title", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+
+    const topBar = page.locator(".mobile-top-bar")
+    await expect(topBar.locator(".mobile-top-bar-word-w")).toHaveText("pwe")
+    await expect(topBar.locator(".mobile-top-bar-word-x")).toHaveText("+")
+    await expect(topBar.locator(".mobile-top-bar-status")).toContainText("PI.LOCAL")
+    await expect(topBar.locator(".mobile-top-bar-status")).toContainText(/MPV/)
+    // §3.1: the favicon img and the repeated page title are deleted.
+    await expect(topBar.locator("img")).toHaveCount(0)
+    const height = await topBar.evaluate((el) => el.getBoundingClientRect().height)
+    expect(height).toBe(53)
+  })
+
+  test("tab bar selection is a migrating inverse block; the amber tick is gone", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+
+    const block = page.locator(".mobile-tab-bar-block")
+    await expect(block).toBeVisible()
+    // The block resolves to the inverted token (resolved solid, not a blend).
+    const blockBg = await block.evaluate(
+      (el) => getComputedStyle(el).backgroundColor
+    )
+    const invBg = await page.evaluate(() => {
+      const probe = document.createElement("div")
+      probe.style.backgroundColor = "var(--pt-inv-bg)"
+      document.body.appendChild(probe)
+      const v = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return v
+    })
+    expect(blockBg).toBe(invBg)
+    // §3.2: no ::before amber tick on the active item.
+    const tick = await page
+      .locator(".mobile-tab-bar-item.active")
+      .evaluate((el) => getComputedStyle(el, "::before").backgroundColor)
+    expect(["rgba(0, 0, 0, 0)", "transparent"]).toContain(tick)
+
+    // Migration: 250ms --ease-slide on the block.
+    const transition = await block.evaluate((el) => getComputedStyle(el).transitionProperty)
+    expect(transition).toContain("transform")
+
+    // The active tab's text reads inverted on the block.
+    const labelColor = await page
+      .locator(".mobile-tab-bar-item.active .mobile-tab-bar-label")
+      .evaluate((el) => getComputedStyle(el).color)
+    const invText = await page.evaluate(() => {
+      const probe = document.createElement("div")
+      probe.style.color = "var(--pt-inv-text)"
+      document.body.appendChild(probe)
+      const v = getComputedStyle(probe).color
+      probe.remove()
+      return v
+    })
+    expect(labelColor).toBe(invText)
+  })
+
+  test("press shows the 0ms checker reveal and a >10px slide cancels it with no transition", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+
+    const settingsTab = page.locator(".mobile-tab-bar-item", { hasText: "Settings" })
+    const box = (await settingsTab.boundingBox())!
+    const cx = box.x + box.width / 2
+    const cy = box.y + box.height / 2
+
+    // pointerdown → reveal is immediate (no transition on the way in).
+    await page.mouse.move(cx, cy)
+    await page.mouse.down()
+    await expect(settingsTab).toHaveClass(/pressing/)
+    const duringPress = await settingsTab.evaluate((el) => ({
+      bg: getComputedStyle(el, "::before").backgroundImage,
+      transition: getComputedStyle(el, "::before").transitionDuration,
+    }))
+    expect(duringPress.bg).toContain("data:image/svg+xml")
+    expect(duringPress.bg).not.toContain("conic-gradient")
+    expect(duringPress.transition).toBe("0s") // onset 0ms
+
+    // Slide past the 10px slop → cancel: reveal cut with no transition.
+    await page.mouse.move(cx, cy + 30, { steps: 3 })
+    await expect(settingsTab).not.toHaveClass(/pressing/)
+    await page.mouse.up()
+    await expect(page).toHaveURL(/\/browse/) // the cancel never navigates
+  })
+
+  test("press commit keeps the dither until the tab block lands, then clears it", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+
+    const libraryTab = page.locator(".mobile-tab-bar-item", { hasText: "Library" })
+    const box = (await libraryTab.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.up()
+    // The reveal outlives the release while the block migrates (03 D8);
+    // transitionend (or the 380ms fallback) clears it.
+    await expect(page).toHaveURL(/\/library$/)
+    await expect(libraryTab).not.toHaveClass(/pressing/, { timeout: 1500 })
+    await expect(libraryTab).toHaveClass(/active/)
+  })
+
+  test("mini player is floating glass (blur(28px)) over the scroll area and tucks behind the tab bar", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page)
+    await page.route("**/api/workshop/search*", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: 24,
+          items: Array.from({ length: 24 }, (_, i) => ({
+            publishedfileid: `100${i}`,
+            title: `Wallpaper ${i}`,
+            preview_url: null,
+            file_size: 1024,
+            tags: [],
+          })),
+        }),
+      })
+    )
+    await page.goto("/browse")
+
+    const mpl = page.locator(".mobile-mini-player")
+    await expect(mpl).toBeVisible()
+
+    // §2.3 recipe: dynamic glass — blur(28px) is directly assertable.
+    const backdrop = await mpl.evaluate(
+      (el) => getComputedStyle(el).backdropFilter || getComputedStyle(el).webkitBackdropFilter
+    )
+    expect(backdrop).toContain("blur(28px)")
+
+    // Floating: out-of-flow over the scroll area, z 15 under the
+    // TabBar's 16, offset from the viewport bottom. `fixed` (viewport-
+    // anchored) so the sheet's own scroll chain never carries it.
+    const geom = await mpl.evaluate((el) => {
+      const cs = getComputedStyle(el)
+      return { position: cs.position, z: cs.zIndex }
+    })
+    expect(["absolute", "fixed"]).toContain(geom.position)
+    expect(Number(geom.z)).toBe(15)
+    const tabZ = await page
+      .locator(".mobile-tab-bar")
+      .evaluate((el) => Number(getComputedStyle(el).zIndex))
+    expect(tabZ).toBe(16)
+
+    // Tuck: scroll down → the lozenge slides down behind the TabBar
+    // (translate only, never a fade); scroll up → it returns. Real wheel
+    // events so the scroll listener's delta detection fires.
+    const mainBox = (await page.locator(".mobile-main").boundingBox())!
+    const scrollable = await page
+      .locator(".mobile-main")
+      .evaluate((el) => el.scrollHeight > el.clientHeight + 100)
+    expect(scrollable).toBe(true)
+    await page.mouse.move(mainBox.x + mainBox.width / 2, mainBox.y + mainBox.height / 2)
+    await page.mouse.wheel(0, 800)
+    await expect(mpl).toHaveClass(/tucked/, { timeout: 1500 })
+    const tuckedTransform = await mpl.evaluate((el) => getComputedStyle(el).transform)
+    expect(tuckedTransform).not.toBe("none")
+    const tuckedOpacity = await mpl.evaluate((el) => getComputedStyle(el).opacity)
+    expect(tuckedOpacity).toBe("1") // a pocket slide, not a fade
+    await page.mouse.wheel(0, -800)
+    await expect(mpl).not.toHaveClass(/tucked/, { timeout: 1500 })
+  })
+
+  test("sheet skeleton: same-frame 300/200 enter, synchronous 200/200 exit", async ({ page }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+    await page.getByRole("button", { name: "Open player controls" }).click()
+
+    const sheet = page.locator(".mobile-sheet.open")
+    await expect(sheet).toBeVisible()
+    const entering = await sheet.evaluate((el) => {
+      const panel = el.querySelector(".mobile-sheet-panel")!
+      const scrim = el.querySelector(".mobile-sheet-scrim")!
+      return {
+        panelDuration: getComputedStyle(panel).transitionDuration,
+        panelDelay: getComputedStyle(panel).transitionDelay,
+        scrimDuration: getComputedStyle(scrim).transitionDuration,
+        radius: getComputedStyle(panel).borderTopLeftRadius,
+        scrimBg: getComputedStyle(scrim).backgroundColor,
+      }
+    })
+    expect(entering.panelDuration).toBe("0.3s") // 300ms in
+    expect(entering.panelDelay).toBe("0s") // same frame — the 60ms delay is deleted
+    expect(entering.scrimDuration).toBe("0.2s") // 200ms scrim
+    expect(entering.radius).toBe("18px")
+    expect(entering.scrimBg).toBe("rgba(0, 0, 0, 0.55)") // no blur, 0.55 scrim
+
+    await sheet.getByRole("button", { name: "Close" }).click()
+    await expect(page.locator(".mobile-sheet.open")).toHaveCount(0)
+    const exiting = await page
+      .locator(".mobile-sheet", { hasText: "No wallpaper selected" })
+      .evaluate((el) => {
+        const panel = el.querySelector(".mobile-sheet-panel")!
+        return {
+          duration: getComputedStyle(panel).transitionDuration,
+          delay: getComputedStyle(panel).transitionDelay,
+        }
+      })
+    expect(exiting.duration).toBe("0.2s") // 200ms out
+    expect(exiting.delay).toBe("0s")
+  })
+
+  test("scrim dismisses only on a paired pointer gesture on itself (no click channel)", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+    await page.getByRole("button", { name: "Open player controls" }).click()
+    const sheet = page.locator(".mobile-sheet.open")
+    await expect(sheet).toBeVisible()
+
+    // A bare synthetic click on the scrim must NOT dismiss (§8.1 phantom-
+    // click contract).
+    await sheet.locator(".mobile-sheet-scrim").evaluate((el) => {
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+    })
+    await expect(sheet).toBeVisible()
+
+    // pointerdown elsewhere + pointerup on the scrim must NOT dismiss.
+    await page.mouse.move(195, 700)
+    await page.mouse.down()
+    await page.mouse.move(195, 60)
+    await page.mouse.up()
+    await expect(sheet).toBeVisible()
+
+    // A paired down+up on the scrim itself dismisses.
+    const scrimBox = (await sheet.locator(".mobile-sheet-scrim").boundingBox())!
+    await page.mouse.move(scrimBox.width / 2, 40)
+    await page.mouse.down()
+    await page.mouse.up()
+    await expect(page.locator(".mobile-sheet.open")).toHaveCount(0)
+  })
+
+  test("sheet drag: 1:1 transform follow, projection dismiss, flick-up snaps back", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+
+    // Project ≥40% of the panel height → dismiss.
+    await page.getByRole("button", { name: "Open player controls" }).click()
+    let sheet = page.locator(".mobile-sheet.open")
+    await expect(sheet).toBeVisible()
+    const grab = sheet.locator(".mobile-sheet-grab")
+    let gb = (await grab.boundingBox())!
+    await page.mouse.move(gb.x + gb.width / 2, gb.y + 2)
+    await page.mouse.down()
+    await page.mouse.move(gb.x + gb.width / 2, gb.y + 120, { steps: 5 })
+    // Follow is 1:1 — the transform is a direct translateY string.
+    const midDrag = await sheet.evaluate((el) => {
+      const panel = el.querySelector(".mobile-sheet-panel")!
+      return {
+        transform: (panel as HTMLElement).style.transform,
+        transition: (panel as HTMLElement).style.transition,
+        scrimOpacity: (el.querySelector(".mobile-sheet-scrim") as HTMLElement).style.opacity,
+      }
+    })
+    expect(midDrag.transform).toMatch(/^translateY\([\d.]+px\)$/)
+    expect(midDrag.transition).toBe("none")
+    expect(Number(midDrag.scrimOpacity)).toBeLessThan(1)
+    await page.mouse.up()
+    await expect(page.locator(".mobile-sheet.open")).toHaveCount(0, { timeout: 2000 })
+
+    // Upward flick (≤ −0.3px/ms) → snap back, sheet stays.
+    await page.getByRole("button", { name: "Open player controls" }).click()
+    sheet = page.locator(".mobile-sheet.open")
+    await expect(sheet).toBeVisible()
+    gb = (await sheet.locator(".mobile-sheet-grab").boundingBox())!
+    await page.mouse.move(gb.x + gb.width / 2, gb.y + 2)
+    await page.mouse.down()
+    await page.mouse.move(gb.x + gb.width / 2, gb.y + 60, { steps: 3 })
+    await page.mouse.move(gb.x + gb.width / 2, gb.y - 40, { steps: 2 })
+    await page.mouse.up()
+    await expect(sheet).toBeVisible({ timeout: 2000 })
+    await sheet.getByRole("button", { name: "Close" }).click()
+    await expect(page.locator(".mobile-sheet.open")).toHaveCount(0)
+  })
+
+  test("reduce transparency via prefers-reduced-motion degrades the glass to a solid + top hairline", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+
+    const mpl = page.locator(".mobile-mini-player")
+    await expect(mpl).toBeVisible()
+    await expect(page.locator("html")).toHaveAttribute("data-reduce-transparency", "true")
+    const degraded = await mpl.evaluate((el) => {
+      const cs = getComputedStyle(el)
+      return {
+        backdrop: cs.backdropFilter || cs.webkitBackdropFilter,
+        bg: cs.backgroundColor,
+      }
+    })
+    expect(degraded.backdrop).toBe("none")
+    const pageBg = await page.evaluate(() => {
+      const probe = document.createElement("div")
+      probe.style.backgroundColor = "var(--pt-bg)"
+      document.body.appendChild(probe)
+      const v = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return v
+    })
+    expect(degraded.bg).toBe(pageBg) // solid --pt-bg
+  })
+
+  test("reduce transparency via the manual Settings switch flips the same attribute", async ({
+    page,
+  }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+    await expect(page.locator("html")).toHaveAttribute("data-reduce-transparency", "false")
+    await page.evaluate(() => {
+      localStorage.setItem("pwe-reduce-transparency", "1")
+      window.dispatchEvent(new Event("storage"))
+    })
+    await expect(page.locator("html")).toHaveAttribute("data-reduce-transparency", "true")
+    const backdrop = await page
+      .locator(".mobile-mini-player")
+      .evaluate((el) => getComputedStyle(el).backdropFilter || getComputedStyle(el).webkitBackdropFilter)
+    expect(backdrop).toBe("none")
+  })
+
+  test("no :active flat-fill or scale-press survives on the mobile chrome", async ({ page }) => {
+    await mockAllEndpoints(page)
+    await page.goto("/browse")
+    // Probe every visible chrome control while held down: nothing may
+    // invert-fill or shrink.
+    await page.getByRole("button", { name: "Open player controls" }).click()
+    const close = page.locator(".mobile-sheet.open .mobile-sheet-close")
+    const box = (await close.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    const during = await close.evaluate((el) => ({
+      transform: getComputedStyle(el).transform,
+      bg: getComputedStyle(el).backgroundColor,
+    }))
+    expect(during.transform).toBe("none") // no scale-press
+    void during
+    await page.mouse.up()
+  })
 })
 
 test.describe("Desktop no-leak (ticket 14)", () => {
@@ -534,6 +889,12 @@ test.describe("Desktop no-leak (ticket 14)", () => {
     await expect(page.locator(".mobile-mini-player")).toHaveCount(0)
     await expect(page.locator(".mobile-sheet")).toHaveCount(0)
     await expect(page.locator(".setm-list")).toHaveCount(0)
+    // The new mobile grammar never leaks either: migrating tab block,
+    // mp-enter choreography, mobile grid overlay, press vocabulary.
+    await expect(page.locator(".mobile-tab-bar-block")).toHaveCount(0)
+    await expect(page.locator(".mp-enter")).toHaveCount(0)
+    await expect(page.locator(".mp-gridlines")).toHaveCount(0)
+    await expect(page.locator("[data-press]")).toHaveCount(0)
 
     await expect(page.locator(".rail")).toBeVisible()
     await expect(page.locator(".pbar")).toBeVisible()

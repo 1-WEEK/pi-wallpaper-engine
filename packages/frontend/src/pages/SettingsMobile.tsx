@@ -87,6 +87,7 @@ export const SettingsMobile = ({ summary, onRefresh }: Props) => {
             <Link
               key={s}
               href={`/settings?sec=${s}`}
+              data-press="row"
               className="setm-row pt-enter"
               style={{ "--pt-i": i + 1 } as React.CSSProperties}
             >

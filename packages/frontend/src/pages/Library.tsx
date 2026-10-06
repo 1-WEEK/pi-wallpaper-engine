@@ -1156,6 +1156,7 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
             <button
               key={row.workshop_id}
               type="button"
+              data-press="card"
               className="lbm-card pt-enter"
               style={{ "--pt-i": i } as React.CSSProperties}
               onClick={() => setDetailIdx(i)}
