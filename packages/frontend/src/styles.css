@@ -334,9 +334,9 @@ a {
   transform: translate(-50%, -50%);
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--pt-line);
   border-radius: 12px;
-  background: var(--ink);
+  background: var(--pt-bg);
 }
 
 .video-preview-header {
@@ -344,7 +344,7 @@ a {
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--pt-line);
 }
 
 .video-preview-title {
@@ -373,12 +373,12 @@ a {
   background: #000;
 }
 
+/* Danger channel vocabulary (mobile spec §8.2): hairline + danger text —
+   the danger-bg fill and the 8px radius die with the legacy tokens. */
 .video-preview-error {
   padding: 24px 16px;
-  border: 1px solid var(--danger-border);
-  border-radius: 8px;
-  background: var(--danger-bg);
-  color: var(--danger);
+  border: 1px solid var(--pt-danger);
+  color: var(--pt-danger);
   font-size: 13px;
   line-height: 1.5;
   text-align: center;
@@ -386,6 +386,17 @@ a {
 
 .video-preview-meta {
   font-size: 11px;
-  color: var(--paper-faint);
+  color: var(--pt-faint);
   text-align: center;
+}
+
+/* Mobile (mobile spec §8.2): the preview rides the §3.4 sheet skeleton
+   (auto detent); the skeleton's body margins (16) and group spacing take
+   over from the desktop padding, and the stage is square-cornered inside
+   the sheet (same grammar as the detail hero). */
+.mobile-sheet-panel .video-preview-body {
+  padding: 0 16px 16px;
+}
+.mobile-sheet-panel .video-preview-player {
+  border-radius: 0;
 }

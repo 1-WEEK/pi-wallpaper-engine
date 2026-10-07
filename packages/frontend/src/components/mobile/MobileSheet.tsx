@@ -27,6 +27,10 @@ interface Props {
   action?: ReactNode
   /** Detent: "88%" (filters / detail) or "auto" (player, content-sized). */
   height?: string
+  /** Optional sticky foot (§3.4: hairline top edge, primary 48px CTA) —
+   *  e.g. the Library detail sheet's PLAY block. Always reachable: it
+   *  sits below the scrollable body and never scrolls away. */
+  footer?: ReactNode
   children: ReactNode
 }
 
@@ -55,6 +59,7 @@ export const MobileSheet = ({
   title,
   action,
   height = "88%",
+  footer,
   children,
 }: Props) => {
   const reducedMotion = useReducedMotion()
@@ -271,6 +276,9 @@ export const MobileSheet = ({
         <div className="mobile-sheet-body" ref={bodyRef}>
           {children}
         </div>
+        {footer !== undefined && footer !== null && (
+          <div className="mobile-sheet-footer">{footer}</div>
+        )}
       </div>
     </div>
   )
