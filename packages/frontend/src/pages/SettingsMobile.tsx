@@ -111,6 +111,7 @@ export const SettingsMobile = ({ summary, onRefresh }: Props) => {
           ← SETTINGS
         </Link>
         <h1 className="setm-title setm-title-sub">{HEAD_TITLE[sec]}</h1>
+        <span className="setm-count mono">{summary ? reading(sec) : ""}</span>
       </header>
 
       {!summary ? (

@@ -158,3 +158,52 @@ test.describe("Setup (ticket 14)", () => {
     release()
   })
 })
+
+test.describe("Auth mobile (mobile-impl 05)", () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  test("setup form inputs are 16px / 44px (iOS focus-zoom guard) and the shell top-aligns", async ({
+    page,
+  }) => {
+    await mockSetupState(page, { enabled: true, setup_complete: false })
+    await mockNoSession(page)
+    await page.goto("/")
+
+    // Top-aligned at 56px instead of vertically centered (spec §4.5).
+    const shell = page.locator(".auth-shell")
+    await expect(shell).toBeVisible()
+    const shellBox = (await shell.boundingBox())!
+    const pageBox = (await page.locator(".auth-page").boundingBox())!
+    expect(pageBox.y - shellBox.y).toBe(56)
+
+    for (const input of await page.locator(".auth-field input").all()) {
+      expect(await input.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBe(16)
+      expect((await input.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    }
+  })
+
+  test("passkey overlay mobile: scrim blur off, panel padding 16, cancel 44px", async ({
+    page,
+  }) => {
+    await mockSetupState(page, { enabled: true, setup_complete: true })
+    await mockNoSession(page)
+    const release = await stallRoute(page, "/api/auth/passkey/generate-authenticate-options**", {
+      error: "mocked",
+    })
+
+    await page.goto("/")
+    await page.getByRole("button", { name: "SIGN IN WITH PASSKEY →" }).click()
+
+    const focus = page.locator(".auth-focus")
+    await expect(focus).toBeVisible()
+    const scrimFilter = await focus
+      .locator(".auth-focus-scrim")
+      .evaluate((el) => getComputedStyle(el).backdropFilter)
+    expect(scrimFilter === "none" || scrimFilter === "").toBe(true)
+    const panel = focus.locator(".auth-focus-panel")
+    expect(await panel.evaluate((el) => getComputedStyle(el).paddingLeft)).toBe("16px")
+    const cancel = await focus.getByRole("button", { name: "CANCEL" }).boundingBox()
+    expect(cancel!.height).toBeGreaterThanOrEqual(44)
+    release()
+  })
+})
