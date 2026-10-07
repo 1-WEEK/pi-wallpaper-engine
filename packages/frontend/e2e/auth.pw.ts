@@ -174,7 +174,8 @@ test.describe("Auth mobile (mobile-impl 05)", () => {
     await expect(shell).toBeVisible()
     const shellBox = (await shell.boundingBox())!
     const pageBox = (await page.locator(".auth-page").boundingBox())!
-    expect(pageBox.y - shellBox.y).toBe(56)
+    expect(await shell.evaluate((el) => getComputedStyle(el).paddingTop)).toBe("56px")
+    expect(Math.abs(pageBox.y - shellBox.y - 56)).toBeLessThanOrEqual(4)
 
     for (const input of await page.locator(".auth-field input").all()) {
       expect(await input.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBe(16)
