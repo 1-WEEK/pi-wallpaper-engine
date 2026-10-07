@@ -707,8 +707,8 @@ button.mp-cmd {
 
 .mobile-shell .act-head {
   align-items: baseline;
-  padding: 6px 0 16px;
-  margin-bottom: 0;
+  padding: 6px 0 0;
+  margin-bottom: 16px;
   gap: 12px;
 }
 

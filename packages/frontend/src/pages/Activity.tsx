@@ -87,6 +87,7 @@ interface ActivityQueue {
   activeCount: number
   finishedCount: number
   failedCount: number
+  adultCount: number
   nowTick: number
   hasMoreDl: boolean
   loadMore: () => void
@@ -185,6 +186,11 @@ const useActivityQueue = (showAdult: boolean): ActivityQueue => {
     for (const t of active) map.set(t.task_id, t)
     return Array.from(map.values()).sort((a, b) => b.started_at - a.started_at)
   }, [dData, activePageData])
+  const adultCount = useMemo(
+    () => allTasks.filter(isAdultTask).length,
+    [allTasks]
+  )
+
 
   const hasMoreDl = !!(dData && dData[dData.length - 1]?.items.length === PAGE_SIZE)
 
@@ -336,6 +342,7 @@ const useActivityQueue = (showAdult: boolean): ActivityQueue => {
     activeCount,
     finishedCount,
     failedCount,
+    adultCount,
     nowTick,
     hasMoreDl,
     loadMore: () => setDSize(dSize + 1),
@@ -580,17 +587,32 @@ const TaskRow = ({ task, settling, nowTick, onDismiss, onCancel, onRetry }: Task
         {/* CANCEL is download/migration only — transcode has no cancel,
             matching the production backend. */}
         {!finished && !settling && task.task_type === "download" && (
-          <button type="button" className="act-act mono" onClick={() => onCancel(task.workshop_id)}>
+          <button
+            type="button"
+            className="act-act mono"
+            data-press="cmd"
+            onClick={() => onCancel(task.workshop_id)}
+          >
             CANCEL
           </button>
         )}
         {finished && failed && (
-          <button type="button" className="act-act mono" onClick={() => onRetry(task)}>
+          <button
+            type="button"
+            className="act-act mono"
+            data-press="cmd"
+            onClick={() => onRetry(task)}
+          >
             RETRY
           </button>
         )}
         {finished && (
-          <button type="button" className="act-act mono" onClick={() => onDismiss(task.task_id)}>
+          <button
+            type="button"
+            className="act-act mono"
+            data-press="cmd"
+            onClick={() => onDismiss(task.task_id)}
+          >
             DISMISS
           </button>
         )}
@@ -681,12 +703,22 @@ const MigrationRow = ({
       )}
       <span className="act-actions">
         {!terminal && !settling && (
-          <button type="button" className="act-act mono" onClick={onCancel}>
+          <button
+            type="button"
+            className="act-act mono"
+            data-press="cmd"
+            onClick={onCancel}
+          >
             CANCEL
           </button>
         )}
         {terminal && (
-          <button type="button" className="act-act mono" onClick={onDismiss}>
+          <button
+            type="button"
+            className="act-act mono"
+            data-press="cmd"
+            onClick={onDismiss}
+          >
             DISMISS
           </button>
         )}
@@ -713,6 +745,7 @@ const ActivityMobile = () => {
     activeCount,
     finishedCount,
     failedCount,
+    adultCount,
     nowTick,
     hasMoreDl,
     loadMore,
@@ -727,13 +760,6 @@ const ActivityMobile = () => {
     revalidate,
   } = useActivityQueue(showAdult)
 
-  // The SAFE QUEUE note reads against the unfiltered set (§4.3 session
-  // filter — hiding must not erase the "n mature tasks hidden" count).
-  const adultCount = useMemo(
-    () =>
-      rows.filter((r) => (r.kind === "task" ? isAdultTask(r.task) : false)).length,
-    [rows]
-  )
 
   return (
     <div className="act">
