@@ -394,7 +394,7 @@ test.describe("Browse mobile (ticket 02)", () => {
     const hb = (await hero.boundingBox())!
     expect(Math.abs(hb.width / hb.height - 16 / 9)).toBeLessThan(0.02)
     // Mono meta line: N°001 · WS-{id} · {size} · FPS.
-    await expect(sheet.locator(".bwd-meta-line")).toContainText("N°001 · WS-3000000000 ·")
+    await expect(sheet.locator(".bwd-meta-line").first()).toContainText("N°001 · WS-3000000000 ·")
     // No PLAY, no description, no ←/→ steppers.
     await expect(sheet.getByRole("button", { name: /PLAY/ })).toHaveCount(0)
     await expect(sheet.getByText(/test wallpaper item/i)).toHaveCount(0)
