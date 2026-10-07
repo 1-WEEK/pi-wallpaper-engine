@@ -114,9 +114,11 @@ span.mp-cmd {
 }
 
 button.mp-cmd {
-  /* tap target: the underline sits inside a 44px hit area */
+  /* tap target: the underline sits inside a 44px hit area; the 2px inline
+     padding lets the armed hairline chip (vocabulary #7) wrap the label
+     while keeping the full hit box. */
   min-height: 44px;
-  padding: 0;
+  padding: 0 2px;
 }
 
 /* §3.5 death penalty: no :active flat-fill inversion on the mobile shell —
@@ -557,7 +559,13 @@ button.mp-cmd {
   color: var(--pt-danger);
 }
 
-/* ── Library mobile ──────────────────────────────────────────────── */
+/* ── Library mobile (mobile spec §4.2) ─────────────────────────────
+   Page header 26px Clash + `{n} ITEMS — {size}` + the 44px ••/● 18+
+   reveal command; the QUEUE command row (mono underline, 44px, press
+   dither, no XOR beat); notice-line receipts. Cards = normalized
+   contact-sheet grammar (06 D2): N° readout, 16:10 media with NO inset
+   frame line, single-line caption baseline (title flexes/ellipsizes,
+   meta nowrap `{res} · {size} [ ↓n%]`). */
 
 .lbm-head-side {
   display: flex;
@@ -568,21 +576,35 @@ button.mp-cmd {
 
 .lbm-actions {
   display: flex;
-  align-items: baseline;
-  gap: 18px;
+  align-items: center;
+  gap: 28px;
   flex-wrap: wrap;
-  padding: 2px 0 12px;
+  padding-bottom: 10px;
 }
 
+/* Notice / error receipt line (06 D6: 10px mono dim / danger). */
+.lbm-note {
+  margin: 0 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+}
+
+.lbm-note-err {
+  color: var(--pt-danger);
+}
+
+/* 2-up grid (06 D5: 12px column gap = spine clearance, 16px row gap). */
 .lbm-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 10px;
-  margin-top: 4px;
+  column-gap: 12px;
+  row-gap: 16px;
 }
 
 .lbm-card {
   position: relative;
+  isolation: isolate;
   margin: 0;
   padding: 0;
   background: none;
@@ -593,12 +615,19 @@ button.mp-cmd {
   cursor: pointer;
 }
 
+.lbm-card-n {
+  display: block;
+  font-size: 10px;
+  color: var(--pt-faint);
+  margin-bottom: 5px;
+}
+
 .lbm-card-media {
   position: relative;
-  aspect-ratio: 1200 / 1080;
+  display: block;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
   background: var(--pt-fill);
-  box-shadow: inset 0 0 0 1px var(--pt-line-soft);
 }
 
 .lbm-card-media img {
@@ -608,49 +637,70 @@ button.mp-cmd {
   display: block;
 }
 
-/* Now-playing = the amber tick (same weight as the tab bar's). */
+/* NOW PLAYING = resolved inverse chip (status channel, 03 D10) — the
+   mobile-created amber base is abolished (amber = the hot channel). */
 .lbm-now {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  font-size: 8.5px;
-  letter-spacing: 0.12em;
-  color: var(--pt-on-accent);
-  background: var(--pt-accent);
-  border-radius: 2px;
-  padding: 3px 6px;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  padding: 2px 5px;
 }
 
-/* Transcode state sits top-right as a scrim chip; failed gets the danger
-   hairline. */
+/* TX pill = fixed dark scrim chip, theme-decoupled (desktop .lib-tx
+   method), 9px (06 D6: the 8px desktop slot +1; the 8.5px half-pixel
+   dies). Failed = the desktop .lib-tx-err value verbatim — danger-tinted
+   text on the same scrim base, no hairline box. */
 .lbm-tx {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
-  color: var(--pt-scrim-ink);
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  font-size: 9px;
+  letter-spacing: 0.06em;
   background: rgba(0, 0, 0, 0.55);
-  border-radius: 2px;
-  padding: 3px 6px;
+  color: var(--pt-scrim-ink);
+  padding: 2px 5px;
 }
 
 .lbm-tx-err {
-  background: transparent;
-  color: #ffb1b1;
-  box-shadow: inset 0 0 0 1px rgba(255, 124, 124, 0.5);
+  color: rgba(255, 130, 130, 0.95);
+}
+
+/* TX running: the 2px progress hairline embedded at the media's bottom
+   edge (06 D2.5, transform-only — §5 F8 bans width transitions). */
+.lbm-txbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+
+.lbm-txbar-fill {
+  display: block;
+  height: 100%;
+  background: var(--pt-scrim-ink);
+  transform-origin: left;
 }
 
 .lbm-card-caption {
-  padding-top: 7px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
 }
 
 .lbm-card-title {
-  font-size: 12px;
-  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
   color: var(--pt-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -661,64 +711,103 @@ button.mp-cmd {
   font-size: 9px;
   letter-spacing: 0.06em;
   color: var(--pt-faint);
+  white-space: nowrap;
 }
 
-.lbm-note {
+/* ── Library detail Sheet body (mobile spec §4.2) ──────────────────
+   Hero 16:9 frame-free (margin-top 14 = body margin 16 − gridlines 2 —
+   the sheet body paints a 2px coordinate-grid offset under
+   .mobile-shell) + occupancy chips in the grid's grammar. The sheet
+   header owns the title; the old duplicate h2.ldet-title is deleted. */
+.lbmd-hero {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--pt-fill);
+  margin-top: 14px;
+}
+
+.lbmd-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lbmd-meta {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pt-faint);
   margin: 10px 0 0;
+  line-height: 1.7;
+}
+
+.lbmd-specs {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.lbmd-specs span {
   font-size: 10px;
   letter-spacing: 0.06em;
   color: var(--pt-dim);
+  line-height: 1.8;
 }
 
-.lbm-note-err {
-  color: var(--pt-danger);
+.lbmd-specs-err {
+  color: var(--pt-danger) !important;
 }
 
-/* The desktop detail body (ldet-*) inside the mobile Sheet: full-width
-   media, roomy touch targets, no fixed-height split scroll. The sheet is
-   already an opaque token surface (§9), so the body's transparent
-   backgrounds stay and the desktop panel's glass never enters. */
-.mobile-sheet-panel .ldet-media {
-  border-radius: 12px;
-  margin: 6px 16px 0;
-  view-transition-name: none;
-}
-
-.mobile-sheet-panel .ldet-body {
-  padding: 14px 20px 22px;
-}
-
-.mobile-sheet-panel .ldet-actions {
+/* Command cluster: mono underline commands on a hairline group edge. */
+.lbmd-cmds {
+  display: flex;
+  align-items: center;
+  gap: 28px;
   flex-wrap: wrap;
-  row-gap: 10px;
+  margin-top: 6px;
+  border-top: 1px solid var(--pt-line-soft);
+  padding-top: 2px;
 }
 
-.mobile-sheet-panel .ldet-play {
+/* DELETE two-step armed (vocabulary #7): danger hairline chip — the
+   chip geometry swaps in for the underline; the press dither on an
+   armed command runs the danger tile. Destructive commit = no XOR beat
+   (the row/sheet disappearing IS the feedback); 2.2s auto-disarm lives
+   in the component. */
+.lbmd-cmds .lbm-armed {
+  color: var(--pt-danger);
+  border-bottom-color: transparent;
+  text-decoration: none;
+  box-shadow: inset 0 0 0 1px var(--pt-danger);
+}
+
+.lbmd-cmds .lbm-armed::after {
+  background-image: var(--pt-dither-danger);
+}
+
+/* ‹ PREV / NEXT › = commands (press dither, direct step), spread to the
+   row's ends on their own hairline group. */
+.lbmd-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--pt-line-soft);
+  margin-top: 2px;
+}
+
+/* Foot PLAY: 48px inverse-block CTA, sticky in the sheet footer (§3.4).
+   Press dither uses the counter-ink tile via data-press="cta". */
+.lbmd-play {
   width: 100%;
   min-height: 48px;
-  font-size: 12px;
-}
-
-.mobile-sheet-panel .ldet-cmd {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-}
-
-.mobile-sheet-panel .ldet-steam {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-}
-
-.mobile-sheet-panel .ldet-step {
-  margin-left: 0;
-  width: 100%;
-}
-
-.mobile-sheet-panel .ldet-step button {
-  flex: 1;
-  min-height: 44px;
+  border: none;
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
 }
 
 /* ── Activity mobile: the desktop .act-* ledger at a tighter measure ── */

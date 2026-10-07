@@ -1,7 +1,7 @@
 import { test, expect } from "playwright/test"
 import type { Locator, Page } from "playwright"
 import type { ActivityTask } from "@pwe/shared"
-import { mockSearchResult, mockWorkshopItems } from "./fixtures.js"
+import { mockLibraryItem, mockSearchResult, mockWorkshopItems, mockSystemSummary } from "./fixtures.js"
 import { mockAuthDisabled, mockLibraryList, mockSummary } from "./helpers.js"
 
 test.use({
@@ -433,6 +433,117 @@ test.describe("Browse mobile (ticket 02)", () => {
     await expect(page.getByRole("button", { name: /LOAD MORE/ })).toHaveCount(0)
     await expect(page.locator(".bwm-end")).toHaveText("END — 30 SHOWN")
   })
+test("Library mobile: parity, occupancy chips, detail sheet 88% and foot PLAY CTA (§7.3)", async ({ page }) => {
+  await mockAuthDisabled(page)
+  const itemPlaying = mockLibraryItem({
+    workshop_id: "1693728660",
+    title: "Neon City",
+    transcode_status: "completed",
+  })
+  const itemTx = mockLibraryItem({
+    workshop_id: "2000000002",
+    title: "Cyberpunk Street",
+    transcode_status: "running",
+    transcode_progress: 42,
+  })
+  const summary = mockSystemSummary()
+  summary.status.player.current_workshop_id = "1693728660"
+  await mockSummary(page, summary)
+  await mockLibraryList(page, [itemPlaying, itemTx])
+  await page.route("**/api/download/tasks**", (route) =>
+    route.fulfill({ json: { items: [], total: 0 } })
+  )
+
+  await page.goto("/library")
+  await expect(page.locator(".mp-title")).toHaveText("Library")
+
+  // Card parity: aria-label="Open {title}"
+  const playingCard = page.getByRole("button", { name: "Open Neon City", exact: true })
+  await expect(playingCard).toBeVisible()
+  const txCard = page.getByRole("button", { name: "Open Cyberpunk Street", exact: true })
+  await expect(txCard).toBeVisible()
+
+  // Assert NOW PLAYING inverted chip (--pt-inv-bg, 9px mono)
+  const nowChip = playingCard.locator(".lbm-now")
+  await expect(nowChip).toHaveText("NOW PLAYING")
+  await expect(nowChip).toHaveCSS("font-size", "9px")
+  const invBg = await page.evaluate(() => {
+    const probe = document.createElement("div")
+    probe.style.backgroundColor = "var(--pt-inv-bg)"
+    document.body.appendChild(probe)
+    const val = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return val
+  })
+  expect(invBg).not.toBe("")
+  await expect(nowChip).toHaveCSS("background-color", invBg)
+
+  // Assert TX pill 9px scrim chip rgba(0,0,0,0.55)
+  const txPill = txCard.locator(".lbm-tx")
+  await expect(txPill).toHaveText("TX 42%")
+  await expect(txPill).toHaveCSS("font-size", "9px")
+  await expect(txPill).toHaveCSS("background-color", "rgba(0, 0, 0, 0.55)")
+
+  // Assert Detail Sheet: tap card to open
+  await playingCard.tap()
+  const sheet = page.locator(".mobile-sheet.open")
+  await expect(sheet).toBeVisible()
+
+  // Assert parity: .mobile-sheet-title
+  await expect(sheet.locator(".mobile-sheet-title")).toHaveText("Neon City")
+
+  // Assert Detail Sheet 88% detent
+  const sheetDetent = await sheet.evaluate((el) =>
+    (el as HTMLElement).style.getPropertyValue("--mobile-sheet-height").trim()
+  )
+  expect(sheetDetent).toBe("88%")
+
+  // Assert foot PLAY 48px CTA
+  const playCta = sheet.locator(".mobile-sheet-footer .lbmd-play")
+  await expect(playCta).toBeVisible()
+  await expect(playCta).toHaveText("PLAY")
+  const playBox = (await playCta.boundingBox())!
+  expect(playBox.height).toBeGreaterThanOrEqual(47.5)
+
+  // Assert parity: Close button
+  const closeBtn = sheet.getByRole("button", { name: "Close", exact: true })
+  await expect(closeBtn).toBeVisible()
+  await closeBtn.tap()
+  await expect(page.locator(".mobile-sheet.open")).toHaveCount(0)
+})
+
+test("Library mobile: two-step DELETE conforms to vocabulary #7 (armed hairline chip, auto-disarm)", async ({ page }) => {
+  await mockAuthDisabled(page)
+  const item = mockLibraryItem({
+    workshop_id: "1693728660",
+    title: "Neon City",
+  })
+  await mockSummary(page)
+  await mockLibraryList(page, [item])
+  await page.route("**/api/download/tasks**", (route) =>
+    route.fulfill({ json: { items: [], total: 0 } })
+  )
+
+  await page.goto("/library")
+  const card = page.getByRole("button", { name: "Open Neon City", exact: true })
+  await card.tap()
+
+  const sheet = page.locator(".mobile-sheet.open")
+  await expect(sheet).toBeVisible()
+
+  const deleteBtn = sheet.getByRole("button", { name: "DELETE", exact: true })
+  await expect(deleteBtn).toBeVisible()
+  expect(await deleteBtn.evaluate((el) => el.classList.contains("lbm-armed"))).toBe(false)
+
+  // Step 1: tap to arm
+  await deleteBtn.tap()
+  await expect(sheet.getByRole("button", { name: "SURE?", exact: true })).toBeVisible()
+  const armedBtn = sheet.getByRole("button", { name: "SURE?", exact: true })
+  expect(await armedBtn.evaluate((el) => el.classList.contains("lbm-armed"))).toBe(true)
+
+  // Wait for 2.2s auto-disarm timeout
+  await expect(sheet.getByRole("button", { name: "DELETE", exact: true })).toBeVisible({ timeout: 4000 })
+  expect(await deleteBtn.evaluate((el) => el.classList.contains("lbm-armed"))).toBe(false)
 })
 
 test.describe("Mouse viewport", () => {
