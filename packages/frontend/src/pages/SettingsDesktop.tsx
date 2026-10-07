@@ -15,7 +15,7 @@
 // the row grammar (SpecRow / Block / Note) are shared with SettingsMobile
 // (ticket 14): the mobile layout degrades the rail navigation to a
 // section-list → detail two-layer structure over the same content.
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { Link, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
 import type { SystemSummary } from "@pwe/shared"
@@ -40,6 +40,8 @@ import { getInterfaceSounds, setInterfaceSounds } from "../interfaceSounds.js"
 import { formatPlayLimitCountdown } from "../format.js"
 import { PLAY_LIMIT_MODES, PLAY_LIMIT_OPTIONS } from "../playLimit.js"
 import { sounds } from "../sound.js"
+import { useTheme, type ThemeChoice } from "../theme.js"
+import { setReduceTransparency, useReduceTransparency } from "../reducedTransparency.js"
 
 interface Props {
   summary: SystemSummary | null
@@ -376,6 +378,7 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
       </Block>
 
       <Block label="INTERFACE">
+        <InterfaceThemeRow />
         <div className="set-row">
           <span className="set-row-name">Interface sounds</span>
           <span className="set-row-dots" aria-hidden="true" />
@@ -394,8 +397,110 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
             ))}
           </span>
         </div>
+        <InterfaceTail />
         <Note>UI SOUNDS ONLY — WALLPAPER AUDIO STAYS IN THE PLAYERBAR</Note>
       </Block>
+    </>
+  )
+}
+
+/* ── Mobile-only INTERFACE additions (mobile spec §4.4): appended after the
+   shared master-switch row inside the same block; row order is fixed —
+   Theme first, the conditional MUTE row directly under the master switch,
+   Reduce transparency last. The desktop rail keeps its own bracketed theme
+   control, so this block renders nothing there (`.setm-ifx`). ──────────── */
+
+const THEME_SEG: ReadonlyArray<{ label: string; choice: ThemeChoice }> = [
+  { label: "A", choice: "light" },
+  { label: "B", choice: "dark" },
+  { label: "AUTO", choice: "auto" },
+]
+
+export const InterfaceThemeRow = () => {
+  const { choice, setChoice } = useTheme()
+  return (
+    <div className="set-row setm-ifx">
+      <span className="set-row-name">Theme</span>
+      <span className="set-row-dots" aria-hidden="true" />
+      <span className="set-seg mono" role="radiogroup" aria-label="Theme">
+        {THEME_SEG.map(({ label, choice: c }) => (
+          <button
+            key={c}
+            type="button"
+            role="radio"
+            aria-checked={choice === c}
+            className={choice === c ? "is-on" : ""}
+            onClick={() => setChoice(c)}
+          >
+            {label}
+          </button>
+        ))}
+      </span>
+    </div>
+  )
+}
+
+export const InterfaceTail = () => {
+  const rt = useReduceTransparency()
+  // The MUTE row mirrors the shell dot: same engine state, same key, and
+  // setMuted(true) cancels in-flight voices immediately (spec §4.4).
+  const muted = useSyncExternalStore(sounds.subscribe, () => sounds.isMuted)
+  const soundsOn = getInterfaceSounds()
+
+  return (
+    <>
+      {soundsOn && (
+        <div className="set-row setm-ifx setm-mute-row">
+          <span className="set-row-name">Mute interface sounds</span>
+          <span className="set-row-dots" aria-hidden="true" />
+          <span
+            className="set-seg mono"
+            role="radiogroup"
+            aria-label="Mute interface sounds"
+          >
+            {([
+              ["LIVE", false],
+              ["MUTED", true],
+            ] as const).map(([label, value]) => (
+              <button
+                key={label}
+                type="button"
+                role="radio"
+                aria-checked={muted === value}
+                className={muted === value ? "is-on" : ""}
+                onClick={() => sounds.setMuted(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
+      <div className="set-row setm-ifx">
+        <span className="set-row-name">Reduce transparency</span>
+        <span className="set-row-dots" aria-hidden="true" />
+        <span
+          className="set-seg mono"
+          role="radiogroup"
+          aria-label="Reduce transparency"
+        >
+          {([
+            ["OFF", false],
+            ["ON", true],
+          ] as const).map(([label, value]) => (
+            <button
+              key={label}
+              type="button"
+              role="radio"
+              aria-checked={rt === value}
+              className={rt === value ? "is-on" : ""}
+              onClick={() => setReduceTransparency(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
+      </div>
     </>
   )
 }
