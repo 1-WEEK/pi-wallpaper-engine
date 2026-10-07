@@ -433,6 +433,8 @@ test.describe("Browse mobile (ticket 02)", () => {
     await expect(page.getByRole("button", { name: /LOAD MORE/ })).toHaveCount(0)
     await expect(page.locator(".bwm-end")).toHaveText("END — 30 SHOWN")
   })
+})
+
 test("Library mobile: parity, occupancy chips, detail sheet 88% and foot PLAY CTA (§7.3)", async ({ page }) => {
   await mockAuthDisabled(page)
   const itemPlaying = mockLibraryItem({
