@@ -94,11 +94,16 @@ export const GridOverlay = ({
   cardSelector = ".bws-card",
   heightVar = "--bws-card-h",
   classPrefix = "bws",
+  realignKey = "",
 }: {
   rootRef: RefObject<HTMLElement | null>
   gridRef: RefObject<HTMLElement | null>
   itemCount: number
   cardSelector?: string
+  /** Bump to force a manual re-measure when a shift without a resize
+   *  invalidates the offsets (chips row show/hide, LOAD MORE append —
+   *  RO watches size only, not position; mobile spec §8.5). */
+  realignKey?: string
   /** CSS variable on the root that receives the measured card height, feeding
    *  the cards' contain-intrinsic-height (spec §8.6). */
   heightVar?: string
@@ -129,7 +134,7 @@ export const GridOverlay = ({
     const ro = new ResizeObserver(compute)
     ro.observe(grid)
     return () => ro.disconnect()
-  }, [rootRef, gridRef, itemCount, cardSelector, heightVar])
+  }, [rootRef, gridRef, itemCount, cardSelector, heightVar, realignKey])
 
   return (
     <div className={`${classPrefix}-gridlines`} aria-hidden="true">

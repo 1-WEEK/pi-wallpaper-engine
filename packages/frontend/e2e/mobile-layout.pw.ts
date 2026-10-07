@@ -290,6 +290,151 @@ test("long Activity queues keep the Queue sheet anchored to the mobile shell", a
   await expectChromeInViewport(page)
 })
 
+test.describe("Browse mobile (ticket 02)", () => {
+  test("mode-aware head shows RESULTS / {MODE} and the ITEMS readout", async ({ page }) => {
+    await bootBrowse(page)
+    await expect(page.locator(".mp-title")).toHaveText("Results / Trending")
+    await expect(page.locator(".mp-count")).toHaveText("25 ITEMS")
+    // No double wayfinding declaration: TabBar owns Browse.
+    await expect(page.locator(".mp-title")).not.toContainText("Workshop")
+  })
+
+  test("FILTERS — n mono command replaces the filters pill", async ({ page }) => {
+    await bootBrowse(page)
+    await expect(page.locator(".bwm-filters-pill")).toHaveCount(0)
+    const ftg = page.getByRole("button", { name: "Open filters", exact: true })
+    await expect(ftg).toContainText("FILTERS")
+    await expect(ftg.locator(".bwm-ftg-n")).toBeHidden()
+    await ftg.tap()
+    const sheet = page.locator(".mobile-sheet.open")
+    await sheet.getByRole("button", { name: "1920 x 1080", exact: true }).tap()
+    await sheet.getByRole("button", { name: /Show .* results/ }).tap()
+    await expect(ftg.locator(".bwm-ftg-n")).toHaveText("— 1")
+    const box = (await ftg.boundingBox())!
+    expect(box.height).toBeGreaterThanOrEqual(44)
+  })
+
+  test("selected chips are hairline rows with ✕ remove and per-chip aria", async ({ page }) => {
+    await bootBrowse(page)
+    const ftg = page.getByRole("button", { name: "Open filters", exact: true })
+    await ftg.tap()
+    const sheet = page.locator(".mobile-sheet.open")
+    await sheet.getByRole("button", { name: "1920 x 1080", exact: true }).tap()
+    await sheet.getByRole("button", { name: /Show .* results/ }).tap()
+    const chip = page.getByRole("button", { name: "Remove filter 1920 x 1080", exact: true })
+    await expect(chip).toBeVisible()
+    expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    await chip.tap()
+    await expect(page.locator(".bwm-selected-row")).toHaveCount(0)
+    await expect(ftg.locator(".bwm-ftg-n")).toBeHidden()
+  })
+
+  test("filters sheet is four-zone ●/○ rows with collapsible heads and CLEAR", async ({ page }) => {
+    await bootBrowse(page)
+    await page.getByRole("button", { name: "Open filters", exact: true }).tap()
+    const sheet = page.locator(".mobile-sheet.open")
+    // SORT zone: ●/○ selection rows, no segmented control residue.
+    await expect(sheet.locator(".mpm-seg")).toHaveCount(0)
+    await expect(sheet.locator(".bwm-sheet-chips")).toHaveCount(0)
+    const trend = sheet.getByRole("button", { name: "Trending", exact: true })
+    await expect(trend).toContainText("●")
+    await expect(sheet.getByRole("button", { name: "Rating", exact: true })).toContainText("○")
+    // Collapsible group heads: RES open by default with amber count, GENRE collapsed.
+    const resHead = sheet.getByRole("button", { name: /^RESOLUTION/ })
+    const genreHead = sheet.getByRole("button", { name: /^GENRE/ })
+    await expect(resHead).toHaveAttribute("aria-expanded", "true")
+    await expect(genreHead).toHaveAttribute("aria-expanded", "false")
+    await expect(sheet.getByRole("button", { name: "Abstract", exact: true })).toHaveCount(0)
+    await genreHead.tap()
+    await expect(sheet.getByRole("button", { name: "Abstract", exact: true })).toBeVisible()
+    await sheet.getByRole("button", { name: "Abstract", exact: true }).tap()
+    await sheet.getByRole("button", { name: "1920 x 1080", exact: true }).tap()
+    await expect(resHead.locator(".bwm-grp-n")).toHaveText("— 1")
+    await expect(genreHead.locator(".bwm-grp-n")).toHaveText("— 1")
+    // Header action: {n} ACTIVE — CLEAR.
+    const clear = sheet.getByRole("button", { name: /CLEAR/ })
+    await expect(clear).toHaveText("2 ACTIVE — CLEAR")
+    // Footer CTA: literal mixed case "Show {n} results", 48px, no uppercase transform.
+    const cta = sheet.getByRole("button", { name: /Show .* results/ })
+    await expect(cta).toHaveText("Show 25 results")
+    expect((await cta.boundingBox())!.height).toBeGreaterThanOrEqual(48)
+    await expect(cta).toHaveCSS("text-transform", "none")
+    await clear.tap()
+    await expect(sheet.getByRole("button", { name: /ACTIVE — CLEAR/ })).toHaveCount(0)
+    await sheet.getByRole("button", { name: /Show .* results/ }).tap()
+    await expect(page.locator(".mobile-sheet.open")).toHaveCount(0)
+  })
+
+  test("adult •• entry reveals ● 18+ and drops adult selections on collapse", async ({ page }) => {
+    await bootBrowse(page)
+    await page.getByRole("button", { name: "Open filters", exact: true }).tap()
+    const sheet = page.locator(".mobile-sheet.open")
+    const adult = sheet.getByRole("button", { name: "Toggle adult content", exact: true })
+    await expect(adult).toHaveText("••")
+    await expect(sheet.getByRole("button", { name: "Mature", exact: true })).toHaveCount(0)
+    await adult.tap()
+    await expect(adult).toHaveText("● 18+")
+    await sheet.getByRole("button", { name: "Mature", exact: true }).tap()
+    await expect(sheet.getByRole("button", { name: "Mature", exact: true })).toContainText("●")
+    await adult.tap()
+    await expect(adult).toHaveText("••")
+    await expect(sheet.getByRole("button", { name: "Mature", exact: true })).toHaveCount(0)
+    // The adult selection was dropped, so no CLEAR action remains.
+    await expect(sheet.getByRole("button", { name: /ACTIVE — CLEAR/ })).toHaveCount(0)
+  })
+
+  test("detail sheet: 88% detent, 16:9 hero, ↓ DOWNLOAD →, no PLAY, no steppers", async ({ page }) => {
+    await page.route("**/api/download/3*", (route) => route.fulfill({ json: { ok: true } }))
+    await bootBrowse(page)
+    await page.getByRole("button", { name: "Open Wallpaper 1", exact: true }).tap()
+    const sheet = page.locator(".mobile-sheet.open")
+    const body = sheet.locator(".mobile-sheet-body")
+    // 16:9 hero.
+    const hero = sheet.locator(".bwd-hero")
+    const hb = (await hero.boundingBox())!
+    expect(Math.abs(hb.width / hb.height - 16 / 9)).toBeLessThan(0.02)
+    // Mono meta line: N°001 · WS-{id} · {size} · FPS.
+    await expect(sheet.locator(".bwd-meta-line").first()).toContainText("N°001 · WS-3000000000 ·")
+    // No PLAY, no description, no ←/→ steppers.
+    await expect(sheet.getByRole("button", { name: /PLAY/ })).toHaveCount(0)
+    await expect(sheet.getByText(/test wallpaper item/i)).toHaveCount(0)
+    await expect(sheet.getByRole("button", { name: /PREV|NEXT/ })).toHaveCount(0)
+    await expect(sheet.getByText("RESOLUTION / CODEC KNOWN AFTER DOWNLOAD")).toBeVisible()
+    const dl = sheet.getByRole("button", { name: /DOWNLOAD/ })
+    await expect(dl).toContainText("↓ DOWNLOAD →")
+    await expect(sheet.getByRole("link", { name: /STEAM ↗/ })).toBeVisible()
+    // 88% detent.
+    const panel = sheet.locator(".mobile-sheet-panel")
+    const pb = (await panel.boundingBox())!
+    expect(Math.abs(pb.height - 844 * 0.88)).toBeLessThan(30)
+    await expect(body).toBeVisible()
+    await sheet.getByRole("button", { name: "Close", exact: true }).tap()
+  })
+
+  test("LOAD MORE explicit pagination ends in END — n SHOWN and spine realigns", async ({ page }) => {
+    await bootBrowse(page, 30)
+    // Spine overlay present with the mp prefix, aligned to the 2-up gutter.
+    const spine = page.locator(".mp-gridlines")
+    await expect(spine).toBeAttached()
+    const vLine = page.locator(".mp-gridlines .mp-gl-v")
+    await expect(vLine).toHaveCount(1)
+    const cards = page.locator(".bwm-card")
+    const first = (await cards.nth(0).boundingBox())!
+    const second = (await cards.nth(1).boundingBox())!
+    const spineBox = (await vLine.boundingBox())!
+    const gutterCenter = (first.x + first.width + second.x) / 2
+    expect(Math.abs(spineBox.x + 0.5 - gutterCenter)).toBeLessThanOrEqual(1.5)
+    const hBefore = await page.locator(".mp-gridlines .mp-gl-h").count()
+    await page.getByRole("button", { name: /LOAD MORE/ }).tap()
+    await expect(page.getByRole("button", { name: "Open Wallpaper 26", exact: true })).toBeAttached()
+    // Appended rows grew the horizontal line set (manual re-measure).
+    await expect.poll(() => page.locator(".mp-gridlines .mp-gl-h").count()).toBeGreaterThan(hBefore)
+    // Exhausted: END — {n} SHOWN terminal row replaces LOAD MORE.
+    await expect(page.getByRole("button", { name: /LOAD MORE/ })).toHaveCount(0)
+    await expect(page.locator(".bwm-end")).toHaveText("END — 30 SHOWN")
+  })
+})
+
 test.describe("Mouse viewport", () => {
   test.use({ hasTouch: false, isMobile: false })
 

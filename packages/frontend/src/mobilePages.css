@@ -185,56 +185,42 @@ button.mp-cmd {
 .bwm-search-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 18px;
   margin: 2px 0 4px;
 }
 
-/* Filter pill: hairline + fill at rest; active = signal amber tick (the
-   badge), not a purple fill. */
-.bwm-filters-pill {
+/* FILTERS — n (spec §4.1): mono underline command replaces the pill;
+   the amber count is the activation readout, hidden at zero. */
+.bwm-ftg {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   min-height: 44px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: var(--pt-fill);
-  border: 1px solid var(--pt-line-soft);
+  padding: 0 2px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-dim);
   color: var(--pt-dim);
-  font-size: 13px;
-  font-weight: 600;
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  letter-spacing: 0.1em;
   cursor: pointer;
   flex-shrink: 0;
   white-space: nowrap;
 }
 
-.bwm-filters-pill.has-active {
-  color: var(--pt-text);
-  border-color: var(--pt-line);
+.bwm-ftg-n {
+  color: var(--pt-accent);
 }
 
-.bwm-filters-pill-badge {
-  min-width: 18px;
-  height: 18px;
-  border-radius: 9px;
-  padding: 0 5px;
-  background: var(--pt-accent);
-  color: var(--pt-on-accent);
-  font-size: 10px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-/* Selected-tag preview row: hairline chips, active tag marked by the amber
-   ✕ (signal ≤10%, spec §2.1). */
+/* Selected-tag row (spec §4.1): hairline chips, mono ✕ remove mark,
+   44px touch target; the whole row hides at zero selection. */
 .bwm-selected-row {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  margin: 4px -16px 0;
+  margin: 6px -16px 10px;
   padding: 2px 16px 6px;
   scrollbar-width: none;
 }
@@ -247,34 +233,40 @@ button.mp-cmd {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
+  gap: 8px;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: 8px;
   border: 1px solid var(--pt-line);
-  background: var(--pt-fill);
+  background: none;
   color: var(--pt-text);
-  font-size: 12px;
+  font-size: 12.5px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .bwm-chip-x {
-  margin-left: 8px;
-  color: var(--pt-accent);
-  font-size: 11px;
+  color: var(--pt-faint);
+  font-family: var(--pf-mono);
+  font-size: 10px;
 }
 
-/* 2-up contact sheet: same caption grammar as the desktop contact card —
-   media hairline, title, mono ID · SIZE meta. The whole card is one 44px+
-   target; per-card download state rides along as a pill / hairline. */
+/* 2-up contact sheet (spec §6 D2): N° over the media, 16:10 aspect,
+   single-line baseline caption with the mono meta right-anchored. The
+   whole card is one 44px+ target; per-card download state rides along
+   as a scrim pill / 2px hairline progress. */
 .bwm-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 10px;
+  column-gap: 12px;
+  row-gap: 16px;
   margin-top: 12px;
 }
 
 .bwm-card {
   position: relative;
+  isolation: isolate;
+  min-width: 0;
   margin: 0;
   padding: 0;
   background: none;
@@ -285,13 +277,19 @@ button.mp-cmd {
   cursor: pointer;
 }
 
+.bwm-card-n {
+  display: block;
+  font-size: 10px;
+  color: var(--pt-faint);
+  margin-bottom: 5px;
+}
+
 .bwm-card-media {
   display: block;
   position: relative;
-  aspect-ratio: 1200 / 1080;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
   background: var(--pt-fill);
-  box-shadow: inset 0 0 0 1px var(--pt-line-soft);
 }
 
 .bwm-card-media img {
@@ -303,14 +301,13 @@ button.mp-cmd {
 
 .bwm-card-pill {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
+  top: 4px;
+  right: 4px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
   color: var(--pt-scrim-ink);
   background: rgba(0, 0, 0, 0.55);
-  border-radius: 2px;
-  padding: 3px 6px;
+  padding: 2px 5px;
 }
 
 .bwm-card-pill-done {
@@ -319,9 +316,8 @@ button.mp-cmd {
 }
 
 .bwm-card-pill-err {
-  background: transparent;
-  color: #ffb1b1;
-  box-shadow: inset 0 0 0 1px rgba(255, 124, 124, 0.5);
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 130, 130, 0.95);
 }
 
 .bwm-card-bar {
@@ -358,15 +354,17 @@ button.mp-cmd {
 }
 
 .bwm-card-caption {
-  padding-top: 7px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
 }
 
 .bwm-card-title {
-  font-size: 12px;
-  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 400;
   color: var(--pt-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -375,19 +373,29 @@ button.mp-cmd {
 
 .bwm-card-meta {
   font-size: 9px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   color: var(--pt-faint);
+  white-space: nowrap;
 }
 
 .bwm-more {
   display: flex;
   justify-content: center;
-  margin-top: 18px;
+  margin-top: 20px;
 }
 
-/* Filters sheet body */
+.bwm-end {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-faint);
+}
+
+/* Filters sheet body (spec §4.1): four zones of ●/○ selection rows —
+   chips and segmented controls are dead inside the sheet. */
 .bwm-sheet-body {
-  padding: 6px 18px 18px;
+  padding: 6px 16px 18px;
 }
 
 .bwm-sheet-group {
@@ -395,67 +403,125 @@ button.mp-cmd {
 }
 
 .bwm-sheet-label {
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  font-size: 9px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--pt-faint);
+  color: var(--pt-dim);
   border-bottom: 1px solid var(--pt-line);
-  padding-bottom: 7px;
-  margin-bottom: 12px;
+  padding-bottom: 8px;
+  margin-bottom: 2px;
 }
 
-.bwm-sheet-chips {
+/* ●/○ selection row: 52px touch row; selected = ● + accent text, never
+   a fill. */
+.bwm-opt {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.bwm-sheet-chips .bwm-chip {
-  min-height: 44px;
-}
-
-.bwm-chip-on {
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
-  border-color: transparent;
-}
-
-.bwm-sheet-footer {
-  padding: 14px 18px 22px;
-  border-top: 1px solid var(--pt-line-soft);
-}
-
-.bwm-apply {
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  min-height: 48px;
-  border: none;
-  border-radius: 8px;
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-
-.bwm-reset {
-  min-height: 44px;
-  padding: 0 8px;
+  min-height: 52px;
+  padding: 12px 0;
   background: none;
   border: none;
+  border-bottom: 1px solid var(--pt-line-soft);
   color: var(--pt-dim);
-  font-size: 12px;
+  font-size: 14px;
+  text-align: left;
   cursor: pointer;
 }
 
-/* Card detail sheet: contact-sheet hero + Clash title + mono ledger meta. */
+.bwm-opt-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bwm-opt-d {
+  font-size: 11px;
+  width: 14px;
+  text-align: right;
+}
+
+.bwm-opt.on {
+  color: var(--pt-accent);
+}
+
+/* Collapsible group head (spec §4.1): the whole 52px row is the hit box;
+   the amber count reads the group's active selections. */
+.bwm-grp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-line);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--pt-dim);
+  text-align: left;
+  cursor: pointer;
+}
+
+.bwm-grp-n {
+  color: var(--pt-accent);
+}
+
+.bwm-grp-c {
+  margin-left: auto;
+  color: var(--pt-faint);
+  font-size: 10px;
+}
+
+/* Discreet 18+ entry at the AGE group tail (spec §4.1): two faint dots
+   at rest, ● 18+ in text ink when revealed. */
+.bwm-adult {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  background: none;
+  border: none;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-faint);
+  cursor: pointer;
+  text-align: left;
+}
+
+.bwm-adult.is-on {
+  color: var(--pt-text);
+}
+
+/* Footer CTA: 48px inverted block; the literal is mixed case by contract
+   ("Show {n} results") so text-transform stays off. */
+.bwm-apply {
+  width: 100%;
+  height: 48px;
+  border: none;
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  cursor: pointer;
+}
+
+/* Card detail sheet (spec §4.1): 88% detent; 16:9 hero; a single mono
+   meta line; ↓ DOWNLOAD → + STEAM ↗ commands (no PLAY, no description,
+   no ←/→ steppers). */
 .bwd-hero {
-  margin: 6px 16px 0;
+  margin: 14px 16px 0;
   position: relative;
-  aspect-ratio: 1200 / 1080;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   background: var(--pt-fill);
-  box-shadow: inset 0 0 0 1px var(--pt-line-soft);
 }
 
 .bwd-hero img {
@@ -465,65 +531,28 @@ button.mp-cmd {
   display: block;
 }
 
-.bwd-title-block {
-  padding: 14px 20px 0;
-}
-
-.bwd-title {
-  font-family: var(--pf-display);
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-  color: var(--pt-text);
-}
-
-.bwd-id {
+.bwd-meta-line {
+  margin: 10px 16px 0;
   font-size: 10px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   color: var(--pt-faint);
-  margin-top: 6px;
+  line-height: 1.7;
 }
 
-.bwd-meta {
-  margin: 14px 20px 0;
-  padding: 12px 0 4px;
-  border-top: 1px solid var(--pt-line);
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  row-gap: 12px;
-  column-gap: 14px;
-}
-
-.bwd-meta-k {
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--pt-faint);
-}
-
-.bwd-meta-v {
-  font-size: 12px;
-  margin-top: 3px;
-  color: var(--pt-text);
-}
-
-.bwd-desc {
-  padding: 14px 20px 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--pt-dim);
+.bwd-meta-note {
+  margin-top: 2px;
 }
 
 .bwd-actions {
-  padding: 18px 20px 22px;
+  padding: 8px 16px 0;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 28px;
+  min-height: 44px;
 }
 
 .bwd-err {
-  margin: 0 20px;
+  margin: 10px 16px 0;
   font-size: 11px;
   color: var(--pt-danger);
 }

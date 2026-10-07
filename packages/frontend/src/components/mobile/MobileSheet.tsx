@@ -27,6 +27,9 @@ interface Props {
   action?: ReactNode
   /** Detent: "88%" (filters / detail) or "auto" (player, content-sized). */
   height?: string
+  /** Sticky footer strip (48px CTA grammar, spec §4.1/§3.4): pinned below
+   *  the scrolling body so the commit action is always reachable. */
+  footer?: ReactNode
   children: ReactNode
 }
 
@@ -55,6 +58,7 @@ export const MobileSheet = ({
   title,
   action,
   height = "88%",
+  footer,
   children,
 }: Props) => {
   const reducedMotion = useReducedMotion()
@@ -271,6 +275,7 @@ export const MobileSheet = ({
         <div className="mobile-sheet-body" ref={bodyRef}>
           {children}
         </div>
+        {footer ? <div className="mobile-sheet-footer">{footer}</div> : null}
       </div>
     </div>
   )

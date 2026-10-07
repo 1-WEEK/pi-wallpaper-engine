@@ -532,11 +532,22 @@ export const Browse = () => {
   )
 
   if (mobile) {
+    const modeLabel =
+      SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "Trending"
     return (
-      <div className="mp">
-        <header className="mp-head pt-enter">
+      <div className="mp" ref={rootRef}>
+        <GridOverlay
+          rootRef={rootRef}
+          gridRef={gridRef}
+          itemCount={items.length}
+          cardSelector=".bwm-card"
+          heightVar="--bwm-card-h"
+          classPrefix="mp"
+          realignKey={`${selectedTags.length > 0}:${items.length}`}
+        />
+        <header className="mp-head mp-enter" style={{ "--mp-i": 0 } as React.CSSProperties}>
           <h1 className="mp-title">
-            Browse<span className="mp-title-slash"> / </span>Workshop
+            Results<span className="mp-title-slash"> / </span>{modeLabel}
           </h1>
           <span className="mp-count mono">
             {total > 0 ? `${total.toLocaleString("en-US")} ITEMS` : "SEARCH READY"}
@@ -552,17 +563,15 @@ export const Browse = () => {
             {searchInputMobile}
             <button
               type="button"
-              className={`bwm-filters-pill ${selectedTags.length > 0 ? "has-active" : ""}`}
+              className="bwm-ftg"
+              data-press="cmd"
               onClick={() => setFiltersOpen(true)}
               aria-label="Open filters"
             >
-              <span aria-hidden="true">{appIcons.sliders}</span>
-              Filters
-              {selectedTags.length > 0 && (
-                <span className="bwm-filters-pill-badge mono">
-                  {selectedTags.length}
-                </span>
-              )}
+              <span>FILTERS</span>
+              <span className="bwm-ftg-n" hidden={selectedTags.length === 0}>
+                — {selectedTags.length}
+              </span>
             </button>
           </div>
         </form>
@@ -574,10 +583,11 @@ export const Browse = () => {
                 key={t}
                 type="button"
                 className="bwm-chip"
-                data-press="seg"
+                data-press="cmd"
+                aria-label={`Remove filter ${t}`}
                 onClick={() => toggleTag(t)}
               >
-                {t}
+                <span className="bwm-chip-t">{t}</span>
                 <span className="bwm-chip-x" aria-hidden="true">✕</span>
               </button>
             ))}
@@ -609,18 +619,24 @@ export const Browse = () => {
           ))}
         </div>
 
-        {hasMore && (
-          <div className="bwm-more">
-            <button
-              type="button"
-              className="mp-cmd"
-              disabled={isLoadingMore}
-              onClick={() => setSize(size + 1)}
-            >
-              {isLoadingMore ? "LOADING…" : "LOAD MORE →"}
-            </button>
-          </div>
-        )}
+        {items.length > 0 &&
+          (hasMore ? (
+            <div className="bwm-more">
+              <button
+                type="button"
+                className="mp-cmd mp-cmd-primary"
+                data-press="cmd"
+                disabled={isLoadingMore}
+                onClick={() => setSize(size + 1)}
+              >
+                {isLoadingMore ? "LOADING…" : "LOAD MORE →"}
+              </button>
+            </div>
+          ) : (
+            <div className="bwm-end mono">
+              END — {items.length.toLocaleString("en-US")} SHOWN
+            </div>
+          ))}
 
         {/* Mobile filters sheet */}
         <MobileSheet
@@ -631,14 +647,25 @@ export const Browse = () => {
             selectedTags.length > 0 ? (
               <button
                 type="button"
-                className="bwm-reset"
+                className="mp-cmd"
+                data-press="cmd"
                 onClick={() => {
                   clearTags()
                 }}
               >
-                Reset
+                {selectedTags.length} ACTIVE — CLEAR
               </button>
             ) : null
+          }
+          footer={
+            <button
+              type="button"
+              data-press="cta"
+              className="bwm-apply"
+              onClick={() => setFiltersOpen(false)}
+            >
+              Show {total.toLocaleString("en-US")} results
+            </button>
           }
         >
           <FiltersSheetBody
@@ -646,8 +673,8 @@ export const Browse = () => {
             sort={sort}
             onToggle={toggleTag}
             onSort={(s) => writeParams({ sort: s })}
-            total={total}
-            onApply={() => setFiltersOpen(false)}
+            showAdult={showAdult}
+            onToggleAdult={toggleAdult}
           />
         </MobileSheet>
 
@@ -656,14 +683,14 @@ export const Browse = () => {
           open={!!cardItem}
           onClose={() => setCardItem(null)}
           title={cardItem?.title}
-          height="94%"
+          height="88%"
         >
           {cardItem && (
             <CardDetailBody
               item={cardItem}
+              index={items.findIndex((x) => x.publishedfileid === cardItem.publishedfileid)}
               isInLibrary={libraryIds.has(cardItem.publishedfileid)}
               downloadTask={downloadTasksById.get(cardItem.publishedfileid)}
-              onClose={() => setCardItem(null)}
               onDownloadQueued={() => {
                 void mutateDownloadTasks()
               }}
@@ -1000,16 +1027,19 @@ const BrowseMobileCard = ({
         ? { cls: "bwm-card-pill", text: taskStageLabel(activeTask).toUpperCase() }
         : null
   const size = formatFileSize(item.file_size)
+  const genre = pickTagLabel(item)
 
   return (
     <button
       type="button"
       data-press="card"
-              className="bwm-card pt-enter"
-      style={{ "--pt-i": index } as React.CSSProperties}
+      className="bwm-card"
       onClick={onOpen}
       aria-label={`Open ${item.title}`}
     >
+      <span className="bwm-card-n mono" aria-hidden="true">
+        N°{String(index + 1).padStart(3, "0")}
+      </span>
       <span className="bwm-card-media">
         {item.preview_url ? (
           <img src={item.preview_url} alt="" loading="lazy" />
@@ -1035,11 +1065,81 @@ const BrowseMobileCard = ({
       <span className="bwm-card-caption">
         <span className="bwm-card-title">{item.title}</span>
         <span className="bwm-card-meta mono">
-          {item.publishedfileid}
-          {size ? ` · ${size}` : ""}
+          {size ?? "—"}
+          {genre ? ` · ${genre}` : ""}
         </span>
       </span>
     </button>
+  )
+}
+
+/* ── Filters sheet (spec §4.1): SORT (single) / AGE / RESOLUTION / GENRE
+     (multi) as ●/○ selection rows only — chips and segmented idioms are
+     dead inside the sheet. RES/GENRE ride behind collapsible group heads
+     with amber active counts; the discreet •• 18+ entry sits at the AGE
+     group tail and drops adult selections when it collapses. ── */
+
+const SheetOptRow = ({
+  label,
+  on,
+  onToggle,
+}: {
+  label: string
+  on: boolean
+  onToggle: () => void
+}) => (
+  <button
+    type="button"
+    className={`bwm-opt${on ? " on" : ""}`}
+    data-press="row"
+    aria-pressed={on}
+    onClick={onToggle}
+  >
+    <span className="bwm-opt-t">{label}</span>
+    <span className="bwm-opt-d mono" aria-hidden="true">{on ? "●" : "○"}</span>
+  </button>
+)
+
+const FiltersGroup = ({
+  title,
+  tags,
+  selectedTags,
+  onToggle,
+  defaultOpen = false,
+}: {
+  title: string
+  tags: ReadonlyArray<string>
+  selectedTags: ReadonlyArray<string>
+  onToggle: (tag: string) => void
+  defaultOpen?: boolean
+}) => {
+  const [open, setOpen] = useState(defaultOpen)
+  const count = tags.filter((t) => selectedTags.includes(t)).length
+  return (
+    <div className="bwm-sheet-group">
+      <button
+        type="button"
+        className="bwm-grp mono"
+        data-press="cmd"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="bwm-grp-t">
+          {title}
+          {count > 0 && <span className="bwm-grp-n"> — {count}</span>}
+        </span>
+        <span className="bwm-grp-c" aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </button>
+      {open &&
+        tags.map((t) => (
+          <SheetOptRow
+            key={t}
+            label={t}
+            on={selectedTags.includes(t)}
+            onToggle={() => onToggle(t)}
+          />
+        ))}
+    </div>
   )
 }
 
@@ -1048,67 +1148,68 @@ const FiltersSheetBody = ({
   sort,
   onToggle,
   onSort,
-  total,
-  onApply,
+  showAdult,
+  onToggleAdult,
 }: {
   selectedTags: ReadonlyArray<string>
   sort: WorkshopSort
   onToggle: (tag: string) => void
   onSort: (sort: WorkshopSort) => void
-  total: number
-  onApply: () => void
+  showAdult: boolean
+  onToggleAdult: () => void
 }) => {
-  const groups: ReadonlyArray<{ label: string; tags: ReadonlyArray<string> }> = [
-    { label: "Genre", tags: GENRE_TAGS },
-    { label: "Resolution", tags: RESOLUTION_TAGS },
-    { label: "Age", tags: AGE_TAGS },
-  ]
+  // The AGE zone mirrors the desktop rail's discreet 18+ entry: at rest
+  // only Everyone is listed; •• reveals ● 18+ and the adult rows, and
+  // re-collapsing drops any adult selection (parity with the rail).
+  const ageRows: ReadonlyArray<string> = showAdult ? [...AGE_TAGS] : [AGE_TAGS[0]]
+
   return (
     <div className="bwm-sheet-body">
       <div className="bwm-sheet-group">
-        <div className="bwm-sheet-label mono">Sort</div>
-        <div className="mpm-seg" role="tablist" aria-label="Sort results">
-          {SORT_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              className={sort === o.value ? "is-on" : ""}
-              aria-pressed={sort === o.value}
-              onClick={() => onSort(o.value)}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
+        <div className="bwm-sheet-label mono">SORT</div>
+        {SORT_OPTIONS.map((o) => (
+          <SheetOptRow
+            key={o.value}
+            label={o.label}
+            on={sort === o.value}
+            onToggle={() => onSort(o.value)}
+          />
+        ))}
       </div>
-      {groups.map((g) => (
-        <div key={g.label} className="bwm-sheet-group">
-          <div className="bwm-sheet-label mono">{g.label}</div>
-          <div className="bwm-sheet-chips">
-            {g.tags.map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={`bwm-chip${selectedTags.includes(t) ? " bwm-chip-on" : ""}`}
-                aria-pressed={selectedTags.includes(t)}
-                onClick={() => onToggle(t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-      <div className="bwm-sheet-footer">
+      <div className="bwm-sheet-group">
+        <div className="bwm-sheet-label mono">AGE</div>
+        {ageRows.map((t) => (
+          <SheetOptRow
+            key={t}
+            label={t}
+            on={selectedTags.includes(t)}
+            onToggle={() => onToggle(t)}
+          />
+        ))}
         <button
           type="button"
-          data-press="cta"
-            className="bwm-apply"
-          onClick={onApply}
+          className={`bwm-adult mono${showAdult ? " is-on" : ""}`}
+          data-press="cmd"
+          aria-pressed={showAdult}
+          aria-label="Toggle adult content"
+          onClick={onToggleAdult}
         >
-          {total > 0 ? `Show ${total.toLocaleString()} results` : "Apply"}
+          <span>{showAdult ? "● 18+" : "••"}</span>
         </button>
       </div>
+      <FiltersGroup
+        title="RESOLUTION"
+        tags={RESOLUTION_TAGS}
+        selectedTags={selectedTags}
+        onToggle={onToggle}
+        defaultOpen
+      />
+      <FiltersGroup
+        title="GENRE"
+        tags={GENRE_TAGS}
+        selectedTags={selectedTags}
+        onToggle={onToggle}
+      />
     </div>
   )
 }
@@ -1131,21 +1232,20 @@ const pickTagLabel = (item: WorkshopItem): string | null => {
 
 const CardDetailBody = ({
   item,
+  index,
   isInLibrary,
   downloadTask,
-  onClose,
   onDownloadQueued,
 }: {
   item: WorkshopItem
+  index: number
   isInLibrary: boolean
   downloadTask?: ActivityTask
-  onClose: () => void
   onDownloadQueued: () => void
 }) => {
   const [starting, setStarting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const steamUrl = `https://steamcommunity.com/sharedfiles/filedetails/?id=${item.publishedfileid}`
-  const tagLabel = pickTagLabel(item)
   const size = formatFileSize(item.file_size)
   const finished =
     downloadTask?.stage === "complete" || downloadTask?.stage === "error"
@@ -1171,33 +1271,13 @@ const CardDetailBody = ({
           <img src={item.preview_url} alt={item.title} loading="lazy" />
         ) : null}
       </div>
-      <div className="bwd-title-block">
-        <div className="bwd-title">{item.title}</div>
-        <div className="bwd-id mono">
-          ID {item.publishedfileid}
-          {item.creator && <> · {item.creator}</>}
-        </div>
+      <div className="bwd-meta-line mono">
+        N°{String(index + 1).padStart(3, "0")} · WS-{item.publishedfileid}
+        {size ? ` · ${size}` : ""} · — FPS
       </div>
-      <div className="bwd-meta">
-        <MetaItem k="Genre" v={tagLabel ?? "—"} />
-        <MetaItem k="Size" v={size ?? "—"} mono />
-        <MetaItem k="Status" v={ready ? "in library" : activeStage ?? "available"} />
-        <MetaItem k="ID" v={item.publishedfileid} mono />
-      </div>
-      {!ready && (
-        <div className="bwd-desc mono" style={{ fontSize: 10, letterSpacing: "0.06em", color: "var(--pt-faint)" }}>
-          Resolution/codec available after download.
-        </div>
-      )}
-      {item.description && (
-        <div className="bwd-desc">
-          {item.description.slice(0, 220)}
-          {item.description.length > 220 ? "…" : ""}
-        </div>
-      )}
       <div className="bwd-actions">
         {ready ? (
-          <a href={steamUrl} target="_blank" rel="noreferrer" className="mp-cmd mono">
+          <a href={steamUrl} target="_blank" rel="noreferrer" className="mp-cmd mp-cmd-primary mono">
             OPEN STEAM ↗
           </a>
         ) : activeStage ? (
@@ -1208,10 +1288,11 @@ const CardDetailBody = ({
           <button
             type="button"
             className="mp-cmd mp-cmd-primary mono"
+            data-press="cmd"
             disabled={starting}
             onClick={onDownload}
           >
-            {starting ? "QUEUEING…" : "DOWNLOAD →"}
+            {starting ? "QUEUEING…" : "↓ DOWNLOAD →"}
           </button>
         )}
         {!ready && (
@@ -1220,22 +1301,11 @@ const CardDetailBody = ({
           </a>
         )}
       </div>
+      <div className="bwd-meta-line mono bwd-meta-note">
+        RESOLUTION / CODEC KNOWN AFTER DOWNLOAD
+      </div>
       {err && <div className="bwd-err mono">ERR — {err}</div>}
     </div>
   )
 }
 
-const MetaItem = ({
-  k,
-  v,
-  mono,
-}: {
-  k: string
-  v: string
-  mono?: boolean
-}) => (
-  <div>
-    <div className="bwd-meta-k mono">{k}</div>
-    <div className={`bwd-meta-v ${mono ? "mono" : ""}`}>{v}</div>
-  </div>
-)
