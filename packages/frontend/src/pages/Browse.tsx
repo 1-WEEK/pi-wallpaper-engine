@@ -20,6 +20,7 @@ import { prefersReducedMotion, useReducedMotion } from "../reducedMotion.js"
 import { sounds } from "../sound.js"
 import { canViewTransition, withViewTransition } from "../viewTransition.js"
 import { flyGhost } from "../ghost.js"
+import { flyDownloadReceipt } from "../crossPageGhosts.js"
 import { duration } from "../motionTokens.js"
 import { useLayout } from "../components/mobile/index.js"
 import { useColumnsPerRow } from "../useColumnsPerRow.js"
@@ -1245,6 +1246,7 @@ const CardDetailBody = ({
 }) => {
   const [starting, setStarting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const heroRef = useRef<HTMLDivElement | null>(null)
   const steamUrl = `https://steamcommunity.com/sharedfiles/filedetails/?id=${item.publishedfileid}`
   const size = formatFileSize(item.file_size)
   const finished =
@@ -1255,6 +1257,8 @@ const CardDetailBody = ({
   const onDownload = () => {
     setStarting(true)
     setErr(null)
+    const hero = heroRef.current ?? document.querySelector<HTMLElement>(".bwd-hero")
+    if (hero) flyDownloadReceipt(hero, item.preview_url)
     api
       .download(item.publishedfileid)
       .then(() => {
@@ -1266,7 +1270,7 @@ const CardDetailBody = ({
 
   return (
     <div>
-      <div className="bwd-hero">
+      <div className="bwd-hero" ref={heroRef}>
         {item.preview_url ? (
           <img src={item.preview_url} alt={item.title} loading="lazy" />
         ) : null}

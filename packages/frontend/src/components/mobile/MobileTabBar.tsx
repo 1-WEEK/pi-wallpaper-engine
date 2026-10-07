@@ -135,6 +135,7 @@ export const MobileTabBar = ({ summary, currentLoc, browseHref }: Props) => {
               key={it.label}
               href={it.href}
               data-press="tab"
+              data-nav={it.label.toLowerCase()}
               className={`mobile-tab-bar-item ${active ? "active" : ""}`}
             >
               <span className="mobile-tab-bar-icon">

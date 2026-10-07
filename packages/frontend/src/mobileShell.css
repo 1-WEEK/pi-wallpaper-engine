@@ -652,6 +652,51 @@ html[data-theme="light"] .mobile-sheet-panel {
   color: var(--pt-faint);
   transform: translate(-50%, -50%);
 }
+/* ═══ navpulse (spec §5.1 D3 / §3.6) ═════════════════════════════════
+   1.4s inverse double flash (700ms × 2), drawn on opaque surfaces
+   (TabBar icon / MiniPlayer thumb), never across the glass container. */
+.mobile-tab-bar-item.nav-pulse .mobile-tab-bar-icon {
+  animation: mp-navpulse 1.4s var(--ease-out);
+}
+.mobile-mini-player-thumb.nav-pulse,
+.mobile-mini-player-media.nav-pulse,
+.mobile-mini-player-media:has(.mobile-mini-player-thumb.nav-pulse) {
+  animation: mp-navpulse-thumb 1.4s var(--ease-out);
+}
+
+@keyframes mp-navpulse {
+  0%,
+  100% {
+    filter: none;
+    opacity: 1;
+  }
+  25%,
+  75% {
+    filter: invert(1);
+    opacity: 0.95;
+  }
+  50% {
+    filter: none;
+    opacity: 1;
+  }
+}
+
+@keyframes mp-navpulse-thumb {
+  0%,
+  100% {
+    filter: none;
+    opacity: 1;
+  }
+  25%,
+  75% {
+    filter: invert(1);
+    opacity: 0.95;
+  }
+  50% {
+    filter: none;
+    opacity: 1;
+  }
+}
 
 /* ═══ Reduce transparency (§2.3) — three channels, one attribute ════
    Manual Settings switch OR prefers-reduced-transparency OR

@@ -1177,21 +1177,25 @@ const LibraryDetailMobileBody = ({
 const LibraryDetailMobileFoot = ({
   row,
   intents,
+  onClose,
 }: {
   row: LibraryItem
   intents: Intents
+  onClose?: () => void
 }) => (
   <button
     type="button"
     className="lbmd-play mono"
     data-press="cta"
-    onClick={() =>
+    onClick={() => {
+      const hero = document.querySelector<HTMLElement>(".lbmd-hero")
       intents.play(
         row.workshop_id,
-        document.querySelector<HTMLElement>(".lbmd-hero"),
+        hero,
         row.preview_url || undefined
       )
-    }
+      onClose?.()
+    }}
   >
     PLAY
   </button>
@@ -1410,7 +1414,11 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
         height="88%"
         footer={
           detailRow ? (
-            <LibraryDetailMobileFoot row={detailRow} intents={intents} />
+            <LibraryDetailMobileFoot
+              row={detailRow}
+              intents={intents}
+              onClose={() => setDetailIdx(null)}
+            />
           ) : undefined
         }
       >
