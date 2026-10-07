@@ -810,7 +810,13 @@ button.mp-cmd {
   cursor: pointer;
 }
 
-/* ── Activity mobile: the desktop .act-* ledger at a tighter measure ── */
+/* ── Activity mobile (impl ticket 04, spec §4.3): the desktop .act-*
+   ledger at full fidelity on touch. Correction table applied line by
+   line: count restored at 10px, head→content 16px, section gap 32px,
+   thumb 56×35 = 16:10, TYPE pill 9px, actions 10px = the desktop slot,
+   sheet body margins 16px. Settle beat / stage pill flip / hairline bar
+   / four-phase migration readout all ride the desktop CSS unchanged —
+   only the measure tightens here. ────────────────────────────────── */
 .mobile-shell .act {
   position: static;
   margin: 0;
@@ -818,8 +824,9 @@ button.mp-cmd {
 }
 
 .mobile-shell .act-head {
-  padding: 6px 0 14px;
-  margin-bottom: 18px;
+  align-items: baseline;
+  padding: 6px 0 0;
+  margin-bottom: 16px;
   gap: 12px;
 }
 
@@ -828,9 +835,19 @@ button.mp-cmd {
 }
 
 .mobile-shell .act-count {
-  font-size: 9px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
   text-align: right;
+}
+
+/* QUEUE… command row under the header (§4.3: it left the header's right
+   edge when the count moved in). */
+.mobile-shell .act-query {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: 2px;
 }
 
 .mobile-shell .act-sec-head {
@@ -838,7 +855,7 @@ button.mp-cmd {
 }
 
 .mobile-shell .act-sec-finished {
-  margin-top: 30px;
+  margin-top: 32px;
 }
 
 .mobile-shell .act-row {
@@ -849,18 +866,24 @@ button.mp-cmd {
 
 .mobile-shell .act-thumb {
   width: 56px;
-  height: 36px;
+  height: 35px;
 }
 
 .mobile-shell .act-row-title {
   font-size: 12.5px;
 }
 
+.mobile-shell .act-type {
+  font-size: 9px;
+}
+
 .mobile-shell .act-bar {
   grid-column: 1 / -1;
 }
 
-/* Actions wrap to their own row and grow to ≥44px touch targets. */
+/* Actions wrap to their own row and grow to ≥44px touch targets. The
+   mono size stays 10px — the desktop .act-act slot, no mobile-invented
+   drift (§4.3). */
 .mobile-shell .act-actions {
   grid-column: 1 / -1;
   grid-row: auto;
@@ -874,7 +897,15 @@ button.mp-cmd {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  font-size: 10.5px;
+  font-size: 10px;
+}
+
+/* Carved window over the cmd press dither: the ::after paints last, so
+   the glyph needs the knockout chip above it (§8.1 latent note). The
+   button itself must out-z the band for the chip's stacking context. */
+.mobile-shell .act-actions .act-act.pressing {
+  position: relative;
+  z-index: 2;
 }
 
 .mobile-shell .act-phases {
@@ -893,35 +924,79 @@ button.mp-cmd {
   text-underline-offset: 3px;
 }
 
-/* Housekeeping + the discreet 18+ entry live behind one sheet. */
+/* Housekeeping sheet (§4.3, §3.4 skeleton auto detent): HOUSEKEEPING
+   section head + three 52px ledger command rows (mono name left, dotted
+   leader, → right anchor — the desktop RailRow's mobile dual), then the
+   SAFE QUEUE section with note + Safe/All segmented. */
 .actm-sheet-body {
-  padding: 4px 18px 22px;
+  padding: 4px 16px 22px;
   display: flex;
   flex-direction: column;
 }
 
-.actm-sheet-body .mp-cmd {
-  align-self: flex-start;
-}
-
-.actm-privacy {
-  margin-top: 18px;
-  border-top: 1px solid var(--pt-line);
-  padding-top: 14px;
-}
-
-.actm-privacy-title {
-  font-size: 10px;
+.actm-sec {
+  margin-top: 14px;
+  font-size: 9px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--pt-faint);
+}
+
+.actm-sec:first-child {
+  margin-top: 4px;
+}
+
+.actm-ledger {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 0;
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-line-soft);
+  cursor: pointer;
+}
+
+.actm-ledger-name {
+  position: relative;
+}
+
+.actm-ledger-dots {
+  flex: 1;
+  margin: 0 8px;
+  border-bottom: 1px dotted var(--pt-faint);
+  transform: translateY(-3px);
+}
+
+.actm-ledger-mark {
+  position: relative;
+  font-size: 9px;
+  color: var(--pt-faint);
+}
+
+/* Carved windows keep the row's glyphs legible over the full-row dither
+   band (data-press="row") — the chip must sit above the ::after tile. */
+.mobile-shell .actm-ledger.pressing .actm-ledger-name,
+.mobile-shell .actm-ledger.pressing .actm-ledger-mark {
+  position: relative;
+  z-index: 2;
+  background: var(--pt-bg);
+  box-shadow: 0 0 0 2px var(--pt-bg);
 }
 
 .actm-privacy-note {
   font-size: 12px;
   color: var(--pt-dim);
   line-height: 1.5;
-  margin: 8px 0 12px;
+  margin: 10px 0 12px;
 }
 
 /* New-design segmented control for the mobile sheets (Safe/All, sort):
