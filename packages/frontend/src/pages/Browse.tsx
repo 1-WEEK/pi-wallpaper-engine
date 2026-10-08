@@ -1259,6 +1259,7 @@ const CardDetailBody = ({
     setErr(null)
     sounds.trigger("download")
     const hero = heroRef.current ?? document.querySelector<HTMLElement>(".bwd-hero")
+    if (hero) flyDownloadReceipt(hero, item.preview_url)
     api
       .download(item.publishedfileid)
       .then(() => {

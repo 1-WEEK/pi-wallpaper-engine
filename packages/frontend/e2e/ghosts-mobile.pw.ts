@@ -37,8 +37,7 @@ test.describe("Mobile cross-page ghosts (ticket 06)", () => {
     await expect(navLibrary).toBeVisible()
 
     const dlBtn = sheet.getByRole("button", { name: /DOWNLOAD/ })
-    await dlBtn.tap()
-
+    await dlBtn.click()
     // Nav item receives the .nav-pulse class and animates mp-navpulse
     await expect(navLibrary).toHaveClass(/nav-pulse/, { timeout: 2000 })
     const icon = navLibrary.locator(".mobile-tab-bar-icon")
@@ -140,8 +139,7 @@ test.describe("Mobile cross-page ghosts (ticket 06)", () => {
 
     const navLibrary = page.locator('.mobile-tab-bar-item[data-nav="library"]')
     const dlBtn = sheet.getByRole("button", { name: /DOWNLOAD/ })
-    await dlBtn.tap()
-
+    await dlBtn.click()
     // No ghost spawned
     expect(await page.locator("img[style*='fixed']").count()).toBe(0)
 
