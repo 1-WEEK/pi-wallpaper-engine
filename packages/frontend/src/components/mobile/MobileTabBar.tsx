@@ -12,6 +12,7 @@ import { useEffect, useRef, type ReactNode } from "react"
 import { Link } from "wouter"
 import type { SystemSummary } from "../../api.js"
 import { appIcons } from "../../icons.js"
+import { sounds } from "../../sound.js"
 import { getActiveTaskCount } from "../../activeTaskCount.js"
 
 interface TabItem {
@@ -137,6 +138,9 @@ export const MobileTabBar = ({ summary, currentLoc, browseHref }: Props) => {
               data-press="tab"
               data-nav={it.label.toLowerCase()}
               className={`mobile-tab-bar-item ${active ? "active" : ""}`}
+              onClick={() => {
+                if (!active) sounds.trigger("nav")
+              }}
             >
               <span className="mobile-tab-bar-icon">
                 {it.icon}

@@ -19,6 +19,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { appIcons } from "../../icons.js"
 import { useReducedMotion } from "../../reducedMotion.js"
+import { sounds } from "../../sound.js"
 
 interface Props {
   open: boolean
@@ -216,6 +217,7 @@ export const MobileSheet = ({
     if (cancelled) v = 0
     const projected = y + v * 200
     const dismiss = !cancelled && (projected >= 0.4 * pH || v >= 0.5) && v > -0.3
+    if (dismiss) sounds.trigger("dismiss")
     springTo(y, v * 1000, dismiss ? pH : 0, pH, () => {
       if (dismiss) onCloseRef.current()
     })
@@ -236,6 +238,7 @@ export const MobileSheet = ({
         }}
         onPointerUp={(e) => {
           if (e.isPrimary && scrimDownRef.current && e.target === scrimRef.current) {
+            sounds.trigger("dismiss")
             onCloseRef.current()
           }
           scrimDownRef.current = false
@@ -265,7 +268,10 @@ export const MobileSheet = ({
               type="button"
               className="mobile-sheet-close"
               data-press="icon"
-              onClick={onClose}
+              onClick={() => {
+                sounds.trigger("dismiss")
+                onClose()
+              }}
               aria-label="Close"
             >
               {appIcons.close}

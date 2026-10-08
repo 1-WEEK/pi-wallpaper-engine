@@ -10,6 +10,7 @@ import { appIcons } from "../../icons.js"
 import { PLAY_LIMIT_MODES, PLAY_LIMIT_OPTIONS, playLimitMinutesLeft } from "../../playLimit.js"
 import { DisplayPowerToggle } from "../DisplayPowerToggle.js"
 import { MobileSheet } from "./MobileSheet.js"
+import { sounds } from "../../sound.js"
 
 interface Props {
   summary: SystemSummary | null
@@ -105,7 +106,8 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
   // the outage rather than read as "nothing playing".
   const storageDown = summary !== null && !summary.status.storage.available
 
-  const runAction = async (action: () => Promise<unknown>) => {
+  const runAction = async (action: () => Promise<unknown>, triggerSound = false) => {
+    if (triggerSound) sounds.trigger("transport")
     setPending(true)
     try {
       await action()
@@ -117,6 +119,7 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
 
   const togglePower = async () => {
     if (!display || !display.configured) return
+    sounds.trigger("display")
     setDisplayPending(true)
     try {
       if (display.state === "on") await api.displayOff()
@@ -186,7 +189,7 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
           className="mobile-mini-player-btn"
           aria-label="Previous wallpaper"
           disabled={pending}
-          onClick={() => void runAction(() => api.playerPrev())}
+          onClick={() => void runAction(() => api.playerPrev(), true)}
         >
           {appIcons.skipPrev}
         </button>
@@ -197,7 +200,7 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
           aria-label={player?.playing ? "Pause" : "Play"}
           disabled={!hasCurrent || pending}
           onClick={() =>
-            void runAction(() => (player?.playing ? api.pause() : api.resume()))
+            void runAction(() => (player?.playing ? api.pause() : api.resume()), true)
           }
         >
           {player?.playing ? appIcons.pause : appIcons.play}
@@ -208,7 +211,7 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
           className="mobile-mini-player-btn"
           aria-label="Next wallpaper"
           disabled={pending}
-          onClick={() => void runAction(() => api.playerNext())}
+          onClick={() => void runAction(() => api.playerNext(), true)}
         >
           {appIcons.skipNext}
         </button>
