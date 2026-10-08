@@ -371,3 +371,12 @@ class SoundEngine {
 }
 
 export const sounds = new SoundEngine()
+
+interface WindowWithSounds extends Window {
+  __pwe_sounds?: SoundEngine
+}
+
+if (typeof window !== "undefined") {
+  const win = window as WindowWithSounds
+  win.__pwe_sounds = sounds
+}

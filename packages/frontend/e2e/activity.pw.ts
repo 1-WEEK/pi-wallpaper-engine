@@ -623,3 +623,412 @@ test.describe("Activity page (ticket 09)", () => {
     await expect(page.locator(".act-count")).toHaveText("0 ACTIVE — 2 FINISHED — 1 FAILED")
   })
 })
+
+/* ── Mobile Activity (mobile-impl ticket 04, spec §4.3 / §7.3) ────────
+   The mobile page runs the SAME lifted queue state machine as desktop:
+   storage migration polling + row synthesis + settle beat + done/fail
+   sound triggers live in `useActivityQueue`. These assertions pin the
+   §4.3 fidelity restorations and the §4.3 correction table. */
+test.describe("Mobile Activity (ticket 04)", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+
+  test("single-slot title, restored header count, and the QUEUE command row", async ({ page }) => {
+    await mockShellEndpoints(page, { mockTasks: false })
+    const active = [
+      mockTask({ task_id: "dl-1", task_type: "download", title: "Neon Drive", stage: "downloading" }),
+    ]
+    const history = [
+      mockTask({
+        task_id: "dl-2",
+        task_type: "download",
+        title: "Done Paper",
+        stage: "complete",
+        finished_at: Date.now() - 30_000,
+        percent: 100,
+      }),
+      mockTask({
+        task_id: "tc-1",
+        task_type: "transcode",
+        title: "Broken Paper",
+        stage: "failed",
+        message: "ffmpeg exited 1",
+        finished_at: Date.now() - 20_000,
+        percent: null,
+      }),
+    ]
+    await mockTaskQueues(page, { getActive: () => active, getHistory: () => history })
+
+    await page.goto("/activity")
+    await expect(page.locator(".mobile-shell")).toBeVisible()
+
+    // §4.3 correction: the title is a single slot — "Activity" only, the
+    // desktop rail chrome "/ Queue" does not render on touch.
+    const title = page.locator("h1.act-title")
+    await expect(title).toHaveText("Activity")
+
+    // §4.3 restoration: the count readout renders `n ACTIVE — m FINISHED — k FAILED`.
+    await expect(page.locator(".act-count")).toHaveText("1 ACTIVE — 2 FINISHED — 1 FAILED")
+
+    // §4.3 correction: QUEUE… moved from the header's right edge to a
+    // command row UNDER the header (44px touch target).
+    const queue = page.getByRole("button", { name: "QUEUE…", exact: true })
+    await expect(queue).toBeVisible()
+    await expect(page.locator(".act-head", { has: queue })).toHaveCount(0)
+    const head = page.locator(".act-head")
+    const headBox = (await head.boundingBox())!
+    const queueBox = (await queue.boundingBox())!
+    expect(queueBox.y).toBeGreaterThanOrEqual(headBox.y + headBox.height)
+    expect(queueBox.height).toBeGreaterThanOrEqual(44)
+  })
+
+  test("mobile settle beat: 1.4s dwell, COMPLETE pill flashes inverse ×2, then drops to FINISHED", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    await mockShellEndpoints(page, { mockTasks: false })
+    let active: ActivityTask[] = [
+      mockTask({ task_id: "dl-1", task_type: "download", title: "Settle Paper", stage: "downloading" }),
+    ]
+    let history: ActivityTask[] = []
+    await mockTaskQueues(page, { getActive: () => active, getHistory: () => history })
+
+    await page.goto("/activity")
+    await expect(activeSection(page).locator(".act-row", { hasText: "Settle Paper" })).toHaveCount(1)
+
+    active = []
+    history = [
+      mockTask({
+        task_id: "dl-1",
+        task_type: "download",
+        title: "Settle Paper",
+        stage: "complete",
+        finished_at: Date.now(),
+        percent: 100,
+      }),
+    ]
+
+    const pill = page.locator(".act-row", { hasText: "Settle Paper" }).locator(".act-stage")
+    // In-page MutationObserver records every mid-window fact the frame the
+    // settle class lands (the desktop settle test registers why expect
+    // polling alone is too coarse under suite load).
+    const beatPromise = page.evaluate(
+      () =>
+        new Promise<{
+          holdMs: number
+          pillText: string
+          animName: string
+          animDur: string
+          animIter: string
+        }>((resolve) => {
+          const active = document.querySelector('section[aria-label="Active tasks"]')!
+          const finished = document.querySelector('section[aria-label="Finished tasks"]')!
+          let settleAt = -1
+          let pillText = ""
+          let animName = ""
+          let animDur = ""
+          let animIter = ""
+          const obs = new MutationObserver(() => {
+            const row = [...active.querySelectorAll(".act-row")].find((r) =>
+              r.textContent?.includes("Settle Paper")
+            )
+            if (settleAt < 0) {
+              if (row?.classList.contains("act-settle")) {
+                settleAt = performance.now()
+                const pillEl = row.querySelector(".act-stage")
+                pillText = pillEl?.textContent ?? ""
+                const cs = pillEl ? getComputedStyle(pillEl) : null
+                animName = cs?.animationName ?? ""
+                animDur = cs?.animationDuration ?? ""
+                animIter = cs?.animationIterationCount ?? ""
+              }
+            } else if (!row && finished.textContent?.includes("Settle Paper")) {
+              obs.disconnect()
+              resolve({ holdMs: performance.now() - settleAt, pillText, animName, animDur, animIter })
+            }
+          })
+          obs.observe(document.body, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ["class"],
+          })
+        })
+    )
+    await expect(pill).toHaveText("COMPLETE", { timeout: 15000 })
+    await expect(finishedSection(page).locator(".act-row", { hasText: "Settle Paper" })).toHaveCount(1, {
+      timeout: 15000,
+    })
+    const beat = await beatPromise
+    expect(beat.pillText).toBe("COMPLETE")
+    expect(beat.animName).toBe("act-flash")
+    expect(beat.animDur).toBe("0.7s")
+    expect(beat.animIter).toBe("2")
+    expect(beat.holdMs).toBeGreaterThan(1000)
+    await expect(activeSection(page).locator(".act-row")).toHaveCount(0)
+  })
+
+  test("mobile migration row: four-phase readout, hidden during the settle dwell, counts as ACTIVE", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    await page.route("**/api/auth/setup-state", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ enabled: false, setup_complete: true }),
+      })
+    )
+    await page.route("**/api/system/summary", (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(summary) })
+    )
+    await mockTaskQueues(page, { getActive: () => [], getHistory: () => [] })
+
+    let migration: {
+      state: "running" | "done" | "failed"
+      moved_bytes: number
+      total_bytes: number
+      error: string | null
+    } | null = { state: "running", moved_bytes: 400_000_000, total_bytes: 1_000_000_000, error: null }
+    await page.route("**/api/storage", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          available: true,
+          data_root: "/mock/data",
+          default_root: "/mock/data",
+          using_default: true,
+          last_error: null,
+          migration,
+        }),
+      })
+    )
+
+    await page.goto("/activity")
+    await expect(page.locator(".mobile-shell")).toBeVisible()
+    const row = activeSection(page).locator(".act-row", { hasText: "Storage migration" })
+    await expect(row).toBeVisible()
+    await expect(row.locator(".act-type")).toHaveText("MIGRATION")
+    // The four-phase readout is restored on mobile: COPY current, the rest
+    // unreached while bytes are still moving.
+    await expect(row.locator(".act-phases")).toContainText("◉ COPY")
+    await expect(row.locator(".act-phases")).toContainText("○ VERIFY")
+    await expect(row.locator(".act-phases")).toContainText("○ SWITCH")
+    await expect(row.locator(".act-phases")).toContainText("○ CLEANUP")
+    await expect(page.locator(".act-count")).toHaveText("1 ACTIVE — 0 FINISHED — 0 FAILED")
+
+    // Land the migration: the row starts the settle dwell, and the phase
+    // readout is hidden during it (desktop parity: phases render only
+    // while !terminal).
+    migration = { state: "done", moved_bytes: 1_000_000_000, total_bytes: 1_000_000_000, error: null }
+    const settleRow = page.locator(".act-row", { hasText: "Storage migration" })
+    await expect(settleRow).toHaveClass(/act-settle/, { timeout: 15000 })
+    await expect(settleRow.locator(".act-stage")).toHaveText("COMPLETE")
+    await expect(settleRow.locator(".act-phases")).toHaveCount(0)
+
+    await expect(finishedSection(page).locator(".act-row", { hasText: "Storage migration" })).toHaveCount(1, {
+      timeout: 15000,
+    })
+  })
+
+  test("mobile row actions: downloads cancel, transcodes cannot (production parity)", async ({ page }) => {
+    await mockShellEndpoints(page, { mockTasks: false })
+    const active = [
+      mockTask({ task_id: "dl-1", task_type: "download", title: "DL Paper", stage: "downloading" }),
+      mockTask({ task_id: "tc-1", task_type: "transcode", title: "TX Paper", stage: "running" }),
+    ]
+    await mockTaskQueues(page, { getActive: () => active, getHistory: () => [] })
+
+    await page.goto("/activity")
+    const dlRow = activeSection(page).locator(".act-row", { hasText: "DL Paper" })
+    const tcRow = activeSection(page).locator(".act-row", { hasText: "TX Paper" })
+    await expect(dlRow.getByRole("button", { name: "CANCEL" })).toBeVisible()
+    await expect(tcRow.getByRole("button", { name: "CANCEL" })).toHaveCount(0)
+
+    // §4.3 correction: mono 10px copied from the desktop .act-act slot.
+    const cancel = dlRow.getByRole("button", { name: "CANCEL" })
+    expect(await cancel.evaluate((el) => getComputedStyle(el).fontSize)).toBe("10px")
+    expect((await cancel.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    // Press vocabulary: the dither band + carved window replace any
+    // :active flat-fill on the shell.
+    await expect(cancel).toHaveAttribute("data-press", "cmd")
+  })
+
+  test("mobile row action press: drag-away cancels the commit", async ({ page }) => {
+    await mockShellEndpoints(page, { mockTasks: false })
+    const active = [
+      mockTask({ task_id: "dl-1", task_type: "download", title: "DL Paper", stage: "downloading" }),
+    ]
+    await mockTaskQueues(page, { getActive: () => active, getHistory: () => [] })
+    let cancelHits = 0
+    await page.route("**/api/download/*/cancel", (route) => {
+      cancelHits += 1
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) })
+    })
+
+    await page.goto("/activity")
+    const cancel = activeSection(page)
+      .locator(".act-row", { hasText: "DL Paper" })
+      .getByRole("button", { name: "CANCEL" })
+    await expect(cancel).toBeVisible()
+
+    // press → dither on → drag past the 10px slop → release outside: no
+    // commit fires (the press vocabulary's drag-away cancel).
+    const box = (await cancel.boundingBox())!
+    const cx = box.x + box.width / 2
+    const cy = box.y + box.height / 2
+    await page.mouse.move(cx, cy)
+    await page.mouse.down()
+    await expect(cancel).toHaveClass(/pressing/)
+    await page.mouse.move(cx + 30, cy + 30, { steps: 4 })
+    await page.mouse.up()
+    await expect(cancel).not.toHaveClass(/pressing/)
+    await page.waitForTimeout(200)
+    expect(cancelHits).toBe(0)
+
+    // And a clean press still commits.
+    await cancel.click()
+    await expect.poll(() => cancelHits).toBe(1)
+  })
+
+  test("housekeeping sheet: auto detent, 52px ledger command rows, Safe/All segmented", async ({
+    page,
+  }) => {
+    await mockShellEndpoints(page, { mockTasks: false })
+    const active = [
+      mockTask({
+        task_id: "dl-adult",
+        task_type: "download",
+        title: "Adult Paper",
+        stage: "downloading",
+        content_rating: "Mature",
+      }),
+    ]
+    await mockTaskQueues(page, { getActive: () => active, getHistory: () => [] })
+    const deletes: string[] = []
+    await page.route("**/api/download/tasks**", (route) => {
+      if (route.request().method() !== "DELETE") return route.fallback()
+      deletes.push(new URL(route.request().url()).search)
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) })
+    })
+
+    await page.goto("/activity")
+    await page.getByRole("button", { name: "QUEUE…", exact: true }).tap()
+    const sheet = page.locator(".mobile-sheet.open")
+    await expect(sheet.locator(".mobile-sheet-title")).toHaveText("Queue")
+
+    // §4.3: HOUSEKEEPING section head (9px mono) + three 52px ledger
+    // command rows (mono name left, dotted leader, → right anchor).
+    await expect(sheet.locator(".actm-sec", { hasText: "HOUSEKEEPING" })).toBeVisible()
+    const rows = sheet.locator(".actm-ledger")
+    await expect(rows).toHaveCount(3)
+    await expect(rows.nth(0)).toContainText("Clear completed")
+    await expect(rows.nth(1)).toContainText("Clear failed")
+    await expect(rows.nth(2)).toContainText("Retry failed transcodes")
+    for (const name of ["Clear completed", "Clear failed", "Retry failed transcodes"]) {
+      const box = (await sheet.getByRole("button", { name: `${name} →` }).boundingBox())!
+      expect(box.height).toBeGreaterThanOrEqual(52)
+    }
+
+    // §4.3: SAFE QUEUE section + note + Safe/All segmented (aria-pressed
+    // assertion surface unchanged from §7.3).
+    await expect(sheet.locator(".actm-sec", { hasText: "SAFE QUEUE" })).toBeVisible()
+    await expect(sheet.locator(".actm-privacy-note")).toContainText("1 mature task hidden")
+    const all = sheet.getByRole("button", { name: "All", exact: true })
+    const safe = sheet.getByRole("button", { name: "Safe", exact: true })
+    await expect(safe).toHaveAttribute("aria-pressed", "true")
+    await expect(all).toHaveAttribute("aria-pressed", "false")
+
+    // The 18+ row is filtered at rest; All reveals it in this session.
+    await expect(page.locator(".act-row", { hasText: "Adult Paper" })).toHaveCount(0)
+    await all.tap()
+    await expect(all).toHaveAttribute("aria-pressed", "true")
+    await expect(page.locator(".act-row", { hasText: "Adult Paper" })).toHaveCount(1)
+
+    // Ledger rows execute on release commit.
+    await sheet.getByRole("button", { name: "Clear completed →" }).tap()
+    await expect.poll(() => deletes).toContain("?stage=complete")
+  })
+
+  test("§4.3 correction table: 16 / 32 / 56×35 / 9px / 16 sheet margins", async ({ page }) => {
+    await mockShellEndpoints(page, { mockTasks: false })
+    const active = [
+      mockTask({
+        task_id: "dl-1",
+        task_type: "download",
+        title: "Neon Drive",
+        stage: "downloading",
+        preview_url: "https://example.com/p.jpg",
+      }),
+    ]
+    const history = [
+      mockTask({
+        task_id: "dl-2",
+        task_type: "download",
+        title: "Done Paper",
+        stage: "complete",
+        finished_at: Date.now() - 30_000,
+        percent: 100,
+      }),
+    ]
+    await mockTaskQueues(page, { getActive: () => active, getHistory: () => history })
+
+    await page.goto("/activity")
+
+    // Header → content 16px (§6 D5).
+    expect(await page.locator(".act-head").evaluate((el) => getComputedStyle(el).marginBottom)).toBe("16px")
+    // Section gap 32px (§6 D5).
+    expect(
+      await page.locator(".act-sec-finished").evaluate((el) => getComputedStyle(el).marginTop)
+    ).toBe("32px")
+    // Thumb 56×35 = 16:10 (§6 D2).
+    const thumb = (await activeSection(page).locator(".act-thumb").first().boundingBox())!
+    expect(thumb.width).toBe(56)
+    expect(thumb.height).toBe(35)
+    // TYPE pill 9px (§6 D6 floor).
+    expect(
+      await activeSection(page).locator(".act-type").first().evaluate((el) => getComputedStyle(el).fontSize)
+    ).toBe("9px")
+
+    // Sheet body margins 16px.
+    await page.getByRole("button", { name: "QUEUE…", exact: true }).tap()
+    const body = page.locator(".mobile-sheet.open .mobile-sheet-body .actm-sheet-body")
+    expect(await body.evaluate((el) => getComputedStyle(el).paddingLeft)).toBe("16px")
+    expect(await body.evaluate((el) => getComputedStyle(el).paddingRight)).toBe("16px")
+  })
+
+  test("mobile reduced motion: settle skips the dwell, terminal rows drop straight to FINISHED", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await mockShellEndpoints(page, { mockTasks: false })
+    let active: ActivityTask[] = [
+      mockTask({ task_id: "dl-1", task_type: "download", title: "RM Paper", stage: "downloading" }),
+    ]
+    let history: ActivityTask[] = []
+    await mockTaskQueues(page, { getActive: () => active, getHistory: () => history })
+
+    await page.goto("/activity")
+    await expect(activeSection(page).locator(".act-row", { hasText: "RM Paper" })).toHaveCount(1)
+
+    active = []
+    history = [
+      mockTask({
+        task_id: "dl-1",
+        task_type: "download",
+        title: "RM Paper",
+        stage: "complete",
+        finished_at: Date.now(),
+        percent: 100,
+      }),
+    ]
+
+    // §5.1 table: the TS layer skips the dwell entirely — the row lands in
+    // FINISHED on the next refresh window and the settle class never mounts.
+    const landed = finishedSection(page).locator(".act-row", { hasText: "RM Paper" })
+    await expect(landed.locator(".act-stage")).toHaveText("COMPLETE", { timeout: 15000 })
+    await expect(activeSection(page).locator(".act-row", { hasText: "RM Paper" })).toHaveCount(0)
+    await expect(page.locator(".act-settle")).toHaveCount(0)
+    await expect(page.locator(".act-count")).toHaveText("0 ACTIVE — 1 FINISHED — 0 FAILED")
+  })
+})

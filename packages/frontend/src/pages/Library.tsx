@@ -45,6 +45,16 @@ const playableMeta = (row: LibraryItem): string => {
   return saved !== null && saved > 0 ? `${base} ↓${saved}%` : base
 }
 
+/** Mobile card meta contraction (mobile spec §4.2): `{res} · {size}` +
+ *  optional ` ↓{n}%`. The codec drops to the detail sheet's
+ *  SOURCE/OPTIMIZED lines — the readout never truncates, a token does
+ *  (§6 D6.5/D7.3). */
+const mobileCardMeta = (row: LibraryItem): string => {
+  const base = `${playableResolution(row)} · ${formatBytes(playableSize(row))}`
+  const saved = spaceSavedPercent(row)
+  return saved !== null && saved > 0 ? `${base} ↓${saved}%` : base
+}
+
 /** TX pill label (spec §4.2: running/pending/failed, non-default states
  *  only) — null when the row is in a default state (completed/skipped). */
 const txLabel = (row: LibraryItem): string | null => {
@@ -886,9 +896,11 @@ const LibraryDetail = ({
   )
 }
 
-/* The detail body is shared: desktop renders it inside the ldet panel,
-   mobile (spec §9) inside the MobileSheet — same rows, same commands, the
-   ghost/VT chrome stays desktop-only. */
+/* The desktop detail body (the ldet panel's content below the media). The
+   mobile sheet body is a separate component — the two no longer share
+   markup: the mobile body deletes the duplicate h2 (the sheet header owns
+   the title), moves PLAY into the sticky foot CTA, and re-homes PREV/NEXT
+   onto their own command row (mobile spec §4.2). */
 const LibraryDetailBody = ({
   row,
   nowPlaying,
@@ -918,17 +930,8 @@ const LibraryDetailBody = ({
   const added = new Date(row.downloaded_at).toISOString().slice(0, 10)
   const optimized = row.transcoded_resolution !== null && row.transcoded_size !== null
 
-  const { mobile } = useLayout()
-
   return (
         <div className="ldet-body">
-          {mobile && (
-            <div className="ldet-media">
-              {row.preview_url ? <img src={row.preview_url} alt={row.title} /> : null}
-              {nowPlaying && <span className="lib-now ldet-now mono">NOW PLAYING</span>}
-              <TxPill row={row} />
-            </div>
-          )}
           <h2 className="ldet-title">{row.title}</h2>
           <div className="ldet-meta mono">
             ID {row.workshop_id} · ADDED {added}
@@ -1024,10 +1027,188 @@ const LibraryDetailBody = ({
   )
 }
 
-/* ── Mobile (spec §9): the contact-sheet grid degraded to touch — 2-up
-     cards whose single tap target opens the desktop detail body inside a
-     Sheet. Page actions are understated mono commands; the discreet 18+
-     entry sits in the header (same resting grammar as the desktop rail). ── */
+/* ── Mobile detail Sheet body (mobile spec §4.2): hero 16:9 frame-free +
+     occupancy chips (same grammar as the grid), N°·ID·ADDED compound
+     readout, SOURCE/OPTIMIZED twin lines, the mono command cluster, and
+     the ‹ PREV / NEXT › command row. PLAY is NOT here — it lives in the
+     sheet's sticky foot as the 48px inverse CTA (LbDetailFoot below).
+     DELETE = vocabulary #7 two-step: armed danger hairline chip, the
+     second press dithers red (danger tile, see CSS), destructive commit
+     carries no XOR beat, 2.2s auto-disarm. ── */
+const LibraryDetailMobileBody = ({
+  row,
+  rowIndex,
+  nowPlaying,
+  intents,
+  onPreview,
+  onDelete,
+  onStep,
+}: {
+  row: LibraryItem
+  rowIndex: number
+  nowPlaying: boolean
+  intents: Intents
+  onPreview: (row: LibraryItem) => void
+  onDelete: (id: string) => void
+  onStep: (dir: 1 | -1) => void
+}) => {
+  const [confirming, setConfirming] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+    },
+    []
+  )
+
+  const saved = spaceSavedPercent(row)
+  const added = new Date(row.downloaded_at).toISOString().slice(0, 10)
+  const optimized = row.transcoded_resolution !== null && row.transcoded_size !== null
+  const tx = txLabel(row)
+
+  return (
+    <div className="lbmd">
+      <div className="lbmd-hero">
+        {row.preview_url ? <img src={row.preview_url} alt="" /> : null}
+        {nowPlaying && <span className="lbm-now mono">NOW PLAYING</span>}
+        {tx && (
+          <span className={`lbm-tx mono${row.transcode_status === "failed" ? " lbm-tx-err" : ""}`}>
+            {tx.toUpperCase()}
+          </span>
+        )}
+        {row.transcode_status === "running" && (
+          <span className="lbm-txbar" aria-hidden="true">
+            <span
+              className="lbm-txbar-fill"
+              style={{ transform: `scaleX(${row.transcode_progress / 100})` }}
+            />
+          </span>
+        )}
+      </div>
+      <div className="lbmd-meta mono">
+        N°{String(rowIndex + 1).padStart(3, "0")} · ID {row.workshop_id} · ADDED {added}
+      </div>
+      <div className="lbmd-specs mono">
+        <span>
+          SOURCE — {row.source_resolution} · {row.source_codec.toUpperCase()} ·{" "}
+          {formatBytes(row.source_size)}
+        </span>
+        {optimized && (
+          <span>
+            OPTIMIZED — {row.transcoded_resolution} ·{" "}
+            {(row.transcoded_codec ?? "").toUpperCase()} ·{" "}
+            {formatBytes(row.transcoded_size ?? 0)}
+            {saved !== null && saved > 0 ? ` · ↓${saved}%` : ""}
+          </span>
+        )}
+        {!optimized && row.transcode_status === "skipped" && <span>OPTIMIZED — SKIPPED</span>}
+        {row.transcode_status === "failed" && (
+          <span className="lbmd-specs-err">OPTIMIZED — FAILED</span>
+        )}
+      </div>
+      <div className="lbmd-cmds">
+        {canPreview(row) && (
+          <button
+            type="button"
+            className="mp-cmd mono"
+            data-press="cmd"
+            onClick={() => onPreview(row)}
+            aria-label="Preview this wallpaper in the browser"
+          >
+            PREVIEW
+          </button>
+        )}
+        {canRetranscode(row.transcode_status) && (
+          <button
+            type="button"
+            className="mp-cmd mono"
+            data-press="cmd"
+            onClick={() => intents.transcode(row.workshop_id)}
+          >
+            TRANSCODE
+          </button>
+        )}
+        <button
+          type="button"
+          className={`mp-cmd mp-cmd-danger mono${confirming ? " lbm-armed" : ""}`}
+          data-press="cmd"
+          onClick={() => {
+            if (confirming) {
+              if (timer.current) clearTimeout(timer.current)
+              setConfirming(false)
+              onDelete(row.workshop_id)
+            } else {
+              // Destructive confirm armed (ticket 13): warn family.
+              sounds.trigger("armed")
+              setConfirming(true)
+              timer.current = setTimeout(() => setConfirming(false), 2200)
+            }
+          }}
+        >
+          {confirming ? "SURE?" : "DELETE"}
+        </button>
+        <a
+          className="mp-cmd mono"
+          data-press="cmd"
+          href={`https://steamcommunity.com/sharedfiles/filedetails/?id=${row.workshop_id}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          STEAM ↗
+        </a>
+      </div>
+      <div className="lbmd-step">
+        <button type="button" className="mp-cmd mono" data-press="cmd" onClick={() => onStep(-1)}>
+          ‹ PREV
+        </button>
+        <button type="button" className="mp-cmd mono" data-press="cmd" onClick={() => onStep(1)}>
+          NEXT ›
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* The mobile detail sheet's sticky foot: PLAY 48px inverse-block CTA
+   (mobile spec §4.2). The release fires the play ghost out of the sheet
+   hero toward the MiniPlayer thumb (05 D3, source = hero media — the
+   played object is the media, not the button). */
+const LibraryDetailMobileFoot = ({
+  row,
+  intents,
+  onClose,
+}: {
+  row: LibraryItem
+  intents: Intents
+  onClose?: () => void
+}) => (
+  <button
+    type="button"
+    className="lbmd-play mono"
+    data-press="cta"
+    onClick={() => {
+      const hero = document.querySelector<HTMLElement>(".lbmd-hero")
+      intents.play(
+        row.workshop_id,
+        hero,
+        row.preview_url || undefined
+      )
+      onClose?.()
+    }}
+  >
+    PLAY
+  </button>
+)
+
+/* ── Mobile (mobile spec §4.2): the contact sheet at touch measure —
+     2-up cards with the contracted `{res} · {size} [ ↓n%]` meta and
+     read-only occupancy chips; the whole card is one atomic tap target
+     whose commit opens the §3.4 detail Sheet (88% detent). The desktop
+     hover action cluster has NO card-level carrier on mobile — its
+     PLAY/PREVIEW/DELETE intents live in the detail sheet (final ruling,
+     §4.2). The discreet 18+ reveal command sits in the page header with
+     a 44px hit box (same resting grammar as the desktop rail). ── */
 
 const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const [showAdult, setShowAdult] = useState(false)
@@ -1035,6 +1216,8 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
   const [notice, setNotice] = useState<string | null>(null)
   const [previewItem, setPreviewItem] = useState<LibraryItem | null>(null)
   const [detailIdx, setDetailIdx] = useState<number | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const gridRef = useRef<HTMLDivElement | null>(null)
   const { data: rows = [], isLoading, error: loadError, mutate } = useLibraryRows()
   const intents = useIntents(
     () => mutate().then(() => undefined),
@@ -1064,6 +1247,9 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
       .then(() => api.play(start.workshop_id))
       .then(() => {
         setError(null)
+        setNotice(
+          `${mode === "shuffle" ? "SHUFFLE" : "PLAY ALL"} — ${safeRows.length} WALLPAPERS · START ${start.title.toUpperCase()}`
+        )
         onSystemRefresh()
       })
       .catch((e: Error) => setError(e.message))
@@ -1089,11 +1275,9 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
   }
 
   return (
-    <div className="mp">
+    <div className="mp" ref={rootRef}>
       <header className="mp-head pt-enter">
-        <h1 className="mp-title">
-          Library<span className="mp-title-slash"> / </span>Local
-        </h1>
+        <h1 className="mp-title">Library</h1>
         <div className="lbm-head-side">
           <span className="mp-count mono">
             {visibleRows.length} ITEMS — {formatBytes(totalSize)}
@@ -1101,6 +1285,7 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
           <button
             type="button"
             className={`mp-secret${showAdult ? " is-on" : ""}`}
+            data-press="cmd"
             aria-label="Toggle adult content"
             aria-pressed={showAdult}
             onClick={() => setShowAdult((s) => !s)}
@@ -1112,14 +1297,29 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
 
       {visibleRows.length > 0 && (
         <div className="lbm-actions">
-          <button type="button" className="mp-cmd mono" onClick={() => playRotation("sequential")}>
+          <button
+            type="button"
+            className="mp-cmd mono"
+            data-press="cmd"
+            onClick={() => playRotation("sequential")}
+          >
             PLAY ALL →
           </button>
-          <button type="button" className="mp-cmd mono" onClick={() => playRotation("shuffle")}>
+          <button
+            type="button"
+            className="mp-cmd mono"
+            data-press="cmd"
+            onClick={() => playRotation("shuffle")}
+          >
             SHUFFLE →
           </button>
           {hasSweepable(rows) && (
-            <button type="button" className="mp-cmd mono" onClick={transcodeAll}>
+            <button
+              type="button"
+              className="mp-cmd mono"
+              data-press="cmd"
+              onClick={transcodeAll}
+            >
               TRANSCODE ALL →
             </button>
           )}
@@ -1148,7 +1348,19 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
         />
       )}
 
-      <div className="lbm-grid">
+      {/* Spine (§6 D1): the measured coordinate overlay rides the same
+          GridOverlay engine as desktop/Browse; classPrefix "mp" keeps the
+          desktop .bws-gridlines class off the mobile shell (07 contract). */}
+      <GridOverlay
+        rootRef={rootRef}
+        gridRef={gridRef}
+        itemCount={visibleRows.length}
+        cardSelector=".lbm-card"
+        heightVar="--lbm-card-h"
+        classPrefix="mp"
+      />
+
+      <div className="lbm-grid" ref={gridRef}>
         {visibleRows.map((row, i) => {
           const active = row.workshop_id === nowPlayingId
           const tx = txLabel(row)
@@ -1156,11 +1368,13 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
             <button
               key={row.workshop_id}
               type="button"
+              data-press="card"
               className="lbm-card pt-enter"
               style={{ "--pt-i": i } as React.CSSProperties}
               onClick={() => setDetailIdx(i)}
               aria-label={`Open ${row.title}`}
             >
+              <span className="lbm-card-n mono">N°{String(i + 1).padStart(3, "0")}</span>
               <span className="lbm-card-media">
                 {row.preview_url ? (
                   <img src={row.preview_url} alt="" loading="lazy" />
@@ -1171,27 +1385,47 @@ const LibraryMobile = ({ nowPlayingId, onSystemRefresh }: Props) => {
                     {tx.toUpperCase()}
                   </span>
                 )}
+                {row.transcode_status === "running" && (
+                  <span className="lbm-txbar" aria-hidden="true">
+                    <span
+                      className="lbm-txbar-fill"
+                      style={{ transform: `scaleX(${row.transcode_progress / 100})` }}
+                    />
+                  </span>
+                )}
               </span>
               <span className="lbm-card-caption">
                 <span className="lbm-card-title">{row.title}</span>
-                <span className="lbm-card-meta mono">{playableMeta(row)}</span>
+                <span className="lbm-card-meta mono">{mobileCardMeta(row)}</span>
               </span>
             </button>
           )
         })}
       </div>
 
-      {/* Detail = the desktop ldet-* body inside the Sheet; prev/next steps
-          through the visible list. No ghost/VT on mobile (spec §9). */}
+      {/* Detail = the §3.4 sheet skeleton at the 88% detent (normalized
+          from the old 94%); the body is mobile-native (lbmd-*) and the
+          foot carries the sticky 48px PLAY CTA. Cards are atomic — the
+          desktop hover action cluster's mobile carrier is this sheet. */}
       <MobileSheet
         open={detailRow !== null}
         onClose={() => setDetailIdx(null)}
         title={detailRow?.title}
-        height="94%"
+        height="88%"
+        footer={
+          detailRow ? (
+            <LibraryDetailMobileFoot
+              row={detailRow}
+              intents={intents}
+              onClose={() => setDetailIdx(null)}
+            />
+          ) : undefined
+        }
       >
-        {detailRow && (
-          <LibraryDetailBody
+        {detailRow && detailIdx !== null && (
+          <LibraryDetailMobileBody
             row={detailRow}
+            rowIndex={detailIdx}
             nowPlaying={detailRow.workshop_id === nowPlayingId}
             intents={intents}
             onPreview={(r) => {

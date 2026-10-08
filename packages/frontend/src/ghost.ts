@@ -42,6 +42,14 @@ export const flyGhost = ({
     onDone?.()
     return
   }
+  const fromCenterX = from.left + from.width / 2
+  const fromCenterY = from.top + from.height / 2
+  const toCenterX = to.left + to.width / 2
+  const toCenterY = to.top + to.height / 2
+  if (Math.hypot(toCenterX - fromCenterX, toCenterY - fromCenterY) < 120) {
+    onDone?.()
+    return
+  }
   if (channel) inflight.get(channel)?.kill()
   const sx = to.width / from.width
   const sy = to.height / from.height
@@ -66,23 +74,39 @@ export const flyGhost = ({
   })
   document.body.appendChild(ghost)
   let killed = false
-  const anim = ghost.animate(
-    [
-      { transform: "translate(0px, 0px) scale(1, 1)", borderRadius: fromRadius },
-      {
-        transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${sx}, ${sy})`,
-        borderRadius: scaleRadius(toRadius),
-      },
-    ],
-    { duration: ms, easing: easeOut, fill: "forwards" }
-  )
-  anim.finished.finally(() => {
+  if (typeof ghost.animate !== "function") {
+    ghost.remove()
+    onDone?.()
+    return
+  }
+  let anim: Animation
+  try {
+    anim = ghost.animate(
+      [
+        { transform: "translate(0px, 0px) scale(1, 1)", borderRadius: fromRadius },
+        {
+          transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${sx}, ${sy})`,
+          borderRadius: scaleRadius(toRadius),
+        },
+      ],
+      { duration: ms, easing: easeOut, fill: "forwards" }
+    )
+  } catch {
+    ghost.remove()
+    onDone?.()
+    return
+  }
+  const finish = () => {
     ghost.remove()
     if (channel && inflight.get(channel)?.ghost === ghost) inflight.delete(channel)
-    // A channel-killed ghost is replaced, not completed — only the surviving
-    // flight may run the landing beat (e.g. the navpulse receipt).
     if (!killed) onDone?.()
-  })
+  }
+  try {
+    anim.finished.then(finish, finish)
+  } catch {
+    anim.onfinish = finish
+    anim.oncancel = finish
+  }
   if (channel) {
     inflight.set(channel, {
       ghost,

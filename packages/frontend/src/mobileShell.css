@@ -1,0 +1,743 @@
+/* ── Mobile shell vocabulary + chrome (mobile spec §2/§3/§5.1) ──────
+   The press→release grammar, the migrating TabBar block, the floating
+   glass MiniPlayer, the Sheet skeleton choreography, mp-enter, the mobile
+   coordinate-grid overlay, and the reduce-transparency degradation
+   channel. Everything here is scoped under `.mobile-shell` (or the
+   html[data-reduce-transparency] gate) so the desktop shell is untouched. */
+
+/* ═══ press→release vocabulary (§2.1) ═══════════════════════════════
+   press-down = uncommitted intent: 1px 50% checker dither tile, onset
+   0ms (`.pressing` carries no transition in). Cancel (slop / scroll /
+   pointercancel / pointerleave) = instant cut (`.cut` kills the exit
+   transition for the removal frame). Commit = release; the commit block
+   (nav, sheet open, seg flip) happens in the same frame — never
+   serialized after a confirm beat. Knockout chips keep glyphs legible
+   over the tile; the chip must sit ABOVE the ::after dither (z-index),
+   since pseudo-elements paint last (spec §8.1 latent note). */
+.mobile-shell [data-press] {
+  position: relative;
+}
+.mobile-shell [data-press]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: var(--pt-dither);
+  opacity: 0;
+  transition: opacity var(--dur-micro) linear;
+}
+.mobile-shell [data-press="icon"]::after {
+  inset: 2px;
+}
+.mobile-shell [data-press="cmd"]::after {
+  inset: 4px -6px;
+}
+.mobile-shell [data-press="area"]::after {
+  inset: 0 4px;
+}
+.mobile-shell [data-press="row"]::after,
+.mobile-shell [data-press="seg"]::after {
+  inset: 0;
+}
+.mobile-shell [data-press="cta"]::after {
+  /* Inverted-block CTAs take the counter-ink tile so the reveal reads on
+     the --pt-inv-bg face. */
+  inset: 0;
+  background-image: var(--pt-dither-oninv);
+}
+/* Cards: a 2px dither band OUTSIDE the frame (desktop focus-band
+   geometry) so it stays visible while the finger covers the card body. */
+.mobile-shell [data-press="card"]::after {
+  inset: -6px;
+  padding: 2px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+/* Card release commit beat (spec §2.1 #2): true mix-blend-mode: difference
+   overlay, onset 0ms, ≤120ms fade-out, parallel with navigation/sheet open. */
+.mobile-shell [data-press="card"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: #fff;
+  mix-blend-mode: difference;
+  opacity: 0;
+}
+.mobile-shell [data-press="card"].committed::before {
+  animation: mp-card-commit 120ms var(--ease-out) forwards;
+}
+@keyframes mp-card-commit {
+  0% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+/* The TabBar reveal sits BELOW the migrating block and lives on ::before
+   so the block (also a box child) can physically cover it (03 D8). */
+.mobile-shell [data-press="tab"]::before {
+  content: "";
+  position: absolute;
+  inset: 4px 8px;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--pt-dither);
+  opacity: 0;
+  transition: opacity var(--dur-micro) linear;
+}
+.mobile-shell [data-press="tab"]::after {
+  content: none;
+}
+.mobile-shell [data-press].pressing::after,
+.mobile-shell [data-press="tab"].pressing::before {
+  opacity: 1;
+  transition: none;
+}
+.mobile-shell [data-press].cut::after,
+.mobile-shell [data-press="tab"].cut::before {
+  transition: none !important;
+}
+/* Knockout chips: glyph text on a page-coloured chip so the checker never
+   eats letterforms (desktop §3.1 carve-out, touch edition). The chip sits
+   above the dither layer. */
+.mobile-shell [data-press].pressing .mobile-tab-bar-icon,
+.mobile-shell [data-press].pressing .mobile-tab-bar-label {
+  background: var(--pt-bg);
+  box-shadow: 0 0 0 2px var(--pt-bg);
+  position: relative;
+  z-index: 2;
+}
+
+/* ═══ TopBar — typographic skeleton strip (§3.1, opaque) ════════════ */
+.mobile-top-bar {
+  position: relative;
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 53px;
+  padding: 0 16px;
+  background: var(--pt-bg);
+  border-bottom: 1px solid var(--pt-line-soft);
+}
+.mobile-top-bar-word {
+  display: flex;
+  align-items: baseline;
+  line-height: 1;
+}
+.mobile-top-bar-word-w {
+  font-family: var(--pf-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  color: var(--pt-text);
+}
+.mobile-top-bar-word-x {
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  color: var(--pt-dim);
+  transform: translateY(-5px);
+  margin-left: 1px;
+}
+.mobile-top-bar-status {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--pt-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mobile-top-bar-status b {
+  font-weight: 400;
+  color: var(--pt-text);
+}
+
+/* ═══ TabBar — resident inverted block + 250ms migration (§3.2) ═════ */
+.mobile-tab-bar {
+  position: relative;
+  z-index: 16; /* above the MiniPlayer (15): the tuck hides behind it */
+  background: var(--pt-bg);
+  border-top: 1px solid var(--pt-line-soft);
+  padding: 2px 4px max(14px, var(--mobile-safe-bottom));
+}
+.mobile-tab-bar-cells {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+.mobile-tab-bar-block {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 8px;
+  width: 80px; /* measured at runtime: cellW − 16 */
+  background: var(--pt-inv-bg);
+  transition: transform 250ms var(--ease-slide);
+  pointer-events: none;
+}
+.mobile-tab-bar-block.noanim {
+  transition: none;
+}
+.mobile-tab-bar-item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 56px;
+  padding: 4px 8px;
+  color: var(--pt-dim);
+  text-decoration: none;
+}
+.mobile-tab-bar-item.active,
+.mobile-tab-bar-item.covered {
+  color: var(--pt-inv-text);
+}
+.mobile-tab-bar-item.active .mobile-tab-bar-label,
+.mobile-tab-bar-item.covered .mobile-tab-bar-label {
+  color: var(--pt-inv-text);
+}
+/* Pressing a tab keeps page-colour chips (above), not inverse chips. */
+.mobile-tab-bar-icon {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  white-space: nowrap;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+}
+.mobile-tab-bar-label {
+  position: relative;
+  z-index: 1;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+/* Hot badge = chip face (§3.2/§3.5): neutral = page chip + hairline
+   border + dim ink; hot = amber fill + on-accent ink. Readable pressed
+   against the block and off it — no colour logic needed. */
+.mobile-tab-bar-badge {
+  position: absolute;
+  top: -5px;
+  right: -12px;
+  min-width: 16px;
+  height: 14px;
+  padding: 0 5px;
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  background: var(--pt-bg);
+  color: var(--pt-dim);
+  border: 1px solid var(--pt-line);
+  border-radius: 999px;
+}
+.mobile-tab-bar-badge.hot {
+  background: var(--pt-accent);
+  border-color: transparent;
+  color: var(--pt-on-accent);
+}
+
+/* ═══ MiniPlayer — floating glass lozenge (§2.3/§3.3) ═══════════════
+   §2.4 recipe verbatim minus the pointer-tracking specular (touch has no
+   persistent pointer; the static specular stays). Floats above the main
+   scroll area; content scrolls beneath it. Radius 18 (desktop dock
+   value); will-change promotes the layer for Safari's rounded-glass
+   compositing bug (§8.9). Tuck = translate-only slide behind the TabBar
+   (z 15 < 16), 350ms --ease-out, never a fade. */
+.mobile-shell {
+  /* Geometry the floating chrome needs: the bar height drives both the
+     MiniPlayer's float offset and the main area's bottom padding. */
+  --mobile-tabbar-h: 76px;
+}
+.mobile-main {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  min-width: 0;
+  min-height: 0;
+  padding-bottom: calc(var(--mobile-tabbar-h) + 16px + 64px + 18px);
+}
+.mobile-mini-player {
+  position: fixed;
+  left: calc(12px + var(--mobile-safe-left));
+  right: calc(12px + var(--mobile-safe-right));
+  /* --mobile-tabbar-h is authored on .mobile-shell (the layout owner); it
+     inherits through the fixed element's DOM ancestry. */
+  bottom: calc(var(--mobile-tabbar-h) + 16px + var(--mobile-safe-bottom));
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  overflow: hidden;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.07);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  backdrop-filter: blur(28px) saturate(1.8) brightness(1.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.3),
+    inset 1px 0 0 rgba(255, 255, 255, 0.1),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 1px rgba(180, 200, 255, 0.14),
+    0 30px 80px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: transform 350ms var(--ease-out);
+  will-change: transform;
+  /* Pans starting on the lozenge are forwarded to the main scroller by the
+     component (the player floats outside the scroll chain). */
+  touch-action: none;
+}
+html[data-theme="light"] .mobile-mini-player {
+  background: rgba(255, 255, 255, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.12),
+    inset 1px 0 0 rgba(255, 255, 255, 0.4),
+    inset -1px 0 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.05),
+    0 30px 80px rgba(0, 0, 0, 0.16),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.mobile-mini-player::before {
+  /* 3% grain, breaks gradient banding. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.mobile-mini-player::after {
+  /* Static specular only — no --gx/--gy pointer follow (04 D7). */
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.07) 50%, transparent 58%);
+}
+.mobile-mini-player.tucked {
+  transform: translateY(calc(100% + 18px));
+}
+/* The press dither on MiniPlayer controls must beat the specular layer
+   (it is a ::after too, and paints in order — later rules win). */
+.mobile-mini-player [data-press]::after {
+  z-index: 2;
+}
+.mobile-mini-player-open {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  z-index: 1;
+}
+.mobile-mini-player-open:focus-visible {
+  outline: 1px solid var(--pt-dim);
+  outline-offset: 2px;
+}
+.mobile-mini-player-media {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+  background: var(--pt-fill);
+}
+.mobile-mini-player-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.mobile-mini-player-thumb-empty {
+  background: var(--pt-fill);
+}
+/* EQ: playing-only (never idles, 05 D9); reduce-motion freezes it to a
+   static bar (05 D8). 3px ink columns, no amber. */
+.mobile-mini-player-eq {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.mobile-mini-player-eq span {
+  display: block;
+  width: 3px;
+  background: var(--pt-scrim-ink);
+  animation: mobile-eq 0.9s var(--ease-slide) infinite alternate;
+}
+.mobile-mini-player-eq span:nth-child(1) {
+  height: 9px;
+}
+.mobile-mini-player-eq span:nth-child(2) {
+  height: 6px;
+  animation-duration: 0.6s;
+  animation-delay: -0.3s;
+}
+.mobile-mini-player-eq span:nth-child(3) {
+  height: 10px;
+  animation-duration: 0.7s;
+  animation-delay: -0.5s;
+}
+@keyframes mobile-eq {
+  from { transform: scaleY(0.4); }
+  to { transform: scaleY(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-mini-player-eq span {
+    animation: none;
+    transform: none;
+  }
+}
+.mobile-mini-player-copy {
+  flex: 1;
+  min-width: 0;
+}
+.mobile-mini-player-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-mini-player-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--pt-faint);
+  margin-top: 1px;
+}
+/* Transport = bare icon on a 44×44 hit box (§3.5 — the circular fill is
+   an iOS native part and banned). */
+.mobile-mini-player-btn {
+  width: 44px;
+  height: 44px;
+  background: none;
+  color: var(--pt-text);
+  border: none;
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  padding: 0;
+  z-index: 1;
+}
+.mobile-mini-player-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.mobile-mini-player-btn-primary {
+  color: var(--pt-text);
+}
+/* DisplayPowerToggle (compact) inside the glass: bare 44px target. */
+.mobile-mini-player .display-toggle {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--pt-dim);
+  z-index: 1;
+}
+.mobile-mini-player .display-toggle-on {
+  background: none;
+  border: none;
+  color: var(--pt-text);
+}
+
+/* ═══ Sheet — unified skeleton (§3.4) ════════════════════════════════
+   Enter same-frame: panel 300ms --ease-out + scrim 200ms fade.
+   Programmatic exit: panel 200ms + scrim 200ms, fully synchronous (the
+   60ms panel delay / 200×120 mismatch is deleted — desktop F1 kin). */
+.mobile-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+.mobile-sheet.open {
+  pointer-events: auto;
+}
+.mobile-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 200ms var(--ease-out);
+}
+.mobile-sheet.open .mobile-sheet-scrim {
+  opacity: 1;
+}
+.mobile-sheet-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--mobile-sheet-height, 88%);
+  max-height: calc(100% - 20px);
+  padding: 0 var(--mobile-safe-right) var(--mobile-safe-bottom) var(--mobile-safe-left);
+  background: var(--pt-bg);
+  border-top: 1px solid var(--pt-line);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  transform: translateY(102%);
+  transition: transform 200ms var(--ease-out); /* exit */
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.4);
+  will-change: transform;
+}
+html[data-theme="light"] .mobile-sheet-panel {
+  box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.18);
+}
+.mobile-sheet.open .mobile-sheet-panel {
+  transform: translateY(0);
+  transition: transform 300ms var(--ease-out); /* enter */
+}
+/* The grab zone + header are the dismiss drag handle (≥44px hot area). */
+.mobile-sheet-grab {
+  flex-shrink: 0;
+  touch-action: none;
+  padding: 8px 0 2px;
+}
+.mobile-sheet-grabber {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--pt-faint);
+  margin: 0 auto;
+}
+.mobile-sheet-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 16px 12px;
+  border-bottom: 1px solid var(--pt-line-soft);
+  touch-action: none;
+}
+.mobile-sheet-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-sheet-close {
+  width: 44px;
+  height: 44px;
+  margin-right: -10px;
+  background: none;
+  border: none;
+  color: var(--pt-dim);
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+.mobile-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+}
+.mobile-sheet-body::-webkit-scrollbar {
+  display: none;
+}
+.mobile-sheet-footer {
+  flex-shrink: 0;
+  padding: 12px 16px 20px;
+  border-top: 1px solid var(--pt-line-soft);
+  background: var(--pt-bg);
+}
+
+/* ═══ mp-enter (05 D1): mobile mount choreography ═══════════════════
+   240ms --ease-out, opacity + translateY(8px), NO blur; stagger 30ms per
+   item capped at 6. Plays on page mount / tab switch only — the class is
+   applied by the page at mount; infinite-scroll appends and filter
+   refreshes re-render without the class (tickets 02–05 own that wiring).
+   Replaces the old "instant cut" override of the desktop pt-enter. */
+@keyframes mp-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.mobile-shell .mp-enter {
+  animation: mp-enter 240ms var(--ease-out) both;
+  animation-delay: calc(min(var(--mp-i, 0), 6) * 30ms);
+}
+@keyframes mp-enter-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 05 D8: reduced = 200ms pure opacity, no displacement, no stagger. */
+  .mobile-shell .mp-enter {
+    animation: mp-enter-fade 200ms var(--ease-out) both;
+    animation-delay: 0ms;
+  }
+  /* Sheet reduced-motion contract (05 D8): enter = 200ms opacity (no
+     slide), exit = 150ms opacity, scrim in lockstep; the drag follow and
+     the release spring's fade variant are handled in JS. */
+  .mobile-sheet-panel {
+    transition: opacity 150ms var(--ease-out), transform 0s;
+  }
+  .mobile-sheet.open .mobile-sheet-panel {
+    transition: opacity 200ms var(--ease-out), transform 0s;
+  }
+  .mobile-tab-bar-block {
+    transition: none;
+  }
+  .mobile-mini-player {
+    transition: none;
+  }
+}
+
+/* ═══ Mobile coordinate-grid overlay (§6 D1) ════════════════════════
+   Same generation logic as the desktop GridOverlay (measured offsets,
+   ResizeObserver recompute); the classPrefix parameterisation keeps the
+   desktop `.bws-gridlines` class off the mobile shell. */
+.mobile-shell .mp-gridlines {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.mobile-shell .mp-gl {
+  position: absolute;
+  background: var(--pt-line-soft);
+}
+.mobile-shell .mp-gl-v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.mobile-shell .mp-gl-h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+.mobile-shell .mp-gx {
+  position: absolute;
+  font-size: 11px;
+  color: var(--pt-faint);
+  transform: translate(-50%, -50%);
+}
+/* ═══ navpulse (spec §5.1 D3 / §3.6) ═════════════════════════════════
+   1.4s inverse double flash (700ms × 2), drawn on opaque surfaces
+   (TabBar icon / MiniPlayer thumb), never across the glass container. */
+.mobile-tab-bar-item.nav-pulse .mobile-tab-bar-icon {
+  animation: mp-navpulse 1.4s var(--ease-out);
+}
+.mobile-mini-player-thumb.nav-pulse,
+.mobile-mini-player-media.nav-pulse,
+.mobile-mini-player-media:has(.mobile-mini-player-thumb.nav-pulse) {
+  animation: mp-navpulse-thumb 1.4s var(--ease-out);
+}
+
+@keyframes mp-navpulse {
+  0%,
+  100% {
+    filter: none;
+    opacity: 1;
+  }
+  25%,
+  75% {
+    filter: invert(1);
+    opacity: 0.95;
+  }
+  50% {
+    filter: none;
+    opacity: 1;
+  }
+}
+
+@keyframes mp-navpulse-thumb {
+  0%,
+  100% {
+    filter: none;
+    opacity: 1;
+  }
+  25%,
+  75% {
+    filter: invert(1);
+    opacity: 0.95;
+  }
+  50% {
+    filter: none;
+    opacity: 1;
+  }
+}
+
+/* ═══ Reduce transparency (§2.3) — three channels, one attribute ════
+   Manual Settings switch OR prefers-reduced-transparency OR
+   prefers-reduced-motion (iOS proxy, registered approximation) →
+   html[data-reduce-transparency="true"]: dynamic glass turns solid with
+   a top hairline; the scrim is unchanged; focused-overlay panels turn
+   solid with a --pt-line border (scoped variants land with ticket 05). */
+html[data-reduce-transparency="true"] .mobile-mini-player {
+  background: var(--pt-bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: inset 0 1px 0 var(--pt-line), 0 2px 8px rgba(0, 0, 0, 0.3);
+  border-top: none;
+}
+html[data-reduce-transparency="true"] .mobile-mini-player::before,
+html[data-reduce-transparency="true"] .mobile-mini-player::after {
+  content: none;
+}
+html[data-reduce-transparency="true"] .mobile-sheet-panel .set-sheet-panel,
+html[data-reduce-transparency="true"] .auth-focus-panel {
+  background: var(--pt-bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border: 1px solid var(--pt-line);
+}
