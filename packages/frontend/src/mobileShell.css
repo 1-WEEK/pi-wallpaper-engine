@@ -56,6 +56,25 @@
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
 }
+/* Card release commit beat (spec §2.1 #2): true mix-blend-mode: difference
+   overlay, onset 0ms, ≤120ms fade-out, parallel with navigation/sheet open. */
+.mobile-shell [data-press="card"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: #fff;
+  mix-blend-mode: difference;
+  opacity: 0;
+}
+.mobile-shell [data-press="card"].committed::before {
+  animation: mp-card-commit 120ms var(--ease-out) forwards;
+}
+@keyframes mp-card-commit {
+  0% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
 /* The TabBar reveal sits BELOW the migrating block and lives on ::before
    so the block (also a box child) can physically cover it (03 D8). */
 .mobile-shell [data-press="tab"]::before {

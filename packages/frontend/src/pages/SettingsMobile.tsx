@@ -118,7 +118,7 @@ export const SettingsMobile = ({ summary, onRefresh }: Props) => {
         <StateBlock kind="loading" text="LOADING PI CONFIGURATION" />
       ) : (
         <div className="setm-body">
-          {sec === "playback" && <PlaybackSec summary={summary} onRefresh={onRefresh} />}
+          {sec === "playback" && <PlaybackSec summary={summary} onRefresh={onRefresh} mobile />}
           {sec === "storage" &&
             (storage ? (
               <StorageSec

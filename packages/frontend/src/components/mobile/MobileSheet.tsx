@@ -74,6 +74,21 @@ export const MobileSheet = ({
   const reducedRef = useRef(reducedMotion)
   reducedRef.current = reducedMotion
 
+  // Cache contents while open so frame-0 unmounts during the 200ms exit transition
+  // do not produce a blank panel container (spec §3.4 / F1 parity).
+  const cachedChildren = useRef(children)
+  if (open) cachedChildren.current = children
+  const cachedTitle = useRef(title)
+  if (open && title !== undefined) cachedTitle.current = title
+  const cachedAction = useRef(action)
+  if (open && action !== undefined) cachedAction.current = action
+  const cachedFooter = useRef(footer)
+  if (open && footer !== undefined) cachedFooter.current = footer
+
+  const displayTitle = open ? title : cachedTitle.current
+  const displayAction = open ? action : cachedAction.current
+  const displayFooter = open ? footer : cachedFooter.current
+  const displayChildren = open ? children : cachedChildren.current
   // Reset engine-owned inline styles whenever the sheet opens.
   useEffect(() => {
     if (!open) return
@@ -260,10 +275,10 @@ export const MobileSheet = ({
         <div className="mobile-sheet-grab">
           <div className="mobile-sheet-grabber" aria-hidden="true" />
         </div>
-        {title !== undefined && title !== null && (
+        {displayTitle !== undefined && displayTitle !== null && (
           <div className="mobile-sheet-header">
-            <div className="mobile-sheet-title">{title}</div>
-            {action}
+            <div className="mobile-sheet-title">{displayTitle}</div>
+            {displayAction}
             <button
               type="button"
               className="mobile-sheet-close"
@@ -279,9 +294,9 @@ export const MobileSheet = ({
           </div>
         )}
         <div className="mobile-sheet-body" ref={bodyRef}>
-          {children}
+          {displayChildren}
         </div>
-        {footer ? <div className="mobile-sheet-footer">{footer}</div> : null}
+        {displayFooter ? <div className="mobile-sheet-footer">{displayFooter}</div> : null}
       </div>
     </div>
   )

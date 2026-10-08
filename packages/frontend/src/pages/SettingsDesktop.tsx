@@ -174,7 +174,15 @@ const MODE_LABEL: Record<string, string> = {
    with the value derived from the server summary — and share their presets and
    mode with the PlayerBar and the mobile sheet, so the surfaces agree. */
 
-export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; onRefresh: () => void }) => {
+export const PlaybackSec = ({
+  summary,
+  onRefresh,
+  mobile = false,
+}: {
+  summary: SystemSummary
+  onRefresh: () => void
+  mobile?: boolean
+}) => {
   const player = summary.status.player
   const playMode = player?.play_mode ?? "single"
   const serverSec = player?.rotation_interval_sec ?? null
@@ -378,7 +386,7 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
       </Block>
 
       <Block label="INTERFACE">
-        <InterfaceThemeRow />
+        {mobile && <InterfaceThemeRow />}
         <div className="set-row">
           <span className="set-row-name">Interface sounds</span>
           <span className="set-row-dots" aria-hidden="true" />
@@ -397,7 +405,7 @@ export const PlaybackSec = ({ summary, onRefresh }: { summary: SystemSummary; on
             ))}
           </span>
         </div>
-        <InterfaceTail />
+        {mobile && <InterfaceTail />}
         <Note>UI SOUNDS ONLY — WALLPAPER AUDIO STAYS IN THE PLAYERBAR</Note>
       </Block>
     </>

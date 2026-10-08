@@ -60,6 +60,10 @@ export const usePressVocabulary = (shellRef: RefObject<HTMLElement | null>): voi
       if (!press || !e.isPrimary) return
       const { el } = press
       press = null
+      if (el.getAttribute("data-press") === "card") {
+        el.classList.add("committed")
+        window.setTimeout(() => el.classList.remove("committed"), 140)
+      }
       // The TabBar owns its press handoff (the reveal must survive until the
       // migrating block lands, §3.2 / 03 D8) — leave `.pressing` on it; the
       // bar clears it on transitionend with a 380ms fallback.
