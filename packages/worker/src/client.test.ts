@@ -181,5 +181,60 @@ describe("createWorkerClient", () => {
     }
     expect(thrown).toBeInstanceOf(WorkerHttpError)
     expect((thrown as WorkerHttpError).code).toBe("network")
+    // No code on the cause => the message stays exactly what it was.
+    expect((thrown as WorkerHttpError).message).toBe(
+      "Network failure calling /api/transcode/claim: ECONNREFUSED"
+    )
+  })
+
+  test("network failure messages keep the runtime code (JSON request path)", async () => {
+    // Bun's fetch throws an error carrying a POSIX-ish `code` that the bare
+    // message does not show. The main loop logs `err.message`, so the code has
+    // to survive the wrap for `claim()` failures to be triaged from the log.
+    const failing = (async () => {
+      const err = new TypeError("Unable to connect. Is the computer able to access the url?") as TypeError & {
+        code: string
+      }
+      err.code = "ConnectionRefused"
+      throw err
+    }) as unknown as typeof fetch
+    const client = createWorkerClient({
+      baseUrl: "http://pi.local:8080",
+      apiKey: "key",
+      fetchImpl: failing,
+    })
+    let thrown: unknown
+    try {
+      await client.claim("nas-01")
+    } catch (e) {
+      thrown = e
+    }
+    expect(thrown).toBeInstanceOf(WorkerHttpError)
+    expect((thrown as WorkerHttpError).message).toBe(
+      "Network failure calling /api/transcode/claim: ConnectionRefused: Unable to connect. Is the computer able to access the url?"
+    )
+  })
+
+  test("network failure messages keep the runtime code (streaming path)", async () => {
+    const failing = (async () => {
+      const err = new Error("The socket connection was closed unexpectedly.") as Error & { code: string }
+      err.code = "ECONNRESET"
+      throw err
+    }) as unknown as typeof fetch
+    const client = createWorkerClient({
+      baseUrl: "http://pi.local:8080",
+      apiKey: "key",
+      fetchImpl: failing,
+    })
+    let thrown: unknown
+    try {
+      await client.downloadSource("/api/transcode/J1/source", "/tmp/unused-by-this-test")
+    } catch (e) {
+      thrown = e
+    }
+    expect(thrown).toBeInstanceOf(WorkerHttpError)
+    expect((thrown as WorkerHttpError).message).toBe(
+      "Network failure calling http://pi.local:8080/api/transcode/J1/source: ECONNRESET: The socket connection was closed unexpectedly."
+    )
   })
 })
