@@ -12,12 +12,12 @@
     "auth:reset": "bun scripts/auth-reset.ts"
   },
   "dependencies": {
-    "@better-auth/passkey": "^1.7.5",
+    "@better-auth/passkey": "^1.7.7",
     "@elysiajs/static": "^1.4.10",
     "@pwe/migrate": "workspace:*",
     "@pwe/shared": "workspace:*",
-    "better-auth": "^1.7.5",
-    "effect": "^4.0.0-rc.115",
+    "better-auth": "^1.7.7",
+    "effect": "^4.0.3",
     "elysia": "^1.4.30"
   }
 }
