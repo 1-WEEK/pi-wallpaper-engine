@@ -22,9 +22,9 @@
     "prepare": "simple-git-hooks"
   },
   "simple-git-hooks": {
-    "pre-commit": "bun test; codegraph index",
-    "post-merge": "codegraph index",
-    "post-checkout": "codegraph index"
+    "pre-commit": "[ -d node_modules ] && bun test; [ -d .codegraph ] && codegraph index || true",
+    "post-merge": "[ -d .codegraph ] || codegraph init; codegraph index || true",
+    "post-checkout": "[ -d .codegraph ] || codegraph init; codegraph index || true"
   },
   "devDependencies": {
     "@colbymchenry/codegraph": "^1.6.2",
