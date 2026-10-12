@@ -141,6 +141,27 @@ path is not wired through Docker. Confirm `/dev/dri` exists on the host
 and `docker-compose.yml` still has the `devices: - /dev/dri:/dev/dri`
 mapping. (The Worker still works — libx265 fallback — just slower.)
 
+## Reading `claim()` failures
+
+While idle the Worker polls every 10s and logs only failures:
+
+```
+claim() failed: <cause>; backing off 30000ms
+```
+
+The cause starts with Bun's runtime error code, so the three cases read apart
+without guessing:
+
+| Log text starts with | Meaning |
+|---|---|
+| `ConnectionRefused: Unable to connect…` | Host is up, nothing is listening on `PWE_BACKEND_URL` — the Pi backend is down or restarting. |
+| `ECONNRESET: The socket connection was closed…` | The connection was established, then dropped mid-request. |
+| `The operation timed out.` (no code) | No response at all. No request timeout is configured, so this is TCP-level. |
+
+A short burst that stops by itself needs no action: the backoff retries, and a
+successful claim logs nothing. A burst that never stops means the backend is
+not serving — look at the Pi, not the Worker.
+
 ## Rollback
 
 ```bash

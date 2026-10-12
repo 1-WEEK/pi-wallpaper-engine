@@ -49,6 +49,18 @@ const trimSlash = (s: string) => s.replace(/\/+$/, "")
 const resolveUrl = (base: string, pathOrUrl: string): string =>
   new URL(pathOrUrl, `${base}/`).toString()
 
+/**
+ * Bun's fetch failures carry a runtime `code` (`ConnectionRefused`,
+ * `ECONNRESET`, …) on the thrown error, which the bare message does not show.
+ * Keep it in the log so "backend is down" can be told apart from "connection
+ * dropped mid-request" without a packet capture.
+ */
+const describeCause = (cause: unknown): string => {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  const code = (cause as { code?: unknown } | null | undefined)?.code
+  return typeof code === "string" && code.length > 0 ? `${code}: ${message}` : message
+}
+
 export const createWorkerClient = (config: WorkerClientConfig): WorkerClient => {
   const base = trimSlash(config.baseUrl)
   const fetchImpl = config.fetchImpl ?? fetch
@@ -69,7 +81,7 @@ export const createWorkerClient = (config: WorkerClientConfig): WorkerClient => 
       })
     } catch (cause) {
       throw new WorkerHttpError(
-        `Network failure calling ${path}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        `Network failure calling ${path}: ${describeCause(cause)}`,
         0,
         "network",
         { cause }
@@ -118,7 +130,7 @@ export const createWorkerClient = (config: WorkerClientConfig): WorkerClient => 
       })
     } catch (cause) {
       throw new WorkerHttpError(
-        `Network failure calling ${path}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        `Network failure calling ${path}: ${describeCause(cause)}`,
         0,
         "network",
         { cause }
