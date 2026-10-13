@@ -66,6 +66,9 @@ backend with `bun run service:restart` (or restart `bun run dev` in development)
 after saving the configuration. Budgets apply when each player is created;
 changing the file does not resize an existing player's retained allocations.
 
+See [playback resources and rollback](docs/player-lifecycle.md) for stopped-idle
+release, display restoration and the separate lifecycle rollback procedure.
+
 ## Start
 
 Start both the backend and frontend in development mode:
