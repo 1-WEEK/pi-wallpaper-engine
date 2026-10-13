@@ -34,6 +34,7 @@ const buildHarness = (ids: string[], missing: Set<string>, adultIds: Set<string>
       }),
     pause: () => Effect.void,
     resume: () => Effect.void,
+    release: () => Effect.void,
     stop: () => Effect.void,
     setDisplayMode: () => Effect.void,
     status: () =>

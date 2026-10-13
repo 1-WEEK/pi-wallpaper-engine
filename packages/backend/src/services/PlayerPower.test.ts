@@ -69,6 +69,7 @@ const makeRuntime = (displayStatus: DisplayStatus) => {
     play: () => Effect.sync(() => events.push("mpv.play")),
     pause: () => Effect.void,
     resume: () => Effect.void,
+    release: () => Effect.void,
     stop: () => Effect.void,
     setDisplayMode: () => Effect.sync(() => events.push("mpv.setDisplayMode")),
     status: () =>

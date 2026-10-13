@@ -1,14 +1,14 @@
-import { Context, Effect, Layer, Ref } from "effect"
+import { Context, Deferred, Effect, Fiber, Layer, Ref } from "effect"
 import { unlinkSync } from "node:fs"
 import type { DisplayMode } from "@pwe/shared"
-import { MpvIpcError, MpvSpawnError } from "@pwe/shared"
+import { MpvIpcError } from "@pwe/shared"
 import { Config } from "./Config.js"
 import { Logger } from "./Logger.js"
 
 export interface MpvProcess {
   readonly pid: number
   readonly exited: Promise<number>
-  kill(): void
+  kill(signal?: NodeJS.Signals): void
 }
 
 export interface MpvSocket {
@@ -27,7 +27,7 @@ export interface MpvDependencies {
     stdout: "pipe"; stderr: "pipe"; stdin: "ignore"
     env: Record<string, string | undefined>
   }): MpvProcess
-  connect(path: string, handlers: MpvSocketHandlers): Promise<MpvSocket>
+  connect(path: string, handlers: MpvSocketHandlers, signal: AbortSignal): Promise<MpvSocket>
   removeSocket(path: string): void
 }
 
@@ -43,6 +43,8 @@ export interface MpvImpl {
   readonly pause: () => Effect.Effect<void, MpvIpcError>
   readonly resume: () => Effect.Effect<void, MpvIpcError>
   readonly stop: () => Effect.Effect<void, MpvIpcError>
+  /** Resolves after child exit and socket removal; failed cleanup can be retried. */
+  readonly release: () => Effect.Effect<void, MpvIpcError>
   readonly setDisplayMode: (mode: DisplayMode) => Effect.Effect<void, MpvIpcError>
   readonly status: () => Effect.Effect<PlayerStatus>
 }
@@ -68,11 +70,17 @@ export const shouldReassertFullscreen = (msg: unknown): boolean => {
 const SOCKET_CONNECT_RETRIES = 30
 const SOCKET_CONNECT_DELAY_MS = 200
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+  const abort = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); reject(signal.reason) }
+  const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve() }, ms)
+  signal.addEventListener("abort", abort, { once: true })
+  if (signal.aborted) abort()
+})
 
 const connectSocket = async (
   path: string,
-  handlers: MpvSocketHandlers
+  handlers: MpvSocketHandlers,
+  signal: AbortSignal
 ): Promise<MpvSocket> => {
   let lastErr: unknown
   for (let i = 0; i < SOCKET_CONNECT_RETRIES; i++) {
@@ -81,10 +89,12 @@ const connectSocket = async (
         unix: path,
         socket: handlers,
       })
+      if (signal.aborted) { socket.end(); throw signal.reason }
       return socket
     } catch (e) {
       lastErr = e
-      await sleep(SOCKET_CONNECT_DELAY_MS)
+      signal.throwIfAborted()
+      await sleep(SOCKET_CONNECT_DELAY_MS, signal)
     }
   }
   throw lastErr
@@ -96,247 +106,296 @@ const defaultDependencies: MpvDependencies = {
   removeSocket: unlinkSync,
 }
 
+interface Session {
+  readonly child: MpvProcess
+  socket?: MpvSocket
+  failure?: MpvIpcError
+  cleanupError?: MpvIpcError
+  possibleMedia?: { workshopId: string; path: string }
+  exited: boolean
+  readonly pending: Map<number, (result: Effect.Effect<unknown, MpvIpcError>) => void>
+  buffer: string
+}
+
 export const makeMpvLive = (overrides: Partial<MpvDependencies> = {}) => Layer.scoped(
   Mpv,
   Effect.gen(function* () {
     const deps = { ...defaultDependencies, ...overrides }
     const config = yield* Config
     const logger = yield* Logger
-
-    // Clean up stale socket
-    try {
-      deps.removeSocket(config.mpv.ipc_socket)
-    } catch {
-      // ignore if doesn't exist
-    }
-
-    // Spawn mpv. Pi OS labwc runs on tty7 with a Wayland socket under
-    // /run/user/<uid>/wayland-0. When backend is launched from an SSH session
-    // (XDG_SESSION_TYPE=tty) it inherits no WAYLAND_DISPLAY, so mpv silently
-    // falls back to SDL and the video decodes but never reaches the screen.
-    // Fill in sane defaults so the inherited env still points at the local
-    // compositor; user-set values win.
-    const uid =
-      typeof (process as { getuid?: () => number }).getuid === "function"
-        ? (process as { getuid: () => number }).getuid()
-        : 1000
-    const mpvEnv = {
-      ...process.env,
-      XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR ?? `/run/user/${uid}`,
-      WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY ?? "wayland-0",
-    }
-
-    const child = yield* Effect.acquireRelease(
-      Effect.try({
-        try: () =>
-          deps.spawn(
-            [
-              config.mpv.binary_path,
-              `--input-ipc-server=${config.mpv.ipc_socket}`,
-              "--idle=yes",
-              "--loop=inf",
-              "--fullscreen",
-              "--no-osc",
-              "--no-input-default-bindings",
-              "--no-audio",
-              `--hwdec=${config.mpv.hwdec}`,
-              `--gpu-api=${config.mpv.gpu_api}`,
-              `--demuxer-max-bytes=${(config.mpv.cache_forward_mib ?? 32) * 1024 * 1024}`,
-              `--demuxer-max-back-bytes=${(config.mpv.cache_backward_mib ?? 8) * 1024 * 1024}`,
-              "--keepaspect=yes",
-              "--panscan=1.0",
-            ],
-            { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: mpvEnv }
-          ),
-        catch: (cause) =>
-          new MpvSpawnError({
-            reason: `Failed to spawn mpv: ${cause instanceof Error ? cause.message : String(cause)}`,
-            cause,
-          }),
-      }) as Effect.Effect<MpvProcess, MpvSpawnError>,
-      (proc) =>
-        Effect.sync(() => {
-          try {
-            proc.kill()
-          } catch {
-            // ignore
-          }
-          try {
-            deps.removeSocket(config.mpv.ipc_socket)
-          } catch {
-            // ignore
-          }
-        })
-    )
-
-    yield* logger.info(`mpv spawned pid=${child.pid}, connecting to ${config.mpv.ipc_socket}`)
-
-    const pending = new Map<number, (result: Effect.Effect<unknown, MpvIpcError>) => void>()
-    let requestId = 0
-    let connectionFailure: MpvIpcError | undefined
-    const failConnection = (error: MpvIpcError) => {
-      connectionFailure ??= error
-      const requests = [...pending.values()]
-      pending.clear()
-      for (const complete of requests) complete(Effect.fail(connectionFailure))
-    }
     const statusRef = yield* Ref.make<PlayerStatus>({
-      playing: false,
-      current_workshop_id: null,
-      path: null,
+      playing: false, current_workshop_id: null, path: null,
       display_mode: config.screen.default_display_mode,
     })
+    const lock = yield* Effect.makeSemaphore(1)
+    const serialize = lock.withPermits(1)
+    let active: Session | undefined
+    let requestId = 0
+    let closed = false
+    const shutdown = yield* Deferred.make<void>()
+    const control = <A>(effect: Effect.Effect<A, MpvIpcError>) => serialize(Effect.suspend(() =>
+      closed ? Effect.fail(new MpvIpcError({ reason: "mpv service closed" })) : effect.pipe(
+        Effect.catchAll(error => active?.cleanupError === error ? Effect.fail(error) : releaseCurrent.pipe(
+          Effect.mapError(cleanup => new MpvIpcError({
+            reason: `${error.reason}; cleanup failed: ${cleanup.reason}`, cause: cleanup,
+          })),
+          Effect.zipRight(Effect.fail(error)),
+        )),
+        Effect.onInterrupt(() => releaseCurrent.pipe(
+          Effect.catchAll(e => logger.error(`mpv cancelled control cleanup failed: ${e.reason}`)),
+        )),
+      ),
+    ))
+    const scope = yield* Effect.scope
+    let idleFiber: Fiber.RuntimeFiber<void, never> | undefined
+    const cancelIdle = Effect.gen(function* () {
+      const timer = idleFiber
+      idleFiber = undefined
+      if (timer) yield* Fiber.interrupt(timer)
+    })
 
-    let buffer = ""
-    const handleData = (socket: MpvSocket, chunk: string) => {
-      buffer += chunk
-      const lines = buffer.split("\n")
-      buffer = lines.pop() ?? ""
-      for (const line of lines) {
-        if (!line.trim()) continue
-        try {
-          const msg = JSON.parse(line)
-          if (typeof msg.request_id === "number") {
-            const complete = pending.get(msg.request_id)
-            if (complete) {
-              pending.delete(msg.request_id)
-              complete(msg.error && msg.error !== "success"
-                ? Effect.fail(new MpvIpcError({ reason: `mpv error: ${msg.error}` }))
-                : Effect.succeed(msg.data ?? null))
-            }
-          } else if (!connectionFailure && shouldReassertFullscreen(msg)) {
-            const payload = JSON.stringify({ command: ["set_property", "fullscreen", true] }) + "\n"
-            if (socket.write(payload) !== Buffer.byteLength(payload)) {
-              failConnection(new MpvIpcError({ reason: "Incomplete mpv fullscreen recovery write" }))
-              socket.end()
-            }
-            void Effect.runPromise(logger.warn("mpv lost fullscreen; re-asserting"))
+    const idleStatus = Ref.update(statusRef, s => ({
+      ...s, playing: false, current_workshop_id: null, path: null,
+    }))
+
+    const failSession = (session: Session, error: MpvIpcError) => {
+      session.failure ??= error
+      const requests = [...session.pending.values()]
+      session.pending.clear()
+      session.buffer = ""
+      for (const complete of requests) complete(Effect.fail(session.failure))
+    }
+
+    const removeSocket = Effect.try({
+      try: () => {
+        try { deps.removeSocket(config.mpv.ipc_socket) }
+        catch (cause) { if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause }
+      },
+      catch: cause => new MpvIpcError({ reason: "Failed to remove mpv IPC socket", cause }),
+    })
+
+    const releaseCurrent = Effect.gen(function* () {
+      const session = active
+      if (!session) return
+      delete session.cleanupError
+      failSession(session, new MpvIpcError({ reason: "mpv player released" }))
+      yield* Effect.try({
+        try: () => { session.socket?.end(); if (!session.exited) session.child.kill() },
+        catch: cause => new MpvIpcError({ reason: "Failed to release mpv process", cause }),
+      })
+      const waitForExit = Effect.tryPromise({
+        try: () => session.child.exited,
+        catch: cause => new MpvIpcError({ reason: "Failed to await mpv process exit", cause }),
+      })
+      // Keep ownership uninterruptible, but let the deadline cancel each exit
+      // waiter; an uninterruptible loser would make a timeout wait forever.
+      const boundedExit = Effect.raceFirst(
+        waitForExit.pipe(Effect.interruptible),
+        Effect.sleep("1 second").pipe(
+          Effect.zipRight(Effect.fail(new MpvIpcError({ reason: "mpv process did not exit" }))),
+          Effect.interruptible,
+        ),
+      )
+      yield* boundedExit.pipe(Effect.catchAll(() => Effect.gen(function* () {
+        yield* Effect.try({
+          try: () => session.child.kill("SIGKILL"),
+          catch: cause => new MpvIpcError({ reason: "Failed to kill mpv process", cause }),
+        })
+        yield* boundedExit
+      })))
+      session.exited = true
+      yield* idleStatus
+      yield* removeSocket
+      if (active === session) active = undefined
+    }).pipe(
+      Effect.tapError(error => Effect.sync(() => {
+        if (active) {
+          active.cleanupError = error
+          // An unacknowledged load may have reached mpv. Failed cleanup must
+          // retain that media identity rather than advertise an unloaded player.
+          if (active.possibleMedia && !active.exited) {
+            const { workshopId, path } = active.possibleMedia
+            Effect.runSync(Ref.update(statusRef, s => s.path ? s : {
+              ...s, current_workshop_id: workshopId, path,
+            }))
           }
-        } catch {
-          // ignore malformed
         }
+      })),
+      Effect.uninterruptible,
+    )
+
+    const write = (session: Session, payload: string) => {
+      if (!session.socket) throw new Error("mpv IPC socket unavailable")
+      // Bun sockets are unbuffered; a partial JSON line poisons the next command.
+      if (session.socket.write(payload) !== Buffer.byteLength(payload)) {
+        failSession(session, new MpvIpcError({ reason: "Incomplete mpv command write" }))
+        session.socket.end()
       }
     }
 
-    const realSocket = yield* Effect.tryPromise({
-      try: () =>
-        deps.connect(config.mpv.ipc_socket, {
-          data(s, data) {
-            void handleData(s, data.toString("utf-8"))
-          },
-          error(_s, err) {
-            failConnection(new MpvIpcError({ reason: `mpv IPC socket error: ${err.message}`, cause: err }))
-            void Effect.runPromise(logger.error(`mpv IPC socket error: ${err.message}`))
-          },
-          close() {
-            failConnection(new MpvIpcError({ reason: "mpv IPC socket closed" }))
-            void Effect.runPromise(logger.warn("mpv IPC socket closed"))
-          },
-        }),
-      catch: (cause) =>
-        new MpvSpawnError({
-          reason: `mpv IPC socket not available after ${(SOCKET_CONNECT_RETRIES * SOCKET_CONNECT_DELAY_MS) / 1000}s`,
-          cause,
-        }),
-    })
-
-    yield* Effect.addFinalizer(() => Effect.sync(() => {
-      failConnection(new MpvIpcError({ reason: "mpv service closed" }))
-      realSocket.end()
-      buffer = ""
-    }))
-
-    const send = (cmd: unknown[]): Effect.Effect<unknown, MpvIpcError> =>
-      Effect.async<unknown, MpvIpcError>((complete) => {
-        if (connectionFailure) {
-          complete(Effect.fail(connectionFailure))
-          return
-        }
+    const send = (session: Session, command: unknown[]): Effect.Effect<unknown, MpvIpcError> =>
+      Effect.async<unknown, MpvIpcError>(complete => {
+        if (session.failure) { complete(Effect.fail(session.failure)); return }
         const id = ++requestId
-        // Register and write in the same synchronous turn: interrupted callers
-        // cannot leave a queued command to be dispatched after their deadline.
-        pending.set(id, complete)
-        try {
-          const payload = JSON.stringify({ command: cmd, request_id: id }) + "\n"
-          // Bun sockets are unbuffered; a partial JSON line poisons the next command.
-          if (realSocket.write(payload) !== Buffer.byteLength(payload)) {
-            failConnection(new MpvIpcError({ reason: "Incomplete mpv command write" }))
-            realSocket.end()
-          }
-        } catch (cause) {
-          pending.delete(id)
+        // Atomic registration/write leaves no dispatch queue for expired callers.
+        session.pending.set(id, complete)
+        try { write(session, JSON.stringify({ command, request_id: id }) + "\n") }
+        catch (cause) {
+          session.pending.delete(id)
           complete(Effect.fail(new MpvIpcError({
             reason: `Failed to write mpv command: ${cause instanceof Error ? cause.message : String(cause)}`,
             cause,
           })))
         }
-        return Effect.sync(() => { pending.delete(id) })
+        return Effect.sync(() => { session.pending.delete(id) })
       }).pipe(Effect.timeoutFail({
         duration: "5 seconds",
-        onTimeout: () => new MpvIpcError({ reason: `mpv command timed out: ${JSON.stringify(cmd)}` }),
-      }))
+        onTimeout: () => new MpvIpcError({ reason: `mpv command timed out: ${JSON.stringify(command)}` }),
+      }), Effect.flatMap(value => session.failure ? Effect.fail(session.failure) : Effect.succeed(value)))
 
-    yield* send(["observe_property", FULLSCREEN_OBSERVE_ID, "fullscreen"]).pipe(
-      Effect.catchAll((e) => logger.warn(`Could not observe mpv fullscreen: ${e.reason}`))
-    )
+    const setMode = (session: Session, mode: DisplayMode) => Effect.gen(function* () {
+      yield* send(session, ["set_property", "keepaspect", mode !== "stretch"])
+      yield* send(session, ["set_property", "panscan", mode === "fill" ? 1.0 : 0.0])
+    })
+
+    const ensurePlayer = Effect.gen(function* () {
+      if (closed) return yield* Effect.fail(new MpvIpcError({ reason: "mpv service closed" }))
+      if (active?.failure) yield* releaseCurrent
+      if (active) return active
+      yield* removeSocket
+      // SSH launches lack compositor environment; explicit user settings still win.
+      const uid = process.getuid?.() ?? 1000
+      const child = yield* Effect.try({
+        try: () => deps.spawn([
+          config.mpv.binary_path,
+          `--input-ipc-server=${config.mpv.ipc_socket}`,
+          "--idle=yes", "--loop=inf", "--fullscreen", "--no-osc",
+          "--no-input-default-bindings", "--no-audio",
+          `--hwdec=${config.mpv.hwdec}`, `--gpu-api=${config.mpv.gpu_api}`,
+          `--demuxer-max-bytes=${(config.mpv.cache_forward_mib ?? 32) * 1024 * 1024}`,
+          `--demuxer-max-back-bytes=${(config.mpv.cache_backward_mib ?? 8) * 1024 * 1024}`,
+          "--keepaspect=yes", "--panscan=1.0",
+        ], {
+          stdout: "pipe", stderr: "pipe", stdin: "ignore",
+          env: {
+            ...process.env,
+            XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR ?? `/run/user/${uid}`,
+            WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY ?? "wayland-0",
+          },
+        }),
+        catch: cause => new MpvIpcError({ reason: "Failed to spawn mpv", cause }),
+      })
+      const session: Session = { child, exited: false, pending: new Map(), buffer: "" }
+      active = session
+      void child.exited.then(
+        code => {
+          session.exited = true
+          if (active === session) Effect.runSync(idleStatus)
+          if (!session.failure) void Effect.runPromise(logger.warn(`mpv exited with status ${code}`))
+          failSession(session, new MpvIpcError({ reason: `mpv process exited with status ${code}` }))
+        },
+        cause => failSession(session, new MpvIpcError({ reason: "mpv process exit observation failed", cause })),
+      )
+      const handlers: MpvSocketHandlers = {
+        data(_socket, data) {
+          if (session.failure) return
+          session.buffer += data.toString("utf-8")
+          const lines = session.buffer.split("\n")
+          session.buffer = lines.pop() ?? ""
+          for (const line of lines) {
+            try {
+              const msg = JSON.parse(line)
+              if (typeof msg.request_id === "number") {
+                const complete = session.pending.get(msg.request_id)
+                if (complete) {
+                  session.pending.delete(msg.request_id)
+                  complete(msg.error && msg.error !== "success"
+                    ? Effect.fail(new MpvIpcError({ reason: `mpv error: ${msg.error}` }))
+                    : Effect.succeed(msg.data ?? null))
+                }
+              } else if (shouldReassertFullscreen(msg)) {
+                write(session, JSON.stringify({ command: ["set_property", "fullscreen", true] }) + "\n")
+                void Effect.runPromise(logger.warn("mpv lost fullscreen; re-asserting"))
+              }
+            } catch { /* malformed events have no command caller */ }
+          }
+        },
+        error(_socket, cause) { failSession(session, new MpvIpcError({ reason: `mpv IPC socket error: ${cause.message}`, cause })) },
+        close() { failSession(session, new MpvIpcError({ reason: "mpv IPC socket closed" })) },
+      }
+      yield* Effect.tryPromise({
+        try: signal => deps.connect(config.mpv.ipc_socket, handlers, signal).then(socket => {
+          if (session.failure || signal.aborted) socket.end()
+          else session.socket = socket
+        }),
+        catch: cause => new MpvIpcError({ reason: "mpv IPC socket not available", cause }),
+      }).pipe(Effect.timeoutFail({
+        duration: "6 seconds", onTimeout: () => new MpvIpcError({ reason: "mpv IPC connection timed out" }),
+      }), Effect.raceFirst(Deferred.await(shutdown).pipe(
+        Effect.zipRight(Effect.fail(new MpvIpcError({ reason: "mpv service closed" }))),
+      )))
+      yield* logger.info(`mpv spawned pid=${child.pid}, connected to ${config.mpv.ipc_socket}`)
+      yield* send(session, ["observe_property", FULLSCREEN_OBSERVE_ID, "fullscreen"]).pipe(
+        Effect.catchAll(e => logger.warn(`Could not observe mpv fullscreen: ${e.reason}`)),
+      )
+      yield* setMode(session, (yield* Ref.get(statusRef)).display_mode)
+      return session
+    })
+
+    yield* Effect.addFinalizer(() => Effect.gen(function* () {
+      closed = true
+      yield* Deferred.succeed(shutdown, undefined)
+      yield* cancelIdle
+      if (active) failSession(active, new MpvIpcError({ reason: "mpv service closed" }))
+      yield* serialize(releaseCurrent).pipe(Effect.catchAll(e => logger.error(`mpv shutdown cleanup failed: ${e.reason}`)))
+    }))
 
     return {
-      play: (workshopId, path) =>
-        Effect.gen(function* () {
-          yield* send(["loadfile", path, "replace"])
-          yield* send(["set_property", "pause", false])
-          yield* Ref.update(statusRef, (s) => ({
-            ...s,
-            playing: true,
-            current_workshop_id: workshopId,
-            path,
-          }))
-        }),
-
-      pause: () =>
-        Effect.gen(function* () {
-          yield* send(["set_property", "pause", true])
-          yield* Ref.update(statusRef, (s) => ({ ...s, playing: false }))
-        }),
-
-      resume: () =>
-        Effect.gen(function* () {
-          yield* send(["set_property", "pause", false])
-          yield* Ref.update(statusRef, (s) => ({ ...s, playing: true }))
-        }),
-
-      stop: () =>
-        Effect.gen(function* () {
-          yield* send(["stop"])
-          yield* Ref.update(statusRef, (s) => ({
-            ...s,
-            playing: false,
-            current_workshop_id: null,
-            path: null,
-          }))
-        }),
-
-      setDisplayMode: (mode) =>
-        Effect.gen(function* () {
-          switch (mode) {
-            case "fill":
-              yield* send(["set_property", "keepaspect", true])
-              yield* send(["set_property", "panscan", 1.0])
-              break
-            case "fit":
-              yield* send(["set_property", "keepaspect", true])
-              yield* send(["set_property", "panscan", 0.0])
-              break
-            case "stretch":
-              yield* send(["set_property", "keepaspect", false])
-              yield* send(["set_property", "panscan", 0.0])
-              break
-          }
-          yield* Ref.update(statusRef, (s) => ({ ...s, display_mode: mode }))
-        }),
-
+      play: (workshopId, path) => control(Effect.gen(function* () {
+        yield* cancelIdle
+        const session = yield* ensurePlayer
+        session.possibleMedia = { workshopId, path }
+        yield* send(session, ["loadfile", path, "replace"])
+        yield* send(session, ["set_property", "pause", false])
+        if (session.failure) return yield* Effect.fail(session.failure)
+        yield* Ref.update(statusRef, s => ({ ...s, playing: true, current_workshop_id: workshopId, path }))
+      })),
+      pause: () => control(Effect.gen(function* () {
+        if (!active) return
+        if (active.failure) return yield* Effect.fail(active.failure)
+        if (!(yield* Ref.get(statusRef)).path) return
+        yield* send(active, ["set_property", "pause", true])
+        yield* Ref.update(statusRef, s => ({ ...s, playing: false }))
+      })),
+      resume: () => control(Effect.gen(function* () {
+        if (!active) return
+        if (active.failure) return yield* Effect.fail(active.failure)
+        if (!(yield* Ref.get(statusRef)).path) return
+        yield* send(active, ["set_property", "pause", false])
+        yield* Ref.update(statusRef, s => ({ ...s, playing: true }))
+      })),
+      stop: () => control(Effect.gen(function* () {
+        if (active) {
+          yield* send(active, ["stop"])
+          delete active.possibleMedia
+        }
+        yield* idleStatus
+        if (active) {
+          yield* cancelIdle
+          idleFiber = yield* Effect.forkIn(
+            Effect.sleep("30 seconds").pipe(Effect.zipRight(serialize(releaseCurrent)),
+              Effect.catchAll(e => logger.error(`mpv idle cleanup failed: ${e.reason}`))),
+            scope,
+          )
+        }
+      })),
+      release: () => serialize(cancelIdle.pipe(Effect.zipRight(releaseCurrent))),
+      setDisplayMode: mode => control(Effect.gen(function* () {
+        if (active) yield* setMode(active, mode)
+        yield* Ref.update(statusRef, s => ({ ...s, display_mode: mode }))
+      })),
       status: () => Ref.get(statusRef),
-    }
+    } satisfies MpvImpl
   })
 )
 

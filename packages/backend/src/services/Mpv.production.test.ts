@@ -28,7 +28,11 @@ const makeFixture = async () => {
   }
   const runtime = ManagedRuntime.make(
     makeMpvLive({
-      spawn: () => ({ pid: 123, kill() {}, exited: Promise.resolve(0) }),
+      spawn: () => {
+        let exit!: (code: number) => void
+        const exited = new Promise<number>(resolve => { exit = resolve })
+        return { pid: 123, kill() { exit(0) }, exited }
+      },
       connect: async (_path, callbacks) => { handlers = callbacks; return socket },
       removeSocket() {},
     }).pipe(
@@ -41,6 +45,7 @@ const makeFixture = async () => {
     )
   )
   const mpv = await runtime.runPromise(Mpv)
+  await runtime.runPromise(mpv.play("initial", "/initial.mp4"))
   return {
     runtime, mpv, requests, reply,
     setRespond(value: boolean) { respond = value },
@@ -60,7 +65,7 @@ const failureReason = (exit: Exit.Exit<unknown, unknown>) => {
   return (error.value as { _tag: string; reason: string })
 }
 
-test("socket disconnect fails outstanding playback promptly and rejects later commands", async () => {
+test("socket disconnect fails outstanding playback promptly and allows a new player on replay", async () => {
   const f = await makeFixture()
   try {
     f.setRespond(false)
@@ -75,9 +80,8 @@ test("socket disconnect fails outstanding playback promptly and rejects later co
     expect(error._tag).toBe("MpvIpcError")
     expect(error.reason).toContain("closed")
     f.setRespond(true)
-    const count = f.requests.length
-    expect(failureReason(await f.runtime.runPromiseExit(f.mpv.resume())).reason).toContain("closed")
-    expect(f.requests.length).toBe(count)
+    await f.runtime.runPromise(f.mpv.play("healthy", "/healthy.mp4"))
+    expect((await f.runtime.runPromise(f.mpv.status())).current_workshop_id).toBe("healthy")
   } finally {
     await f.runtime.dispose()
   }
@@ -92,7 +96,9 @@ test("a partial socket write fails immediately and prevents sending into the tru
     await f.runtime.runPromise(TestClock.adjust("5 seconds"))
     expect(failureReason(await result).reason).toContain("Incomplete")
     f.setPartialWrite(false)
-    expect(failureReason(await f.runtime.runPromiseExit(f.mpv.resume())).reason).toContain("Incomplete")
+    f.setRespond(true)
+    await f.runtime.runPromise(f.mpv.play("healthy", "/healthy.mp4"))
+    expect((await f.runtime.runPromise(f.mpv.status())).current_workshop_id).toBe("healthy")
   } finally { await f.runtime.dispose() }
 })
 
@@ -202,20 +208,18 @@ test("mpv error responses fail just their caller and later commands still succee
   } finally { await f.runtime.dispose() }
 })
 
-test("socket errors settle all concurrent calls before their command deadlines", async () => {
+test("socket errors settle an outstanding call before its deadline and permit healthy replay", async () => {
   const f = await makeFixture()
   try {
     f.setRespond(false)
     const firstWritten = f.nextWrite()
     const first = f.runtime.runPromiseExit(f.mpv.pause())
     await firstWritten
-    const secondWritten = f.nextWrite()
-    const second = f.runtime.runPromiseExit(f.mpv.stop())
-    await secondWritten
     f.socketError()
     expect(failureReason(await first).reason).toContain("peer failed")
-    expect(failureReason(await second).reason).toContain("peer failed")
     f.reply(f.requests.at(-1)!.request_id)
-    expect(failureReason(await f.runtime.runPromiseExit(f.mpv.resume())).reason).toContain("peer failed")
+    f.setRespond(true)
+    await f.runtime.runPromise(f.mpv.play("healthy", "/healthy.mp4"))
+    expect((await f.runtime.runPromise(f.mpv.status())).current_workshop_id).toBe("healthy")
   } finally { await f.runtime.dispose() }
 })
