@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Ref } from "effect"
+import { Clock, Context, Effect, Fiber, Layer, Ref } from "effect"
 import type {
   DbError,
   DisplayError,
@@ -48,13 +48,14 @@ export const PlaybackLive = Layer.scoped(
     const playerPower = yield* PlayerPower
     const rotation = yield* Rotation
 
-    const timerRef = yield* Ref.make<ReturnType<typeof setTimeout> | null>(null)
+    const scope = yield* Effect.scope
+    let sleepFiber: Fiber.RuntimeFiber<void, never> | undefined
     const deadlineRef = yield* Ref.make<number | null>(null)
 
     const clearSleep = Effect.gen(function* () {
-      const t = yield* Ref.get(timerRef)
-      if (t) clearTimeout(t)
-      yield* Ref.set(timerRef, null)
+      const timer = sleepFiber
+      sleepFiber = undefined
+      if (timer) yield* Fiber.interrupt(timer)
       yield* Ref.set(deadlineRef, null)
     })
 
@@ -67,7 +68,7 @@ export const PlaybackLive = Layer.scoped(
     // On elapse: stop rotation, then power the display off. Fall back to a plain
     // stop when display commands are not configured.
     const onSleepElapsed = Effect.gen(function* () {
-      yield* Ref.set(timerRef, null)
+      sleepFiber = undefined
       yield* Ref.set(deadlineRef, null)
       yield* rotation.disarm()
       yield* playerPower
@@ -123,13 +124,11 @@ export const PlaybackLive = Layer.scoped(
           yield* clearSleep
           if (minutes <= 0) return yield* sleepStatus()
           const ms = minutes * 60_000
-          const deadline = Date.now() + ms
-          const timer = setTimeout(() => {
-            Effect.runFork(onSleepElapsed)
-          }, ms)
-          ;(timer as { unref?: () => void }).unref?.()
-          yield* Ref.set(timerRef, timer)
+          const deadline = (yield* Clock.currentTimeMillis) + ms
           yield* Ref.set(deadlineRef, deadline)
+          sleepFiber = yield* Effect.forkIn(
+            Effect.sleep(ms).pipe(Effect.zipRight(onSleepElapsed)), scope,
+          )
           return yield* sleepStatus()
         }),
 

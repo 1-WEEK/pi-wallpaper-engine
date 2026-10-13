@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Ref } from "effect"
+import { Context, Effect, Fiber, Layer } from "effect"
 import {
   DbError,
   DisplayError,
@@ -56,15 +56,23 @@ export const PlayerPowerLive = Layer.scoped(
     const logger = yield* Logger
     const mpv = yield* Mpv
     const playerState = yield* PlayerState
-    const timerRef = yield* Ref.make<ReturnType<typeof setTimeout> | null>(null)
+    const scope = yield* Effect.scope
+    let autoOffFiber: Fiber.RuntimeFiber<void, never> | undefined
+    const lock = yield* Effect.makeSemaphore(1)
+    const serialize = lock.withPermits(1)
 
     const logWarn = (message: string) => logger.warn(message).pipe(Effect.ignore)
 
     const cancelAutoOff = Effect.gen(function* () {
-      const timer = yield* Ref.get(timerRef)
-      if (timer) clearTimeout(timer)
-      yield* Ref.set(timerRef, null)
+      const timer = autoOffFiber
+      autoOffFiber = undefined
+      if (timer) yield* Fiber.interrupt(timer)
     })
+
+    // Cancel before waiting for an intent already in progress, then again after
+    // entering: that intent may have armed its timer while this caller waited.
+    const control = <A, E>(effect: Effect.Effect<A, E>) =>
+      cancelAutoOff.pipe(Effect.zipRight(serialize(cancelAutoOff.pipe(Effect.zipRight(effect)))))
 
     const rememberCurrentOrKeep = (reason: RestoreReason) =>
       Effect.gen(function* () {
@@ -101,6 +109,7 @@ export const PlayerPowerLive = Layer.scoped(
 
     const powerOnDisplayIfKnownOff = Effect.gen(function* () {
       const status = yield* display.status().pipe(
+        Effect.uninterruptible,
         Effect.catchTag("DisplayError", (e) =>
           Effect.gen(function* () {
             yield* logWarn(`Could not read display status before play: ${formatDisplayError(e)}`)
@@ -112,6 +121,7 @@ export const PlayerPowerLive = Layer.scoped(
       if (!status || !shouldPowerOnBeforePlay(status)) return
 
       yield* display.on().pipe(
+        Effect.uninterruptible,
         Effect.catchTag("DisplayError", (e) =>
           logWarn(`Could not power on display before play: ${formatDisplayError(e)}`)
         )
@@ -171,31 +181,30 @@ export const PlayerPowerLive = Layer.scoped(
     const stopAndPowerOff = (reason: RestoreReason) =>
       Effect.gen(function* () {
         yield* rememberCurrentOrKeep(reason)
-        yield* mpv.stop()
-        yield* display.off()
-        yield* Ref.set(timerRef, null)
+        yield* mpv.release()
+        // Display commands do not abort their subprocess on Effect cancellation.
+        // Hold the intent lock until the command settles so an old off cannot
+        // finish after a newer play has already powered the display back on.
+        yield* display.off().pipe(Effect.uninterruptible)
         return { ok: true as const, state: "off" as const }
       })
 
     const scheduleAutoOff = Effect.gen(function* () {
       yield* cancelAutoOff
-      const timer = setTimeout(() => {
-        Effect.runFork(
-          stopAndPowerOff("auto_off").pipe(
-            Effect.catchAll((e) =>
-              logWarn(`Auto display off failed: ${e instanceof Error ? e.message : String(e)}`)
-            )
-          )
-        )
-      }, AUTO_OFF_DELAY_MS)
-      ;(timer as { unref?: () => void }).unref?.()
-      yield* Ref.set(timerRef, timer)
+      autoOffFiber = yield* Effect.forkIn(
+        Effect.sleep(AUTO_OFF_DELAY_MS).pipe(
+          Effect.zipRight(serialize(stopAndPowerOff("auto_off"))),
+          Effect.catchAll(e => logWarn(`Auto display off failed: ${e instanceof Error ? e.message : String(e)}`)),
+          Effect.asVoid,
+        ),
+        scope,
+      )
     })
 
     yield* Effect.addFinalizer(() => cancelAutoOff)
 
     const startupRestore = Effect.gen(function* () {
-      const status = yield* display.status()
+      const status = yield* display.status().pipe(Effect.uninterruptible)
       if (!shouldAutoRestoreOnStartup(status)) return
       const restored = yield* restoreSaved("startup")
       if (restored.restored) {
@@ -207,12 +216,11 @@ export const PlayerPowerLive = Layer.scoped(
       )
     )
 
-    yield* Effect.forkScoped(startupRestore)
+    yield* Effect.forkScoped(serialize(startupRestore))
 
     return {
       play: (workshopId) =>
-        Effect.gen(function* () {
-          yield* cancelAutoOff
+        control(Effect.gen(function* () {
           yield* clearRestoreBestEffort("explicit play")
           const item = yield* library.get(workshopId)
           const path = yield* library.playablePath(item)
@@ -221,10 +229,10 @@ export const PlayerPowerLive = Layer.scoped(
           yield* library.update(item.workshop_id, { last_played_at: Date.now() })
           yield* mpv.setDisplayMode(item.display_mode)
           return { ok: true, path }
-        }),
+        })),
 
       stopForIdle: () =>
-        Effect.gen(function* () {
+        control(Effect.gen(function* () {
           const status = yield* mpv.status()
           if (status.current_workshop_id) {
             yield* playerState.setRestore(status.current_workshop_id, "manual_stop").pipe(
@@ -240,21 +248,17 @@ export const PlayerPowerLive = Layer.scoped(
             yield* clearRestoreBestEffort("idle stop")
           }
           return { ok: true }
-        }),
+        })),
 
       displayOff: () =>
-        Effect.gen(function* () {
-          yield* cancelAutoOff
-          return yield* stopAndPowerOff("display_off")
-        }),
+        control(stopAndPowerOff("display_off")),
 
       displayOn: () =>
-        Effect.gen(function* () {
-          yield* cancelAutoOff
-          yield* display.on()
+        control(Effect.gen(function* () {
+          yield* display.on().pipe(Effect.uninterruptible)
           const restored = yield* restoreSaved("display_on")
           return { ok: true, state: "on", ...restored }
-        }),
+        })),
     }
   })
 )
