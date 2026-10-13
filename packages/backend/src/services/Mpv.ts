@@ -141,6 +141,8 @@ export const makeMpvLive = (overrides: Partial<MpvDependencies> = {}) => Layer.s
               "--no-audio",
               `--hwdec=${config.mpv.hwdec}`,
               `--gpu-api=${config.mpv.gpu_api}`,
+              `--demuxer-max-bytes=${(config.mpv.cache_forward_mib ?? 32) * 1024 * 1024}`,
+              `--demuxer-max-back-bytes=${(config.mpv.cache_backward_mib ?? 8) * 1024 * 1024}`,
               "--keepaspect=yes",
               "--panscan=1.0",
             ],
