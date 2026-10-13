@@ -1,17 +1,34 @@
-import { Context, Deferred, Effect, Layer, Queue, Ref } from "effect"
+import { Context, Effect, Layer, Ref } from "effect"
 import { unlinkSync } from "node:fs"
 import type { DisplayMode } from "@pwe/shared"
 import { MpvIpcError, MpvSpawnError } from "@pwe/shared"
 import { Config } from "./Config.js"
 import { Logger } from "./Logger.js"
 
-type Subprocess = ReturnType<typeof Bun.spawn>
-type UnixSocket = ReturnType<typeof Bun.connect> extends Promise<infer T> ? T : never
+export interface MpvProcess {
+  readonly pid: number
+  readonly exited: Promise<number>
+  kill(): void
+}
 
-interface PendingCommand {
-  readonly id: number
-  readonly cmd: unknown[]
-  readonly deferred: Deferred.Deferred<unknown, MpvIpcError>
+export interface MpvSocket {
+  write(payload: string): number
+  end(): void
+}
+
+export interface MpvSocketHandlers {
+  data(socket: MpvSocket, data: Buffer): void
+  error(socket: MpvSocket, error: Error): void
+  close(socket: MpvSocket): void
+}
+
+export interface MpvDependencies {
+  spawn(command: string[], options: {
+    stdout: "pipe"; stderr: "pipe"; stdin: "ignore"
+    env: Record<string, string | undefined>
+  }): MpvProcess
+  connect(path: string, handlers: MpvSocketHandlers): Promise<MpvSocket>
+  removeSocket(path: string): void
 }
 
 export interface PlayerStatus {
@@ -55,12 +72,8 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 const connectSocket = async (
   path: string,
-  handlers: {
-    data: (socket: UnixSocket, data: Buffer) => void
-    error: (socket: UnixSocket, error: Error) => void
-    close: (socket: UnixSocket) => void
-  }
-): Promise<UnixSocket> => {
+  handlers: MpvSocketHandlers
+): Promise<MpvSocket> => {
   let lastErr: unknown
   for (let i = 0; i < SOCKET_CONNECT_RETRIES; i++) {
     try {
@@ -77,15 +90,22 @@ const connectSocket = async (
   throw lastErr
 }
 
-export const MpvLive = Layer.scoped(
+const defaultDependencies: MpvDependencies = {
+  spawn: (command, options) => Bun.spawn(command, options),
+  connect: connectSocket,
+  removeSocket: unlinkSync,
+}
+
+export const makeMpvLive = (overrides: Partial<MpvDependencies> = {}) => Layer.scoped(
   Mpv,
   Effect.gen(function* () {
+    const deps = { ...defaultDependencies, ...overrides }
     const config = yield* Config
     const logger = yield* Logger
 
     // Clean up stale socket
     try {
-      unlinkSync(config.mpv.ipc_socket)
+      deps.removeSocket(config.mpv.ipc_socket)
     } catch {
       // ignore if doesn't exist
     }
@@ -109,7 +129,7 @@ export const MpvLive = Layer.scoped(
     const child = yield* Effect.acquireRelease(
       Effect.try({
         try: () =>
-          Bun.spawn(
+          deps.spawn(
             [
               config.mpv.binary_path,
               `--input-ipc-server=${config.mpv.ipc_socket}`,
@@ -131,7 +151,7 @@ export const MpvLive = Layer.scoped(
             reason: `Failed to spawn mpv: ${cause instanceof Error ? cause.message : String(cause)}`,
             cause,
           }),
-      }) as Effect.Effect<Subprocess, MpvSpawnError>,
+      }) as Effect.Effect<MpvProcess, MpvSpawnError>,
       (proc) =>
         Effect.sync(() => {
           try {
@@ -140,7 +160,7 @@ export const MpvLive = Layer.scoped(
             // ignore
           }
           try {
-            unlinkSync(config.mpv.ipc_socket)
+            deps.removeSocket(config.mpv.ipc_socket)
           } catch {
             // ignore
           }
@@ -149,8 +169,15 @@ export const MpvLive = Layer.scoped(
 
     yield* logger.info(`mpv spawned pid=${child.pid}, connecting to ${config.mpv.ipc_socket}`)
 
-    const pendingRef = yield* Ref.make<Map<number, PendingCommand>>(new Map())
-    const requestIdRef = yield* Ref.make(0)
+    const pending = new Map<number, (result: Effect.Effect<unknown, MpvIpcError>) => void>()
+    let requestId = 0
+    let connectionFailure: MpvIpcError | undefined
+    const failConnection = (error: MpvIpcError) => {
+      connectionFailure ??= error
+      const requests = [...pending.values()]
+      pending.clear()
+      for (const complete of requests) complete(Effect.fail(connectionFailure))
+    }
     const statusRef = yield* Ref.make<PlayerStatus>({
       playing: false,
       current_workshop_id: null,
@@ -159,7 +186,7 @@ export const MpvLive = Layer.scoped(
     })
 
     let buffer = ""
-    const handleData = async (socket: UnixSocket, chunk: string) => {
+    const handleData = (socket: MpvSocket, chunk: string) => {
       buffer += chunk
       const lines = buffer.split("\n")
       buffer = lines.pop() ?? ""
@@ -168,31 +195,20 @@ export const MpvLive = Layer.scoped(
         try {
           const msg = JSON.parse(line)
           if (typeof msg.request_id === "number") {
-            const pending = (await Effect.runPromise(Ref.get(pendingRef))).get(msg.request_id)
-            if (pending) {
-              await Effect.runPromise(
-                Ref.update(pendingRef, (m) => {
-                  const next = new Map(m)
-                  next.delete(msg.request_id)
-                  return next
-                })
-              )
-              if (msg.error && msg.error !== "success") {
-                await Effect.runPromise(
-                  Deferred.fail(
-                    pending.deferred,
-                    new MpvIpcError({ reason: `mpv error: ${msg.error}` })
-                  )
-                )
-              } else {
-                await Effect.runPromise(Deferred.succeed(pending.deferred, msg.data ?? null))
-              }
+            const complete = pending.get(msg.request_id)
+            if (complete) {
+              pending.delete(msg.request_id)
+              complete(msg.error && msg.error !== "success"
+                ? Effect.fail(new MpvIpcError({ reason: `mpv error: ${msg.error}` }))
+                : Effect.succeed(msg.data ?? null))
             }
-          } else if (shouldReassertFullscreen(msg)) {
-            // Write on the socket directly: the corrective command must not
-            // depend on the command queue, which is wired up after this handler.
-            socket.write(JSON.stringify({ command: ["set_property", "fullscreen", true] }) + "\n")
-            await Effect.runPromise(logger.warn("mpv lost fullscreen; re-asserting"))
+          } else if (!connectionFailure && shouldReassertFullscreen(msg)) {
+            const payload = JSON.stringify({ command: ["set_property", "fullscreen", true] }) + "\n"
+            if (socket.write(payload) !== Buffer.byteLength(payload)) {
+              failConnection(new MpvIpcError({ reason: "Incomplete mpv fullscreen recovery write" }))
+              socket.end()
+            }
+            void Effect.runPromise(logger.warn("mpv lost fullscreen; re-asserting"))
           }
         } catch {
           // ignore malformed
@@ -202,14 +218,16 @@ export const MpvLive = Layer.scoped(
 
     const realSocket = yield* Effect.tryPromise({
       try: () =>
-        connectSocket(config.mpv.ipc_socket, {
+        deps.connect(config.mpv.ipc_socket, {
           data(s, data) {
             void handleData(s, data.toString("utf-8"))
           },
           error(_s, err) {
+            failConnection(new MpvIpcError({ reason: `mpv IPC socket error: ${err.message}`, cause: err }))
             void Effect.runPromise(logger.error(`mpv IPC socket error: ${err.message}`))
           },
           close() {
+            failConnection(new MpvIpcError({ reason: "mpv IPC socket closed" }))
             void Effect.runPromise(logger.warn("mpv IPC socket closed"))
           },
         }),
@@ -220,48 +238,41 @@ export const MpvLive = Layer.scoped(
         }),
     })
 
-    // Outgoing command queue ensures one-in-flight ordering for callers, even
-    // though the IPC protocol multiplexes by request_id.
-    const cmdQueue = yield* Queue.unbounded<PendingCommand>()
-
-    const dispatcher = Effect.forever(
-      Effect.gen(function* () {
-        const pending = yield* Queue.take(cmdQueue)
-        yield* Ref.update(pendingRef, (m) => {
-          const next = new Map(m)
-          next.set(pending.id, pending)
-          return next
-        })
-        const payload = JSON.stringify({ command: pending.cmd, request_id: pending.id }) + "\n"
-        yield* Effect.try({
-          try: () => realSocket.write(payload),
-          catch: (cause) =>
-            new MpvIpcError({
-              reason: `Failed to write mpv command: ${cause instanceof Error ? cause.message : String(cause)}`,
-              cause,
-            }),
-        }).pipe(
-          Effect.tapError((err) => Deferred.fail(pending.deferred, err)),
-          Effect.ignore
-        )
-      })
-    )
-
-    yield* Effect.forkScoped(dispatcher)
+    yield* Effect.addFinalizer(() => Effect.sync(() => {
+      failConnection(new MpvIpcError({ reason: "mpv service closed" }))
+      realSocket.end()
+      buffer = ""
+    }))
 
     const send = (cmd: unknown[]): Effect.Effect<unknown, MpvIpcError> =>
-      Effect.gen(function* () {
-        const id = yield* Ref.updateAndGet(requestIdRef, (n) => n + 1)
-        const deferred = yield* Deferred.make<unknown, MpvIpcError>()
-        yield* Queue.offer(cmdQueue, { id, cmd, deferred })
-        return yield* Deferred.await(deferred).pipe(
-          Effect.timeoutFail({
-            duration: "5 seconds",
-            onTimeout: () =>
-              new MpvIpcError({ reason: `mpv command timed out: ${JSON.stringify(cmd)}` }),
-          })
-        )
-      })
+      Effect.async<unknown, MpvIpcError>((complete) => {
+        if (connectionFailure) {
+          complete(Effect.fail(connectionFailure))
+          return
+        }
+        const id = ++requestId
+        // Register and write in the same synchronous turn: interrupted callers
+        // cannot leave a queued command to be dispatched after their deadline.
+        pending.set(id, complete)
+        try {
+          const payload = JSON.stringify({ command: cmd, request_id: id }) + "\n"
+          // Bun sockets are unbuffered; a partial JSON line poisons the next command.
+          if (realSocket.write(payload) !== Buffer.byteLength(payload)) {
+            failConnection(new MpvIpcError({ reason: "Incomplete mpv command write" }))
+            realSocket.end()
+          }
+        } catch (cause) {
+          pending.delete(id)
+          complete(Effect.fail(new MpvIpcError({
+            reason: `Failed to write mpv command: ${cause instanceof Error ? cause.message : String(cause)}`,
+            cause,
+          })))
+        }
+        return Effect.sync(() => { pending.delete(id) })
+      }).pipe(Effect.timeoutFail({
+        duration: "5 seconds",
+        onTimeout: () => new MpvIpcError({ reason: `mpv command timed out: ${JSON.stringify(cmd)}` }),
+      }))
 
     yield* send(["observe_property", FULLSCREEN_OBSERVE_ID, "fullscreen"]).pipe(
       Effect.catchAll((e) => logger.warn(`Could not observe mpv fullscreen: ${e.reason}`))
@@ -326,3 +337,5 @@ export const MpvLive = Layer.scoped(
     }
   })
 )
+
+export const MpvLive = makeMpvLive()
