@@ -14,7 +14,7 @@ import { Playback, PlaybackLive } from "./Playback.js"
 import { PlaybackPrefsLive } from "./PlaybackPrefs.js"
 import { PlayerPower, PlayerPowerLive } from "./PlayerPower.js"
 import { PlayerState, PlayerStateLive, type PlayerStateImpl, type RestoreState } from "./PlayerState.js"
-import { RotationLive } from "./Rotation.js"
+import { Rotation, RotationLive } from "./Rotation.js"
 import { Storage } from "./Storage.js"
 import { MediaRootWatch } from "./MediaRootWatch.js"
 
@@ -60,15 +60,40 @@ const fixture = async (options: {
   let pathReached = gate<void>()
   let blockedOff: ReturnType<typeof gate<void>> | undefined
   let offReached = gate<void>()
+  let blockedList: ReturnType<typeof gate<void>> | undefined
+  let listReached = gate<void>()
+  let blockedRecovery: ReturnType<typeof gate<void>> | undefined
+  let recoveryReached = gate<void>()
+  const rotationEvents: string[] = []
   let displayStatus: DisplayStatus = options.displayStatus ?? { state: "unknown", source: "default" }
   const probing = gate<void>()
   const probe = options.holdProbe ? gate<DisplayStatus>() : undefined
   let firstProbe = true
   const row = (id: string) => ({ ...exampleRow, workshop_id: id, source_path: `/media/${id}.mp4` })
   const runtime = ManagedRuntime.make(PlaybackLive.pipe(
-    Layer.provideMerge(RotationLive),
+    Layer.provideMerge(Layer.effect(Rotation, Effect.gen(function* () {
+      const rotation = yield* Rotation
+      return {
+        ...rotation,
+        arm: (id: string) => rotation.arm(id).pipe(Effect.tap(() => Effect.sync(() => { rotationEvents.push(`arm:${id}`) }))),
+        disarm: () => rotation.disarm().pipe(Effect.tap(() => Effect.sync(() => { rotationEvents.push("disarm") }))),
+      }
+    })).pipe(Layer.provide(RotationLive))),
     Layer.provideMerge(PlaybackPrefsLive),
-    Layer.provideMerge(PlayerPowerLive),
+    Layer.provideMerge(Layer.effect(PlayerPower, Effect.gen(function* () {
+      const power = yield* PlayerPower
+      return {
+        ...power,
+        recovered: () => power.recovered().pipe(Stream.mapEffect(id => Effect.gen(function* () {
+          const blocked = blockedRecovery
+          if (blocked) {
+            recoveryReached.resolve()
+            yield* Effect.promise(() => blocked.promise)
+          }
+          return id
+        }))),
+      }
+    })).pipe(Layer.provide(PlayerPowerLive))),
     Layer.provideMerge(makeMpvLive({
       spawn: () => {
         const p = { alive: true, commands: [] as unknown[][], exit: gate<number>() }
@@ -104,7 +129,14 @@ const fixture = async (options: {
     Layer.provideMerge(PlayerStateLive),
     Layer.provideMerge(Layer.succeed(Db, db)),
     Layer.provideMerge(Layer.succeed(Library, {
-      list: () => Effect.sync(() => ids.map(row)),
+      list: () => Effect.gen(function* () {
+        const blocked = blockedList
+        if (blocked) {
+          listReached.resolve()
+          yield* Effect.promise(() => blocked.promise)
+        }
+        return ids.map(row)
+      }),
       get: id => missing
         ? Effect.fail(new LibraryNotFoundError({ workshopId: id })) : Effect.succeed(row(id)),
       playablePath: item => Effect.gen(function* () {
@@ -159,7 +191,7 @@ const fixture = async (options: {
   const playback = await runtime.runPromise(Playback)
   await probing.promise
   return {
-    runtime, mpv, playback, state, processes, events, offObservations, savedAtKill,
+    runtime, mpv, playback, state, processes, events, offObservations, savedAtKill, rotationEvents,
     advance: (ms: number) => runtime.runPromise(TestClock.adjust(ms)),
     setAvailable(value: boolean) { available = value },
     rootCameBack: () => runtime.runPromise(Queue.offer(probes, { available: true, root: "/media", reason: null })),
@@ -176,7 +208,11 @@ const fixture = async (options: {
     allowPath() { waitingPath?.resolve(); waitingPath = undefined },
     holdOff() { blockedOff = gate<void>(); offReached = gate<void>(); return offReached.promise },
     allowOff() { blockedOff?.resolve(); blockedOff = undefined },
-    async dispose() { killFails = false; blockedOff?.resolve(); waitingPath?.resolve(); probe?.resolve({ state: "unknown", source: "default" }); await runtime.dispose(); sqlite.close() },
+    holdList() { blockedList = gate<void>(); listReached = gate<void>(); return listReached.promise },
+    allowList() { blockedList?.resolve(); blockedList = undefined },
+    holdRecoveryDelivery() { blockedRecovery = gate<void>(); recoveryReached = gate<void>(); return recoveryReached.promise },
+    allowRecoveryDelivery() { blockedRecovery?.resolve(); blockedRecovery = undefined },
+    async dispose() { killFails = false; blockedOff?.resolve(); blockedList?.resolve(); blockedRecovery?.resolve(); waitingPath?.resolve(); probe?.resolve({ state: "unknown", source: "default" }); await runtime.dispose(); sqlite.close() },
   }
 }
 
@@ -552,4 +588,41 @@ test("a recovery overtaken by display-off does not announce a new rotation sessi
     await f.advance(0)
     expect(recovered).toEqual([])
   } finally { await Effect.runPromise(Fiber.interrupt(listening)); await f.dispose() }
+})
+
+test("stop and display-off wait for an already-consumed recovery rebuild before disarming rotation", async () => {
+  for (const action of ["stop", "displayOff"] as const) {
+    const f = await fixture({ saved: "a", savedReason: "media_lost", available: false, mode: "sequential" })
+    try {
+      const rebuilding = f.holdList()
+      f.setAvailable(true)
+      await f.rootCameBack()
+      await rebuilding
+      const stopping = f.runtime.runFork(f.playback[action]())
+      await f.runtime.runPromise(Effect.yieldNow)
+      expect(f.rotationEvents).toEqual([])
+      f.allowList()
+      await Effect.runPromise(Fiber.join(stopping))
+      await f.advance(0)
+      expect(f.rotationEvents).toEqual(["arm:a", "disarm"])
+      expect(await f.status()).toMatchObject({ playing: false, path: null })
+    } finally { f.allowList(); await f.dispose() }
+  }
+})
+
+test("a published recovery delivered after stop or display-off cannot rearm rotation", async () => {
+  for (const action of ["stop", "displayOff"] as const) {
+    const f = await fixture({ saved: "a", savedReason: "media_lost", available: false, mode: "sequential" })
+    try {
+      const published = f.holdRecoveryDelivery()
+      f.setAvailable(true)
+      await f.rootCameBack()
+      await published
+      await f.runtime.runPromise(f.playback[action]())
+      f.allowRecoveryDelivery()
+      await f.advance(0)
+      expect(f.rotationEvents).toEqual(["disarm"])
+      expect(await f.status()).toMatchObject({ playing: false, path: null })
+    } finally { f.allowRecoveryDelivery(); await f.dispose() }
+  }
 })

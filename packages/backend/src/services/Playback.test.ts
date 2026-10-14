@@ -3,6 +3,7 @@ import { Effect, Layer, ManagedRuntime, Queue, Stream } from "effect"
 import type { PlayMode } from "@pwe/shared"
 import { DbError, DisplayError, MpvIpcError } from "@pwe/shared"
 import { Logger } from "./Logger.js"
+import { Mpv } from "./Mpv.js"
 import { MAX_PLAY_LIMIT_MINUTES, PlaybackPrefs } from "./PlaybackPrefs.js"
 import { PlayerPower } from "./PlayerPower.js"
 import { Rotation } from "./Rotation.js"
@@ -34,11 +35,13 @@ const makeRuntime = (
   // A Queue rather than a PubSub so a test can hand the service a wallpaper
   // recovery without racing the subscription registration.
   const recoveries = Effect.runSync(Queue.unbounded<string>())
+  let current: string | null = null
 
   const playerPowerLayer = Layer.succeed(PlayerPower, {
     play: (workshopId: string) =>
       Effect.sync(() => {
         events.push(`playerPower.play:${workshopId}`)
+        current = workshopId
         return { ok: true as const, path: "/media/source/123/video.mp4" }
       }),
     stopForIdle: () =>
@@ -47,6 +50,7 @@ const makeRuntime = (
         if (failures.stopForIdleFails) {
           return yield* Effect.fail(new MpvIpcError({ reason: "socket gone" }))
         }
+        current = null
         return { ok: true as const }
       }),
     displayOff: () =>
@@ -57,11 +61,13 @@ const makeRuntime = (
             new DisplayError({ kind: "NotConfigured", message: "no off_command" })
           )
         }
+        current = null
         return { ok: true as const, state: "off" as const }
       }),
     displayOn: () =>
       Effect.sync(() => {
         events.push("playerPower.displayOn")
+        if (failures.displayOnRestores) current = failures.displayOnRestores
         return failures.displayOnRestores
           ? {
               ok: true as const,
@@ -116,7 +122,14 @@ const makeRuntime = (
       }),
   })
 
-  const envLayer = Layer.mergeAll(playerPowerLayer, rotationLayer, loggerLayer, prefsLayer)
+  const mpvLayer = Layer.succeed(Mpv, {
+    play: () => Effect.void, stop: () => Effect.void, release: () => Effect.void,
+    pause: () => Effect.void, resume: () => Effect.void, setDisplayMode: () => Effect.void,
+    status: () => Effect.sync(() => ({ playing: current !== null, current_workshop_id: current,
+      path: current ? `/media/${current}.mp4` : null, display_mode: "fill" as const })),
+    ended: () => Stream.empty,
+  })
+  const envLayer = Layer.mergeAll(playerPowerLayer, rotationLayer, loggerLayer, prefsLayer, mpvLayer)
 
   return {
     events,
@@ -127,7 +140,9 @@ const makeRuntime = (
     },
     /** Hand the orchestrator a wallpaper that PlayerPower restored on its own. */
     recovered: (workshopId: string) =>
-      Queue.offer(recoveries, workshopId).pipe(Effect.andThen(Effect.sleep("50 millis"))),
+      Effect.sync(() => { current = workshopId }).pipe(
+        Effect.andThen(Queue.offer(recoveries, workshopId)), Effect.andThen(Effect.sleep("50 millis")),
+      ),
     runtime: ManagedRuntime.make(PlaybackLive.pipe(Layer.provide(envLayer))),
   }
 }

@@ -8,6 +8,7 @@ import type {
   StorageError,
 } from "@pwe/shared"
 import { Logger } from "./Logger.js"
+import { Mpv } from "./Mpv.js"
 import { PlaybackPrefs, clampPlayLimitMinutes } from "./PlaybackPrefs.js"
 import { PlayerPower, type PowerOnResult } from "./PlayerPower.js"
 import { Rotation } from "./Rotation.js"
@@ -67,6 +68,7 @@ export const PlaybackLive = Layer.effect(
     const playerPower = yield* PlayerPower
     const rotation = yield* Rotation
     const prefs = yield* PlaybackPrefs
+    const mpv = yield* Mpv
 
     const lock = yield* Semaphore.make(1)
     const serialize = lock.withPermit
@@ -191,10 +193,17 @@ export const PlaybackLive = Layer.effect(
         .recovered()
         .pipe(
           Stream.mapEffect((workshopId) =>
-            rotation.arm(workshopId).pipe(
-              Effect.tap(() => logger.info(`Armed rotation on recovered wallpaper ${workshopId}`)),
-              Effect.catch(() => Effect.void)
-            )
+            serialize(Effect.gen(function* () {
+              // Recovery delivery can lag behind a deliberate stop or off.
+              // Validate under the intent lock and keep rebuilding inside it
+              // so a later disarm cannot be overtaken by this notification.
+              const status = yield* mpv.status()
+              if (!status.playing || status.current_workshop_id !== workshopId) return
+              yield* rotation.arm(workshopId).pipe(
+                Effect.tap(() => logger.info(`Armed rotation on recovered wallpaper ${workshopId}`)),
+                Effect.catch(() => Effect.void),
+              )
+            }))
           ),
           Stream.runDrain
         )
