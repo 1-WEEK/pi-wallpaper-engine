@@ -11,6 +11,14 @@ the released player remains absent and the request reports the display error.
 If process cleanup fails, the display command is not run; another attempt can
 retry cleanup.
 
+Display commands keep their 5-second execution deadline. Timeout or cancellation
+terminates the owned child with SIGTERM, allows one second, then escalates to
+SIGKILL with another one-second wait. Cancelling the stderr reader has a separate
+one-second bound so an exited command’s descendant cannot keep controls or
+shutdown waiting for EOF. This allows at most three additional seconds for
+cleanup; unsuccessful termination or reader closure is logged. Failed commands
+retain their existing DisplayError contract and do not change the cached state.
+
 Display-on restores the saved wallpaper from the beginning with its library
 picture mode. Success clears the saved intent. A deleted library item clears it;
 an ordinary restore failure keeps it. Manual stop retains its existing

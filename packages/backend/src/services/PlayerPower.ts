@@ -182,9 +182,8 @@ export const PlayerPowerLive = Layer.scoped(
       Effect.gen(function* () {
         yield* rememberCurrentOrKeep(reason)
         yield* mpv.release()
-        // Display commands do not abort their subprocess on Effect cancellation.
-        // Hold the intent lock until the command settles so an old off cannot
-        // finish after a newer play has already powered the display back on.
+        // Hold the intent lock until the command and its owned cleanup settle
+        // so an old off cannot finish after a newer play has powered back on.
         yield* display.off().pipe(Effect.uninterruptible)
         return { ok: true as const, state: "off" as const }
       })

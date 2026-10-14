@@ -29,55 +29,72 @@ interface SpawnResult {
 const runCommand = (
   argv: readonly string[],
   logger: { warn: (msg: string) => Effect.Effect<void> }
-): Effect.Effect<SpawnResult, DisplayError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const child = Bun.spawn([...argv], {
-        stdout: "pipe",
-        stderr: "pipe",
-        stdin: "ignore",
-      })
-
-      let timedOut = false
-      const timer = setTimeout(() => {
-        timedOut = true
-        try {
-          child.kill()
-        } catch {
-          // ignore
-        }
-      }, TIMEOUT_MS)
-
-      try {
-        const [stderrBuf, exitCode] = await Promise.all([
-          new Response(child.stderr).text(),
-          child.exited,
-        ])
-
-        if (timedOut) {
-          throw new DisplayError({
-            kind: "Timeout",
-            message: `Command timed out after ${TIMEOUT_MS / 1000}s: ${argv.join(" ")}`,
-          })
-        }
-
-        return { exitCode, stderr: stderrBuf.slice(-500) }
-      } finally {
-        clearTimeout(timer)
-      }
-    },
-    catch: (cause) => {
-      if (cause instanceof DisplayError) return cause
-      const msg = cause instanceof Error ? cause.message : String(cause)
-      // Bun.spawn throws synchronously inside the async fn when the binary
-      // is missing — surface that distinctly so the user knows to fix PATH.
-      Effect.runFork(logger.warn(`Display command spawn failed: ${msg}`))
-      return new DisplayError({
-        kind: "SpawnFailed",
-        message: `Failed to spawn ${argv.join(" ")}: ${msg}`,
-      })
-    },
+): Effect.Effect<SpawnResult, DisplayError> => {
+  const spawnError = (cause: unknown) => new DisplayError({
+    kind: "SpawnFailed",
+    message: `Failed to spawn ${argv.join(" ")}: ${cause instanceof Error ? cause.message : String(cause)}`,
   })
+  const timeoutError = () => new DisplayError({
+    kind: "Timeout",
+    message: `Command timed out after ${TIMEOUT_MS / 1000}s: ${argv.join(" ")}`,
+  })
+
+  return Effect.acquireUseRelease(
+    Effect.try({
+      try: () => {
+        const child = Bun.spawn([...argv], { stdout: "ignore", stderr: "pipe", stdin: "ignore" })
+        return { child, reader: child.stderr.getReader() }
+      },
+      catch: spawnError,
+    }).pipe(Effect.tapError(error => logger.warn(error.message))),
+    ({ child, reader }) => Effect.raceFirst(Effect.all([
+      Effect.tryPromise({
+        try: async () => {
+          const decoder = new TextDecoder()
+          let tail = ""
+          while (true) {
+            const chunk = await reader.read()
+            if (chunk.done) return (tail + decoder.decode()).slice(-500)
+            tail = (tail + decoder.decode(chunk.value, { stream: true })).slice(-500)
+          }
+        },
+        catch: spawnError,
+      }),
+      Effect.tryPromise({ try: () => child.exited, catch: spawnError }),
+    ], { concurrency: "unbounded" }).pipe(
+      // The caller may mask interruption to preserve power-command ordering.
+      // Deadline losers still need to be interruptible for cleanup to begin.
+      Effect.map(([stderr, exitCode]) => ({ stderr, exitCode })),
+      Effect.interruptible,
+    ), Effect.sleep(TIMEOUT_MS).pipe(
+      Effect.zipRight(Effect.fail(timeoutError())),
+      Effect.interruptible,
+    )),
+    ({ child, reader }) => Effect.gen(function* () {
+      const bounded = <A>(wait: Effect.Effect<A>) => Effect.raceFirst(
+        wait.pipe(Effect.as(true), Effect.interruptible),
+        Effect.sleep("1 second").pipe(Effect.as(false), Effect.interruptible),
+      )
+      const signal = (name: NodeJS.Signals) => Effect.sync(() => {
+        try { child.kill(name) } catch { /* The child may have exited between checks. */ }
+      })
+      if (child.exitCode === null) {
+        yield* signal("SIGTERM")
+        if (!(yield* bounded(Effect.promise(() => child.exited)))) {
+          yield* signal("SIGKILL")
+          if (!(yield* bounded(Effect.promise(() => child.exited)))) {
+            yield* logger.warn(`Display command process ${child.pid} did not exit after SIGKILL`)
+          }
+        }
+      }
+      // An exited command can leave stderr open in a descendant. Closing our
+      // reader bounds cleanup without waiting for that descendant's lifetime.
+      if (!(yield* bounded(Effect.promise(() => reader.cancel().catch(() => undefined))))) {
+        yield* logger.warn(`Display command stderr cleanup did not settle for process ${child.pid}`)
+      }
+    }),
+  )
+}
 
 const requireConfigured = (
   cmd: readonly string[] | undefined,
