@@ -47,16 +47,18 @@ This restores the former cache budgets independently of process lifecycle. The
 ## Restore the persistent player lifecycle
 
 The display integration depends on the restartable player implementation. Revert
-both implementation commits, in this order, as one reviewed change:
+the display cleanup fix and both lifecycle implementation commits, in this
+order, as one reviewed change:
 
 ```bash
-git revert --no-commit 555cb63 9bd846b
+git revert --no-commit 42184e4 555cb63 9bd846b
 bun test
 bun run typecheck
 bun run build
 ```
 
-`555cb63` adds immediate release to display linkage and scoped power/sleep
+`42184e4` adds bounded display subprocess ownership required by the masked
+power-command ordering. `555cb63` adds immediate release to display linkage and scoped power/sleep
 timers. `9bd846b` adds the restartable player and stopped-idle release. Commit the
 validated combined revert before applying it to an installation. Keep the
 separate cache configuration commit; choose either 32/8 or 150/50 MiB through
