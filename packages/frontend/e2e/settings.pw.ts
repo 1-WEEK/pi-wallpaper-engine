@@ -524,5 +524,97 @@ test.describe("Settings mobile (ticket 14)", () => {
     // The sheet close is a ≥44px touch target on mobile.
     const close = await dialog.page().locator(".set-sheet-close").boundingBox()
     expect(close!.width).toBeGreaterThanOrEqual(44)
+    // Mobile geometry (spec §8.6): panel is calc(100vw - 32px) and the scrim
+    // drops its blur(6px) — the panel keeps the full glass recipe.
+    const panelBox = await dialog.boundingBox()
+    expect(Math.abs(panelBox!.width - (390 - 32))).toBeLessThanOrEqual(1)
+    const scrimFilter = await page
+      .locator(".set-sheet-scrim")
+      .evaluate((el) => getComputedStyle(el).backdropFilter)
+    expect(scrimFilter === "none" || scrimFilter === "").toBe(true)
+  })
+
+  test("detail header is the 26px unified slot with a right-anchored count", async ({
+    page,
+  }) => {
+    await mockBase(page)
+    await page.goto("/settings?sec=playback")
+
+    const title = page.locator(".setm-title-sub")
+    await expect(title).toHaveText("Playback")
+    expect(await title.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBe(26)
+    // Right-anchored count, same reading as the desktop headCount.
+    const count = page.locator(".setm-head .setm-count")
+    await expect(count).toHaveText("MODE — SINGLE")
+    expect(await count.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBe(10)
+  })
+
+  test("INTERFACE block: theme seg first, conditional mute row, reduce transparency last", async ({
+    page,
+  }) => {
+    await mockBase(page)
+    await page.goto("/settings?sec=playback")
+
+    const theme = page.getByRole("radiogroup", { name: "Theme" })
+    await expect(theme.getByRole("radio", { name: "A", exact: true })).toBeVisible()
+    await expect(theme.getByRole("radio", { name: "B", exact: true })).toBeVisible()
+    await expect(theme.getByRole("radio", { name: "AUTO" })).toBeVisible()
+    // Default AUTO follows the OS (chromium defaults to light).
+    await expect(theme.getByRole("radio", { name: "AUTO" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
+    await theme.getByRole("radio", { name: "B" }).click()
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+    expect(await page.evaluate(() => localStorage.getItem("pwe-theme"))).toBe("dark")
+
+    // Fixed row order: Theme → Interface sounds → (mute) → Reduce transparency.
+    const order = await page
+      .locator(".setm .set-row .set-row-name")
+      .allTextContents()
+    const names = ["Theme", "Interface sounds", "Reduce transparency"]
+    let at = -1
+    for (const name of names) {
+      const idx = order.indexOf(name)
+      expect(idx).toBeGreaterThan(at)
+      at = idx
+    }
+
+    // Mute row only exists while the master switch is ON (same muted key,
+    // in-flight stop handled by the shared sound engine).
+    await expect(
+      page.getByRole("radiogroup", { name: "Mute interface sounds" })
+    ).toHaveCount(0)
+    const sounds = page.getByRole("radiogroup", { name: "Interface sounds" })
+    await sounds.getByRole("radio", { name: "ON" }).click()
+    const mute = page.getByRole("radiogroup", { name: "Mute interface sounds" })
+    await expect(mute).toBeVisible()
+    await expect(mute.getByRole("radio", { name: "MUTED" })).toHaveAttribute(
+      "aria-checked",
+      "false"
+    )
+    await mute.getByRole("radio", { name: "MUTED" }).click()
+    expect(await page.evaluate(() => localStorage.getItem("pwe-interface-sounds-muted"))).toBe(
+      "1"
+    )
+    await sounds.getByRole("radio", { name: "OFF" }).click()
+    await expect(
+      page.getByRole("radiogroup", { name: "Mute interface sounds" })
+    ).toHaveCount(0)
+
+    // Reduce transparency: immediate commit, persisted, drives html dataset.
+    const rt = page.getByRole("radiogroup", { name: "Reduce transparency" })
+    await expect(rt.getByRole("radio", { name: "OFF" })).toHaveAttribute("aria-checked", "true")
+    await rt.getByRole("radio", { name: "ON" }).click()
+    await expect(page.locator("html")).toHaveAttribute("data-reduce-transparency", "true")
+    expect(await page.evaluate(() => localStorage.getItem("pwe-reduce-transparency"))).toBe("1")
+    // MiniPlayer is degraded to a solid surface (spec §2.3 contract).
+    const mini = page.locator(".mobile-mini-player")
+    if ((await mini.count()) > 0) {
+      expect(await mini.evaluate((el) => getComputedStyle(el).backdropFilter)).toBe("none")
+    }
+    await rt.getByRole("radio", { name: "OFF" }).click()
+    await expect(page.locator("html")).toHaveAttribute("data-reduce-transparency", "false")
   })
 })

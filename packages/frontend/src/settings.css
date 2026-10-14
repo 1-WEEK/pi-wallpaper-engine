@@ -652,7 +652,7 @@ html[data-theme="light"] .set-sheet-panel {
 
 .setm {
   min-height: 100%;
-  padding: 20px 18px 40px;
+  padding: 14px 16px 28px;
   background: var(--pt-bg);
   color: var(--pt-text);
   font-family: var(--pf-sans);
@@ -666,22 +666,21 @@ html[data-theme="light"] .set-sheet-panel {
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
+/* List and detail headers share the one 26px slot (spec §4.4); the detail
+   head right-anchors the section reading (same string as desktop
+   headCount) in 10px mono. */
 .setm-title {
   margin: 0;
   font-family: var(--pf-display);
-  font-size: 38px;
+  font-size: 26px;
   font-weight: 700;
-  line-height: 0.95;
+  line-height: 1.05;
   letter-spacing: -0.022em;
   text-transform: uppercase;
-}
-
-.setm-title-sub {
-  font-size: 30px;
 }
 
 .setm-count {
@@ -751,7 +750,7 @@ html[data-theme="light"] .set-sheet-panel {
 .setm-body {
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 32px;
 }
 
 /* Touch targets (spec §9): every interactive element in the mobile detail
@@ -783,7 +782,55 @@ html[data-theme="light"] .set-sheet-panel {
 /* The focused directory flow becomes a near-full-width glass panel on
    narrow screens. */
 .setm .set-sheet-panel {
-  width: calc(100vw - 24px);
+  width: calc(100vw - 32px);
   max-height: 92vh;
   max-height: 92dvh;
+}
+
+/* ── mobile-impl 05 (spec §4.4 / §8.6): mobile-only drift fixes. The
+   component rules above stay byte-stable for the desktop rail page; every
+   override here hangs off .setm or the shared mobile media query. ────── */
+
+/* .setm-ifx rows render only inside the mobile section bodies; the desktop
+   rail keeps its own bracketed theme control (rail instrument syntax) and
+   the shell mute dot, so the whole family hides there. */
+.setm-ifx {
+  display: none;
+}
+.setm .setm-ifx {
+  display: flex;
+}
+
+/* Mute row reveal: 120ms fade when the master switch flips ON (§4.4). */
+.setm .setm-mute-row {
+  animation: setm-mute-in 120ms var(--ease-out) both;
+}
+@keyframes setm-mute-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Block-head labels drop to 9px in the mobile detail layer (11 → 9). */
+.setm .set-label {
+  font-size: 9px;
+}
+
+/* Play-limit five-segment row is hard-wired to one line (§4.4: OFF / 15M /
+   30M / 1H / 2H fit with 17px to spare at 390; narrower widths shrink the
+   text per the §6 ladder, never wrap). */
+.setm .set-seg {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* §8.6: the focused-flow scrims keep the 0.55 dim on mobile but drop the
+   blur — one static glass layer (the panel) is the whole budget. The
+   media query matches the coarse-pointer mobile form factor so desktop
+   and desktop-narrow windows keep the desktop recipe. */
+@media (pointer: coarse), (max-width: 719px) {
+  .set-sheet-scrim {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }

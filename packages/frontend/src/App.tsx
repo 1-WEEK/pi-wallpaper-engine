@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, type RefObject } from "react"
 import { Redirect, Route, Switch, useLocation, useSearch } from "wouter"
 import useSWR from "swr"
 import { SWRConfig, useSWRConfig } from "swr"
@@ -23,7 +23,9 @@ import {
   MobileTopBar,
   useContainerWidth,
   useLayout,
+  usePressVocabulary,
 } from "./components/mobile/index.js"
+import { useReduceTransparency } from "./reducedTransparency.js"
 
 const Routes = ({
   summary,
@@ -59,13 +61,6 @@ const Routes = ({
     </Route>
   </Switch>
 )
-
-const pageTitle = (loc: string): string => {
-  if (loc.startsWith("/library")) return "Library"
-  if (loc.startsWith("/activity")) return "Activity"
-  if (loc.startsWith("/settings")) return "Settings"
-  return "Browse"
-}
 
 const ShellBody = () => {
   const [loc] = useLocation()
@@ -144,7 +139,7 @@ const ShellBody = () => {
   if (mobile) {
     return (
       <>
-        <MobileTopBar title={pageTitle(loc)} summary={summary ?? null} />
+        <MobileTopBar summary={summary ?? null} />
         <main className="mobile-main">
           <Routes summary={summary} onRefresh={refresh} />
         </main>
@@ -193,15 +188,31 @@ const DesktopShell = ({
   )
 }
 
+const ShellFrame = ({ shellRef }: { shellRef: RefObject<HTMLDivElement | null> }) => {
+  const { mobile } = useLayout()
+  const rt = useReduceTransparency()
+
+  // press→release vocabulary engine (spec §2.1) — scoped to the mobile
+  // shell; desktop keeps its hover→click grammar untouched.
+  usePressVocabulary(shellRef)
+
+  useEffect(() => {
+    document.documentElement.dataset.reduceTransparency = rt ? "true" : "false"
+  }, [rt])
+
+  return (
+    <div ref={shellRef} className={mobile ? "mobile-shell" : "app"}>
+      <ShellBody />
+    </div>
+  )
+}
+
 const AppShell = () => {
   const [ref, width] = useContainerWidth()
-  const mobile = width > 0 && width < 720
   return (
-    <div ref={ref} className={mobile ? "mobile-shell" : "app"}>
-      <LayoutProvider width={width}>
-        <ShellBody />
-      </LayoutProvider>
-    </div>
+    <LayoutProvider width={width}>
+      <ShellFrame shellRef={ref} />
+    </LayoutProvider>
   )
 }
 

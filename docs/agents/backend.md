@@ -123,6 +123,12 @@ linkage; [Rotation](../../packages/backend/src/services/Rotation.ts) owns sequen
   read, so a recovery clears the error with no cache to invalidate, and
   `last_error` always names the causing path. Keep it that way: a cached verdict
   would outlive the outage it describes.
+- Mpv is created lazily. Stop unloads media and releases the child after a
+  cancelable 30-second grace period; pause retains media and position. Display-off
+  saves restore intent and calls immediate `release()` before running its command.
+  Session cleanup confirms child exit with bounded TERM/KILL waits and retains
+  ownership for retry if cleanup fails. Requests, sockets and callbacks belong to
+  their session generation. See [player lifecycle](../player-lifecycle.md).
 - Mpv is a backend-owned subprocess. Restarting the backend interrupts playback.
   For Pi flags and installation details, read [Pi Runtime](development.md#pi-runtime).
 

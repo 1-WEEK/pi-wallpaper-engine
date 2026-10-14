@@ -1,6 +1,6 @@
 # Domain Documentation
 
-This repository has one domain context. Read [CONTEXT.md](../../CONTEXT.md) when
+This repository has one domain context. Read [GLOSSARY.md](../../GLOSSARY.md) when
 naming concepts or changing ownership boundaries, then the ADRs for the area involved.
 
 | Area | Decision history |
@@ -13,7 +13,7 @@ naming concepts or changing ownership boundaries, then the ADRs for the area inv
 
 ## Where Information Belongs
 
-- `CONTEXT.md` defines domain terms. Keep definitions short and free of module
+- `GLOSSARY.md` defines domain terms. Keep definitions short and free of module
   paths, API fields, dependency versions, and implementation recipes.
 - [Backend Guide](backend.md) describes current ownership and behavioral constraints.
   [Development Guide](development.md) describes commands, validation, and operation.

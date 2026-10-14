@@ -35,11 +35,18 @@ export const ScreenConfig = Schema.Struct({
   default_display_mode: DisplayMode,
 })
 
+// mpv receives bytes; keep that conversion exact within JavaScript's safe integer range.
+const CacheBudgetMiB = Schema.Int.check(Schema.isBetween({
+  minimum: 0, maximum: Math.floor(Number.MAX_SAFE_INTEGER / (1024 * 1024)),
+}))
+
 export const MpvConfig = Schema.Struct({
   binary_path: Schema.String.check(Schema.isMinLength(1)),
   ipc_socket: Schema.String.check(Schema.isMinLength(1)),
   hwdec: HwDec,
   gpu_api: GpuApi,
+  cache_forward_mib: Schema.optional(CacheBudgetMiB),
+  cache_backward_mib: Schema.optional(CacheBudgetMiB),
 })
 
 export const TranscodeConfig = Schema.Struct({

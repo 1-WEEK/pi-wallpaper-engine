@@ -166,6 +166,7 @@ const makeStack = (opts: { migrationRunning?: boolean; onPlayerStatus?: () => vo
     })),
     pause: () => Effect.sync(() => { player.playing = false }),
     resume: () => Effect.sync(() => { player.playing = true }),
+    release: () => Effect.void,
     stop: () => withPlaybackFileLock(Effect.sync(() => {
       player.path = null
       player.playing = false

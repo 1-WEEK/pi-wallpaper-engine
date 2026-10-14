@@ -93,14 +93,24 @@ export const GridOverlay = ({
   itemCount,
   cardSelector = ".bws-card",
   heightVar = "--bws-card-h",
+  classPrefix = "bws",
+  realignKey = "",
 }: {
   rootRef: RefObject<HTMLElement | null>
   gridRef: RefObject<HTMLElement | null>
   itemCount: number
   cardSelector?: string
+  /** Bump to force a manual re-measure when a shift without a resize
+   *  invalidates the offsets (chips row show/hide, LOAD MORE append —
+   *  RO watches size only, not position; mobile spec §8.5). */
+  realignKey?: string
   /** CSS variable on the root that receives the measured card height, feeding
    *  the cards' contain-intrinsic-height (spec §8.6). */
   heightVar?: string
+  /** Class prefix for the overlay markup: `${classPrefix}-gridlines` etc.
+   *  Mobile pages pass their own prefix so the desktop no-leak assertion
+   *  (`.bws-gridlines` absent on touch) keeps working (mobile spec §6 D1). */
+  classPrefix?: string
 }) => {
   const [metrics, setMetrics] = useState<GridMetrics>(EMPTY)
 
@@ -124,19 +134,19 @@ export const GridOverlay = ({
     const ro = new ResizeObserver(compute)
     ro.observe(grid)
     return () => ro.disconnect()
-  }, [rootRef, gridRef, itemCount, cardSelector, heightVar])
+  }, [rootRef, gridRef, itemCount, cardSelector, heightVar, realignKey])
 
   return (
-    <div className="bws-gridlines" aria-hidden="true">
+    <div className={`${classPrefix}-gridlines`} aria-hidden="true">
       {metrics.v.map((x) => (
-        <span key={`v${x}`} className="bws-gl bws-gl-v" style={{ left: x }} />
+        <span key={`v${x}`} className={`${classPrefix}-gl ${classPrefix}-gl-v`} style={{ left: x }} />
       ))}
       {metrics.h.map((y) => (
-        <span key={`h${y}`} className="bws-gl bws-gl-h" style={{ top: y }} />
+        <span key={`h${y}`} className={`${classPrefix}-gl ${classPrefix}-gl-h`} style={{ top: y }} />
       ))}
       {metrics.v.flatMap((x) =>
         metrics.h.map((y) => (
-          <span key={`x${x}-${y}`} className="bws-gx mono" style={{ left: x, top: y }}>
+          <span key={`x${x}-${y}`} className={`${classPrefix}-gx mono`} style={{ left: x, top: y }}>
             +
           </span>
         ))

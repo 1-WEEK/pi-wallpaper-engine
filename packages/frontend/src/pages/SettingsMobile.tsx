@@ -87,6 +87,7 @@ export const SettingsMobile = ({ summary, onRefresh }: Props) => {
             <Link
               key={s}
               href={`/settings?sec=${s}`}
+              data-press="row"
               className="setm-row pt-enter"
               style={{ "--pt-i": i + 1 } as React.CSSProperties}
             >
@@ -110,13 +111,14 @@ export const SettingsMobile = ({ summary, onRefresh }: Props) => {
           ← SETTINGS
         </Link>
         <h1 className="setm-title setm-title-sub">{HEAD_TITLE[sec]}</h1>
+        <span className="setm-count mono">{summary ? reading(sec) : ""}</span>
       </header>
 
       {!summary ? (
         <StateBlock kind="loading" text="LOADING PI CONFIGURATION" />
       ) : (
         <div className="setm-body">
-          {sec === "playback" && <PlaybackSec summary={summary} onRefresh={onRefresh} />}
+          {sec === "playback" && <PlaybackSec summary={summary} onRefresh={onRefresh} mobile />}
           {sec === "storage" &&
             (storage ? (
               <StorageSec

@@ -41,6 +41,18 @@ Use the existing `fixtures.ts` and `helpers.ts`; follow
 [playwright.config.ts](../../playwright.config.ts) for server and browser settings.
 If Chromium is missing, install it with `bunx playwright install chromium`.
 
+Mobile scrolling regressions are in
+`packages/frontend/e2e/mobile-layout.pw.ts`. Run both engines with
+`PWE_E2E_WEBKIT=1 bun run test:e2e packages/frontend/e2e/mobile-layout.pw.ts`.
+Chromium uses trusted touch drags through CDP. WebKit uses native wheel input
+in a touch-enabled mobile-sized viewport: Playwright's mobile WebKit mode
+rejects wheel input and exposes only touch taps. Tests inject nonzero safe-area
+insets through the shell's `--mobile-safe-*` variables. These checks cover scroll
+positions, content growth, sheet dismissal, viewport resizing, and layout;
+record physical iOS Safari verification separately, including device and iOS
+version, address-bar expansion/collapse, portrait/landscape rotation, touch
+scrolling in both directions, and the last action in each mobile sheet.
+
 ## Local Servers and Configuration
 
 ```bash
@@ -234,6 +246,21 @@ bash scripts/check-boot-recovery.sh
   behind a QUEUE… Sheet (`actm-*`). Mobile drops the `pt-enter` mount
   choreography — on touch scroll the 550ms blur trail reads as a smear, so
   the class renders as an instant cut.
+- The shared mobile shell (`styles.css` `.mobile-shell`) is a positioned grid
+  at `100dvh` (with a `100vh` fallback): top bar, `minmax(0, 1fr)` native
+  `.mobile-main` scroller, mini player, and bottom navigation. Keep the shell
+  height bounded so long lists grow the main scroller rather than moving the
+  controls out of view. `LayoutContext.tsx` owns the mobile decision: container
+  width below 720px, or a coarse pointer with either viewport dimension below
+  720px. The latter keeps phone rotation in the same shell; `App.tsx` reads
+  this shared decision for both shell styling and content. Top and side safe
+  insets pad the shell; bottom navigation reserves the greater of its usual
+  padding and the bottom inset. Absolute mobile sheets anchor to this shell,
+  reserve bottom and side insets inside their panels, cap height below the top
+  inset, and scroll their bodies independently. Keep sheet headers and grabbers
+  outside the shrinking scroll area. Keep `.mobile-main` and any page root
+  containing a sheet unpositioned (`.act` resets to `position: static` on mobile)
+  so sheets stay anchored when the page scrolls.
 - Keep the existing plain CSS system for not-yet-migrated pages. Reuse
   controls and icons from
   [icons.tsx](../../packages/frontend/src/icons.tsx).

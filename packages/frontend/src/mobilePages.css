@@ -9,9 +9,12 @@
    measure and ≥44px action targets. Every interactive target is ≥44px. */
 
 /* ── Shared page grammar ───────────────────────────────────────────
-   Mobile drops the mount choreography (spec §9: no degraded substitute for
-   the desktop's motion layer): pt-enter stays, but runs as an instant cut —
-   the 550ms blur trail reads as a smear on touch scroll. */
+   The desktop pt-enter mount (550ms + blur trail) never runs on touch —
+   blur reads as a smear under scroll. The mobile mount choreography is
+   `mp-enter` (mobile spec §5.1 D1: 240ms --ease-out, opacity +
+   translateY(8px), stagger 30ms cap 6, page mount / tab switch only),
+   declared in mobileShell.css and applied by the page at mount; appends
+   and filter refreshes re-render without the class (no replay). */
 .mobile-shell .pt-enter {
   animation: none;
 }
@@ -111,23 +114,16 @@ span.mp-cmd {
 }
 
 button.mp-cmd {
-  /* tap target: the underline sits inside a 44px hit area */
+  /* tap target: the underline sits inside a 44px hit area; the 2px inline
+     padding lets the armed hairline chip (vocabulary #7) wrap the label
+     while keeping the full hit box. */
   min-height: 44px;
-  padding: 0;
+  padding: 0 2px;
 }
 
-.mp-cmd:active:not(:disabled) {
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
-  border-bottom-color: var(--pt-inv-bg);
-}
-
-a.mp-cmd:active,
-span.mp-cmd:active {
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
-  text-decoration-color: var(--pt-inv-text);
-}
+/* §3.5 death penalty: no :active flat-fill inversion on the mobile shell —
+   the pressed state is the press→release dither ([data-press].pressing)
+   and nothing else. Commands opt into the vocabulary with data-press="cmd". */
 
 .mp-cmd:disabled {
   opacity: 0.45;
@@ -137,11 +133,6 @@ span.mp-cmd:active {
 .mp-cmd-primary {
   color: var(--pt-text);
   border-bottom-color: var(--pt-text);
-}
-
-.mp-cmd-primary:active:not(:disabled) {
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
 }
 
 .mp-cmd-danger {
@@ -196,56 +187,42 @@ span.mp-cmd:active {
 .bwm-search-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 18px;
   margin: 2px 0 4px;
 }
 
-/* Filter pill: hairline + fill at rest; active = signal amber tick (the
-   badge), not a purple fill. */
-.bwm-filters-pill {
+/* FILTERS — n (spec §4.1): mono underline command replaces the pill;
+   the amber count is the activation readout, hidden at zero. */
+.bwm-ftg {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   min-height: 44px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: var(--pt-fill);
-  border: 1px solid var(--pt-line-soft);
+  padding: 0 2px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-dim);
   color: var(--pt-dim);
-  font-size: 13px;
-  font-weight: 600;
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  letter-spacing: 0.1em;
   cursor: pointer;
   flex-shrink: 0;
   white-space: nowrap;
 }
 
-.bwm-filters-pill.has-active {
-  color: var(--pt-text);
-  border-color: var(--pt-line);
+.bwm-ftg-n {
+  color: var(--pt-accent);
 }
 
-.bwm-filters-pill-badge {
-  min-width: 18px;
-  height: 18px;
-  border-radius: 9px;
-  padding: 0 5px;
-  background: var(--pt-accent);
-  color: var(--pt-on-accent);
-  font-size: 10px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-/* Selected-tag preview row: hairline chips, active tag marked by the amber
-   ✕ (signal ≤10%, spec §2.1). */
+/* Selected-tag row (spec §4.1): hairline chips, mono ✕ remove mark,
+   44px touch target; the whole row hides at zero selection. */
 .bwm-selected-row {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  margin: 4px -16px 0;
+  margin: 6px -16px 10px;
   padding: 2px 16px 6px;
   scrollbar-width: none;
 }
@@ -258,34 +235,40 @@ span.mp-cmd:active {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
+  gap: 8px;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: 8px;
   border: 1px solid var(--pt-line);
-  background: var(--pt-fill);
+  background: none;
   color: var(--pt-text);
-  font-size: 12px;
+  font-size: 12.5px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .bwm-chip-x {
-  margin-left: 8px;
-  color: var(--pt-accent);
-  font-size: 11px;
+  color: var(--pt-faint);
+  font-family: var(--pf-mono);
+  font-size: 10px;
 }
 
-/* 2-up contact sheet: same caption grammar as the desktop contact card —
-   media hairline, title, mono ID · SIZE meta. The whole card is one 44px+
-   target; per-card download state rides along as a pill / hairline. */
+/* 2-up contact sheet (spec §6 D2): N° over the media, 16:10 aspect,
+   single-line baseline caption with the mono meta right-anchored. The
+   whole card is one 44px+ target; per-card download state rides along
+   as a scrim pill / 2px hairline progress. */
 .bwm-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 10px;
+  column-gap: 12px;
+  row-gap: 16px;
   margin-top: 12px;
 }
 
 .bwm-card {
   position: relative;
+  isolation: isolate;
+  min-width: 0;
   margin: 0;
   padding: 0;
   background: none;
@@ -296,12 +279,19 @@ span.mp-cmd:active {
   cursor: pointer;
 }
 
+.bwm-card-n {
+  display: block;
+  font-size: 10px;
+  color: var(--pt-faint);
+  margin-bottom: 5px;
+}
+
 .bwm-card-media {
+  display: block;
   position: relative;
-  aspect-ratio: 1200 / 1080;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
   background: var(--pt-fill);
-  box-shadow: inset 0 0 0 1px var(--pt-line-soft);
 }
 
 .bwm-card-media img {
@@ -313,14 +303,13 @@ span.mp-cmd:active {
 
 .bwm-card-pill {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
+  top: 4px;
+  right: 4px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
   color: var(--pt-scrim-ink);
   background: rgba(0, 0, 0, 0.55);
-  border-radius: 2px;
-  padding: 3px 6px;
+  padding: 2px 5px;
 }
 
 .bwm-card-pill-done {
@@ -329,9 +318,8 @@ span.mp-cmd:active {
 }
 
 .bwm-card-pill-err {
-  background: transparent;
-  color: #ffb1b1;
-  box-shadow: inset 0 0 0 1px rgba(255, 124, 124, 0.5);
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 130, 130, 0.95);
 }
 
 .bwm-card-bar {
@@ -368,15 +356,17 @@ span.mp-cmd:active {
 }
 
 .bwm-card-caption {
-  padding-top: 7px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
 }
 
 .bwm-card-title {
-  font-size: 12px;
-  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 400;
   color: var(--pt-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -385,19 +375,29 @@ span.mp-cmd:active {
 
 .bwm-card-meta {
   font-size: 9px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   color: var(--pt-faint);
+  white-space: nowrap;
 }
 
 .bwm-more {
   display: flex;
   justify-content: center;
-  margin-top: 18px;
+  margin-top: 20px;
 }
 
-/* Filters sheet body */
+.bwm-end {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-faint);
+}
+
+/* Filters sheet body (spec §4.1): four zones of ●/○ selection rows —
+   chips and segmented controls are dead inside the sheet. */
 .bwm-sheet-body {
-  padding: 6px 18px 18px;
+  padding: 6px 16px 18px;
 }
 
 .bwm-sheet-group {
@@ -405,71 +405,125 @@ span.mp-cmd:active {
 }
 
 .bwm-sheet-label {
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  font-size: 9px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--pt-faint);
+  color: var(--pt-dim);
   border-bottom: 1px solid var(--pt-line);
-  padding-bottom: 7px;
-  margin-bottom: 12px;
+  padding-bottom: 8px;
+  margin-bottom: 2px;
 }
 
-.bwm-sheet-chips {
+/* ●/○ selection row: 52px touch row; selected = ● + accent text, never
+   a fill. */
+.bwm-opt {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.bwm-sheet-chips .bwm-chip {
-  min-height: 44px;
-}
-
-.bwm-chip-on {
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
-  border-color: transparent;
-}
-
-.bwm-sheet-footer {
-  padding: 14px 18px 22px;
-  border-top: 1px solid var(--pt-line-soft);
-}
-
-.bwm-apply {
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  min-height: 48px;
-  border: none;
-  border-radius: 8px;
-  background: var(--pt-inv-bg);
-  color: var(--pt-inv-text);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-
-.bwm-apply:active:not(:disabled) {
-  opacity: 0.85;
-}
-
-.bwm-reset {
-  min-height: 44px;
-  padding: 0 8px;
+  min-height: 52px;
+  padding: 12px 0;
   background: none;
   border: none;
+  border-bottom: 1px solid var(--pt-line-soft);
   color: var(--pt-dim);
-  font-size: 12px;
+  font-size: 14px;
+  text-align: left;
   cursor: pointer;
 }
 
-/* Card detail sheet: contact-sheet hero + Clash title + mono ledger meta. */
+.bwm-opt-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bwm-opt-d {
+  font-size: 11px;
+  width: 14px;
+  text-align: right;
+}
+
+.bwm-opt.on {
+  color: var(--pt-accent);
+}
+
+/* Collapsible group head (spec §4.1): the whole 52px row is the hit box;
+   the amber count reads the group's active selections. */
+.bwm-grp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-line);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--pt-dim);
+  text-align: left;
+  cursor: pointer;
+}
+
+.bwm-grp-n {
+  color: var(--pt-accent);
+}
+
+.bwm-grp-c {
+  margin-left: auto;
+  color: var(--pt-faint);
+  font-size: 10px;
+}
+
+/* Discreet 18+ entry at the AGE group tail (spec §4.1): two faint dots
+   at rest, ● 18+ in text ink when revealed. */
+.bwm-adult {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  background: none;
+  border: none;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pt-faint);
+  cursor: pointer;
+  text-align: left;
+}
+
+.bwm-adult.is-on {
+  color: var(--pt-text);
+}
+
+/* Footer CTA: 48px inverted block; the literal is mixed case by contract
+   ("Show {n} results") so text-transform stays off. */
+.bwm-apply {
+  width: 100%;
+  height: 48px;
+  border: none;
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  cursor: pointer;
+}
+
+/* Card detail sheet (spec §4.1): 88% detent; 16:9 hero; a single mono
+   meta line; ↓ DOWNLOAD → + STEAM ↗ commands (no PLAY, no description,
+   no ←/→ steppers). */
 .bwd-hero {
-  margin: 6px 16px 0;
+  margin: 14px 16px 0;
   position: relative;
-  aspect-ratio: 1200 / 1080;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   background: var(--pt-fill);
-  box-shadow: inset 0 0 0 1px var(--pt-line-soft);
 }
 
 .bwd-hero img {
@@ -479,70 +533,39 @@ span.mp-cmd:active {
   display: block;
 }
 
-.bwd-title-block {
-  padding: 14px 20px 0;
-}
-
-.bwd-title {
-  font-family: var(--pf-display);
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-  color: var(--pt-text);
-}
-
-.bwd-id {
+.bwd-meta-line {
+  margin: 10px 16px 0;
   font-size: 10px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   color: var(--pt-faint);
-  margin-top: 6px;
+  line-height: 1.7;
 }
 
-.bwd-meta {
-  margin: 14px 20px 0;
-  padding: 12px 0 4px;
-  border-top: 1px solid var(--pt-line);
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  row-gap: 12px;
-  column-gap: 14px;
-}
-
-.bwd-meta-k {
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--pt-faint);
-}
-
-.bwd-meta-v {
-  font-size: 12px;
-  margin-top: 3px;
-  color: var(--pt-text);
-}
-
-.bwd-desc {
-  padding: 14px 20px 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--pt-dim);
+.bwd-meta-note {
+  margin-top: 2px;
 }
 
 .bwd-actions {
-  padding: 18px 20px 22px;
+  padding: 8px 16px 0;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 28px;
+  min-height: 44px;
 }
 
 .bwd-err {
-  margin: 0 20px;
+  margin: 10px 16px 0;
   font-size: 11px;
   color: var(--pt-danger);
 }
 
-/* ── Library mobile ──────────────────────────────────────────────── */
+/* ── Library mobile (mobile spec §4.2) ─────────────────────────────
+   Page header 26px Clash + `{n} ITEMS — {size}` + the 44px ••/● 18+
+   reveal command; the QUEUE command row (mono underline, 44px, press
+   dither, no XOR beat); notice-line receipts. Cards = normalized
+   contact-sheet grammar (06 D2): N° readout, 16:10 media with NO inset
+   frame line, single-line caption baseline (title flexes/ellipsizes,
+   meta nowrap `{res} · {size} [ ↓n%]`). */
 
 .lbm-head-side {
   display: flex;
@@ -553,21 +576,35 @@ span.mp-cmd:active {
 
 .lbm-actions {
   display: flex;
-  align-items: baseline;
-  gap: 18px;
+  align-items: center;
+  gap: 28px;
   flex-wrap: wrap;
-  padding: 2px 0 12px;
+  padding-bottom: 10px;
 }
 
+/* Notice / error receipt line (06 D6: 10px mono dim / danger). */
+.lbm-note {
+  margin: 0 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+}
+
+.lbm-note-err {
+  color: var(--pt-danger);
+}
+
+/* 2-up grid (06 D5: 12px column gap = spine clearance, 16px row gap). */
 .lbm-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 10px;
-  margin-top: 4px;
+  column-gap: 12px;
+  row-gap: 16px;
 }
 
 .lbm-card {
   position: relative;
+  isolation: isolate;
   margin: 0;
   padding: 0;
   background: none;
@@ -578,12 +615,19 @@ span.mp-cmd:active {
   cursor: pointer;
 }
 
+.lbm-card-n {
+  display: block;
+  font-size: 10px;
+  color: var(--pt-faint);
+  margin-bottom: 5px;
+}
+
 .lbm-card-media {
   position: relative;
-  aspect-ratio: 1200 / 1080;
+  display: block;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
   background: var(--pt-fill);
-  box-shadow: inset 0 0 0 1px var(--pt-line-soft);
 }
 
 .lbm-card-media img {
@@ -593,49 +637,70 @@ span.mp-cmd:active {
   display: block;
 }
 
-/* Now-playing = the amber tick (same weight as the tab bar's). */
+/* NOW PLAYING = resolved inverse chip (status channel, 03 D10) — the
+   mobile-created amber base is abolished (amber = the hot channel). */
 .lbm-now {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  font-size: 8.5px;
-  letter-spacing: 0.12em;
-  color: var(--pt-on-accent);
-  background: var(--pt-accent);
-  border-radius: 2px;
-  padding: 3px 6px;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  padding: 2px 5px;
 }
 
-/* Transcode state sits top-right as a scrim chip; failed gets the danger
-   hairline. */
+/* TX pill = fixed dark scrim chip, theme-decoupled (desktop .lib-tx
+   method), 9px (06 D6: the 8px desktop slot +1; the 8.5px half-pixel
+   dies). Failed = the desktop .lib-tx-err value verbatim — danger-tinted
+   text on the same scrim base, no hairline box. */
 .lbm-tx {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
-  color: var(--pt-scrim-ink);
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  font-size: 9px;
+  letter-spacing: 0.06em;
   background: rgba(0, 0, 0, 0.55);
-  border-radius: 2px;
-  padding: 3px 6px;
+  color: var(--pt-scrim-ink);
+  padding: 2px 5px;
 }
 
 .lbm-tx-err {
-  background: transparent;
-  color: #ffb1b1;
-  box-shadow: inset 0 0 0 1px rgba(255, 124, 124, 0.5);
+  color: rgba(255, 130, 130, 0.95);
+}
+
+/* TX running: the 2px progress hairline embedded at the media's bottom
+   edge (06 D2.5, transform-only — §5 F8 bans width transitions). */
+.lbm-txbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+
+.lbm-txbar-fill {
+  display: block;
+  height: 100%;
+  background: var(--pt-scrim-ink);
+  transform-origin: left;
 }
 
 .lbm-card-caption {
-  padding-top: 7px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
 }
 
 .lbm-card-title {
-  font-size: 12px;
-  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
   color: var(--pt-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -646,75 +711,122 @@ span.mp-cmd:active {
   font-size: 9px;
   letter-spacing: 0.06em;
   color: var(--pt-faint);
+  white-space: nowrap;
 }
 
-.lbm-note {
+/* ── Library detail Sheet body (mobile spec §4.2) ──────────────────
+   Hero 16:9 frame-free (margin-top 14 = body margin 16 − gridlines 2 —
+   the sheet body paints a 2px coordinate-grid offset under
+   .mobile-shell) + occupancy chips in the grid's grammar. The sheet
+   header owns the title; the old duplicate h2.ldet-title is deleted. */
+.lbmd-hero {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--pt-fill);
+  margin-top: 14px;
+}
+
+.lbmd-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lbmd-meta {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pt-faint);
   margin: 10px 0 0;
+  line-height: 1.7;
+}
+
+.lbmd-specs {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.lbmd-specs span {
   font-size: 10px;
   letter-spacing: 0.06em;
   color: var(--pt-dim);
+  line-height: 1.8;
 }
 
-.lbm-note-err {
-  color: var(--pt-danger);
+.lbmd-specs-err {
+  color: var(--pt-danger) !important;
 }
 
-/* The desktop detail body (ldet-*) inside the mobile Sheet: full-width
-   media, roomy touch targets, no fixed-height split scroll. The sheet is
-   already an opaque token surface (§9), so the body's transparent
-   backgrounds stay and the desktop panel's glass never enters. */
-.mobile-sheet-panel .ldet-media {
-  border-radius: 12px;
-  margin: 6px 16px 0;
-  view-transition-name: none;
-}
-
-.mobile-sheet-panel .ldet-body {
-  padding: 14px 20px 22px;
-}
-
-.mobile-sheet-panel .ldet-actions {
+/* Command cluster: mono underline commands on a hairline group edge. */
+.lbmd-cmds {
+  display: flex;
+  align-items: center;
+  gap: 28px;
   flex-wrap: wrap;
-  row-gap: 10px;
+  margin-top: 6px;
+  border-top: 1px solid var(--pt-line-soft);
+  padding-top: 2px;
 }
 
-.mobile-sheet-panel .ldet-play {
+/* DELETE two-step armed (vocabulary #7): danger hairline chip — the
+   chip geometry swaps in for the underline; the press dither on an
+   armed command runs the danger tile. Destructive commit = no XOR beat
+   (the row/sheet disappearing IS the feedback); 2.2s auto-disarm lives
+   in the component. */
+.lbmd-cmds .lbm-armed {
+  color: var(--pt-danger);
+  border-bottom-color: transparent;
+  text-decoration: none;
+  box-shadow: inset 0 0 0 1px var(--pt-danger);
+}
+
+.lbmd-cmds .lbm-armed::after {
+  background-image: var(--pt-dither-danger);
+}
+
+/* ‹ PREV / NEXT › = commands (press dither, direct step), spread to the
+   row's ends on their own hairline group. */
+.lbmd-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--pt-line-soft);
+  margin-top: 2px;
+}
+
+/* Foot PLAY: 48px inverse-block CTA, sticky in the sheet footer (§3.4).
+   Press dither uses the counter-ink tile via data-press="cta". */
+.lbmd-play {
   width: 100%;
   min-height: 48px;
-  font-size: 12px;
+  border: none;
+  background: var(--pt-inv-bg);
+  color: var(--pt-inv-text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
 }
 
-.mobile-sheet-panel .ldet-cmd {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-}
-
-.mobile-sheet-panel .ldet-steam {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-}
-
-.mobile-sheet-panel .ldet-step {
-  margin-left: 0;
-  width: 100%;
-}
-
-.mobile-sheet-panel .ldet-step button {
-  flex: 1;
-  min-height: 44px;
-}
-
-/* ── Activity mobile: the desktop .act-* ledger at a tighter measure ── */
+/* ── Activity mobile (impl ticket 04, spec §4.3): the desktop .act-*
+   ledger at full fidelity on touch. Correction table applied line by
+   line: count restored at 10px, head→content 16px, section gap 32px,
+   thumb 56×35 = 16:10, TYPE pill 9px, actions 10px = the desktop slot,
+   sheet body margins 16px. Settle beat / stage pill flip / hairline bar
+   / four-phase migration readout all ride the desktop CSS unchanged —
+   only the measure tightens here. ────────────────────────────────── */
 .mobile-shell .act {
+  position: static;
   margin: 0;
   padding: 14px 16px 28px;
 }
 
 .mobile-shell .act-head {
-  padding: 6px 0 14px;
-  margin-bottom: 18px;
+  align-items: baseline;
+  padding: 6px 0 0;
+  margin-bottom: 16px;
   gap: 12px;
 }
 
@@ -723,9 +835,19 @@ span.mp-cmd:active {
 }
 
 .mobile-shell .act-count {
-  font-size: 9px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--pt-dim);
   text-align: right;
+}
+
+/* QUEUE… command row under the header (§4.3: it left the header's right
+   edge when the count moved in). */
+.mobile-shell .act-query {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: 2px;
 }
 
 .mobile-shell .act-sec-head {
@@ -733,7 +855,7 @@ span.mp-cmd:active {
 }
 
 .mobile-shell .act-sec-finished {
-  margin-top: 30px;
+  margin-top: 32px;
 }
 
 .mobile-shell .act-row {
@@ -744,18 +866,24 @@ span.mp-cmd:active {
 
 .mobile-shell .act-thumb {
   width: 56px;
-  height: 36px;
+  height: 35px;
 }
 
 .mobile-shell .act-row-title {
   font-size: 12.5px;
 }
 
+.mobile-shell .act-type {
+  font-size: 9px;
+}
+
 .mobile-shell .act-bar {
   grid-column: 1 / -1;
 }
 
-/* Actions wrap to their own row and grow to ≥44px touch targets. */
+/* Actions wrap to their own row and grow to ≥44px touch targets. The
+   mono size stays 10px — the desktop .act-act slot, no mobile-invented
+   drift (§4.3). */
 .mobile-shell .act-actions {
   grid-column: 1 / -1;
   grid-row: auto;
@@ -769,7 +897,15 @@ span.mp-cmd:active {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  font-size: 10.5px;
+  font-size: 10px;
+}
+
+/* Carved window over the cmd press dither: the ::after paints last, so
+   the glyph needs the knockout chip above it (§8.1 latent note). The
+   button itself must out-z the band for the chip's stacking context. */
+.mobile-shell .act-actions .act-act.pressing {
+  position: relative;
+  z-index: 2;
 }
 
 .mobile-shell .act-phases {
@@ -788,35 +924,79 @@ span.mp-cmd:active {
   text-underline-offset: 3px;
 }
 
-/* Housekeeping + the discreet 18+ entry live behind one sheet. */
+/* Housekeeping sheet (§4.3, §3.4 skeleton auto detent): HOUSEKEEPING
+   section head + three 52px ledger command rows (mono name left, dotted
+   leader, → right anchor — the desktop RailRow's mobile dual), then the
+   SAFE QUEUE section with note + Safe/All segmented. */
 .actm-sheet-body {
-  padding: 4px 18px 22px;
+  padding: 4px 16px 22px;
   display: flex;
   flex-direction: column;
 }
 
-.actm-sheet-body .mp-cmd {
-  align-self: flex-start;
-}
-
-.actm-privacy {
-  margin-top: 18px;
-  border-top: 1px solid var(--pt-line);
-  padding-top: 14px;
-}
-
-.actm-privacy-title {
-  font-size: 10px;
+.actm-sec {
+  margin-top: 14px;
+  font-size: 9px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--pt-faint);
+}
+
+.actm-sec:first-child {
+  margin-top: 4px;
+}
+
+.actm-ledger {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 0;
+  font-family: var(--pf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--pt-dim);
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--pt-line-soft);
+  cursor: pointer;
+}
+
+.actm-ledger-name {
+  position: relative;
+}
+
+.actm-ledger-dots {
+  flex: 1;
+  margin: 0 8px;
+  border-bottom: 1px dotted var(--pt-faint);
+  transform: translateY(-3px);
+}
+
+.actm-ledger-mark {
+  position: relative;
+  font-size: 9px;
+  color: var(--pt-faint);
+}
+
+/* Carved windows keep the row's glyphs legible over the full-row dither
+   band (data-press="row") — the chip must sit above the ::after tile. */
+.mobile-shell .actm-ledger.pressing .actm-ledger-name,
+.mobile-shell .actm-ledger.pressing .actm-ledger-mark {
+  position: relative;
+  z-index: 2;
+  background: var(--pt-bg);
+  box-shadow: 0 0 0 2px var(--pt-bg);
 }
 
 .actm-privacy-note {
   font-size: 12px;
   color: var(--pt-dim);
   line-height: 1.5;
-  margin: 8px 0 12px;
+  margin: 10px 0 12px;
 }
 
 /* New-design segmented control for the mobile sheets (Safe/All, sort):
@@ -848,8 +1028,4 @@ span.mp-cmd:active {
 .mpm-seg button.is-on {
   background: var(--pt-inv-bg);
   color: var(--pt-inv-text);
-}
-
-.mpm-seg button:active:not(:disabled):not(.is-on) {
-  background: var(--pt-fill);
 }
