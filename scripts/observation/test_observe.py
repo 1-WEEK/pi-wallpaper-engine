@@ -138,17 +138,56 @@ class ObservationCLI(unittest.TestCase):
         self.assertIn('display-off', report['missing_coverage'])
         self.assertEqual(report['scenes']['playing/display-unknown']['cpu_one_core_pct']['median'], 1)
 
+    def test_report_counts_known_drops_when_a_counter_resets_to_a_nonzero_value(self):
+        records = [dict(kind='metadata', interval_s=30, clock_ticks_per_s=100, label='synthetic')]
+        for at, drops in [(0, 8), (30, 2), (60, 5)]:
+            records.append(dict(kind='sample', monotonic_s=at, utc_s=at, app={}, processes=[], system={},
+                                scene=dict(playback='playing', display='unknown', download_intake=False),
+                                mpv=dict(generation='one-player', values={'frame-drop-count': drops}), errors=[]))
+        quality = self.report(records)['quality']['frame-drop-count']
+        self.assertEqual(quality['observed_positive_deltas'], 5)
+        self.assertEqual(quality['resets'], 1)
+        self.assertEqual(quality['observed_intervals'], 2)
+
     def test_report_accepts_only_a_closed_full_window_and_preserves_collection_errors(self):
         records = [dict(kind='metadata', interval_s=30, clock_ticks_per_s=100, label='synthetic',
-                        requested_duration_s=86400, monotonic_s=0)]
+                        requested_duration_s=86400, monotonic_s=0, deployed_revision='a' * 40, deployed_dirty=False)]
         for at in range(0, 86401, 30):
             records.append(dict(kind='sample', monotonic_s=at, utc_s=at,
                                 app=dict(pss_kib=100, swap_pss_kib=0), processes=[], system={},
                                 scene=dict(playback='released', display='unknown', download_intake=False), errors=[]))
-        records.append(dict(kind='end', elapsed_s=86400, monotonic_s=86400, reason='duration'))
+        records.append(dict(kind='end', elapsed_s=86400, monotonic_s=86400, reason='duration', final_revision='a' * 40, final_dirty=False))
         self.assertTrue(self.report(records)['complete_24h_window'])
         records.insert(3, dict(kind='error', error='sample:failed'))
         self.assertFalse(self.report(records)['complete_24h_window'])
+
+    def test_full_day_requires_initial_and_final_source_provenance_but_not_optional_inventory(self):
+        records = [dict(kind='metadata', interval_s=30, clock_ticks_per_s=100, label='synthetic',
+                        requested_duration_s=86400, monotonic_s=0, deployed_revision='a' * 40,
+                        deployed_dirty=False, errors=['library:unavailable'])]
+        for at in range(0, 86401, 30):
+            records.append(dict(kind='sample', monotonic_s=at, utc_s=at,
+                                app=dict(pss_kib=100, swap_pss_kib=0), processes=[], system={},
+                                scene=dict(playback='released', display='unknown', download_intake=False), errors=[]))
+        records.append(dict(kind='end', elapsed_s=86400, monotonic_s=86400, reason='duration',
+                            final_revision='a' * 40, final_dirty=False, provenance_errors=['mpv:version-unavailable']))
+        good = self.report(records)
+        self.assertTrue(good['complete_24h_window'])
+        self.assertTrue(good['source_provenance_verified'])
+        self.assertIn('initial:library:unavailable', good['optional_provenance_errors'])
+        self.assertIn('final:mpv:version-unavailable', good['optional_provenance_errors'])
+        for stage in ('initial', 'final'):
+            with self.subTest(stage=stage):
+                broken = json.loads(json.dumps(records))
+                source = broken[0] if stage == 'initial' else broken[-1]
+                source.pop('deployed_revision' if stage == 'initial' else 'final_revision')
+                source.pop('deployed_dirty' if stage == 'initial' else 'final_dirty')
+                source['errors' if stage == 'initial' else 'provenance_errors'] = ['revision:unavailable']
+                summary = self.report(broken)
+                self.assertFalse(summary['complete_24h_window'])
+                self.assertFalse(summary['source_provenance_verified'])
+                self.assertTrue(summary['sampling_window_complete'])
+                self.assertIn(stage + ':revision:unavailable', summary['source_provenance_errors'])
 
     def test_report_does_not_claim_full_day_across_a_sampling_gap(self):
         records = [dict(kind='metadata', interval_s=30, clock_ticks_per_s=100, label='synthetic')]

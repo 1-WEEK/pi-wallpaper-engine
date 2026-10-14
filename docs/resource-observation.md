@@ -80,8 +80,14 @@ Do not compare only daily medians when the usage mix differs.
 - `complete_24h_window` requires a duration-ended run covering at least 24 hours,
   boundary samples within 45 seconds, no gap over 1.5 sampling intervals
   (capped at 45 seconds), no collection errors or malformed records, and no
-  observed deployed revision/dirty-state change. A complete window can still
-  lack scenes; inspect `missing_coverage` and property errors separately.
+  observed deployed revision/dirty-state change. Initial and final revision and
+  dirty-state provenance must both be present and successfully verified.
+  `sampling_window_complete` describes timing/collection coverage separately;
+  `source_provenance_verified` and `source_provenance_errors` identify source
+  verification failures. Optional library/version errors remain visible in
+  `optional_provenance_errors` without invalidating an otherwise verified day.
+  A complete window can still lack scenes; inspect `missing_coverage` and
+  property errors separately.
 - Scenes distinguish playing, paused, stopped with a retained player, and
   released player, combined with probed display and observed intake activity.
   A 30-second poll can miss the entire stop grace period, brief intake children,
@@ -96,7 +102,8 @@ Do not compare only daily medians when the usage mix differs.
   process membership, scene, boot or a gap are excluded. Short-lived child CPU
   and peaks can be missed; a day without intake is not evidence of its cost.
 - Cache reports use mpv's actual cache bytes and limits. Quality counts positive
-  drop deltas within observed player generations, separately records resets,
+  drop deltas within observed player generations, includes the known new value
+  when a counter decreases, separately records resets,
   and reports sampled cache pauses/transitions. This cannot establish every
   underrun, smoothness between polls, first presentation latency or no leaks.
 - Sampler CPU, PSS plus SwapPss and sampling duration are reported separately.

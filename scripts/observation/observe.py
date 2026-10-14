@@ -415,7 +415,7 @@ def report(path):
                         current, old = values.get(metric), old_mpv.get('values', {}).get(metric)
                         if isinstance(current, (int, float)) and isinstance(old, (int, float)):
                             counter['observed_intervals'] += 1
-                            counter['observed_positive_deltas'] += max(0, current - old)
+                            counter['observed_positive_deltas'] += current - old if current >= old else max(0, current)
                             counter['resets'] += int(current < old)
         previous = sample
     elapsed = samples[-1]['monotonic_s'] - samples[0]['monotonic_s'] if len(samples) > 1 else 0
@@ -429,9 +429,24 @@ def report(path):
     tolerance = min(interval * 1.5, 45)
     edges_covered = bool(samples) and samples[0]['monotonic_s'] - meta.get('monotonic_s', samples[0]['monotonic_s']) <= tolerance
     edges_covered = edges_covered and closed and ends[0].get('monotonic_s', samples[-1]['monotonic_s']) - samples[-1]['monotonic_s'] <= tolerance
+    source_errors, optional_errors = [], []
+    final = ends[0] if len(ends) == 1 else {}
+    for stage, revision, dirty, failures in (
+        ('initial', meta.get('deployed_revision'), meta.get('deployed_dirty'), meta.get('errors', [])),
+        ('final', final.get('final_revision'), final.get('final_dirty'), final.get('provenance_errors', [])),
+    ):
+        if not isinstance(revision, str) or not revision:
+            source_errors.append(stage + ':revision:missing')
+        if not isinstance(dirty, bool):
+            source_errors.append(stage + ':dirty-state:missing')
+        for error in failures:
+            (source_errors if error.startswith('revision:') else optional_errors).append(stage + ':' + error)
+    source_verified = len(metadata) == 1 and len(ends) == 1 and not source_errors and len(revisions) == 1 and not dirty_changed
+    sampling_complete = elapsed >= 86400 - min(interval, 30) and len(metadata) == 1 and closed and edges_covered and not gaps and not malformed and not errors
     return dict(label=meta.get('label'), metadata=meta, samples=len(samples), sampled_span_s=elapsed,
-                complete_24h_window=elapsed >= 86400 - min(interval, 30) and len(metadata) == 1 and closed and edges_covered
-                    and not gaps and not malformed and not errors and len(revisions) <= 1 and not dirty_changed,
+                complete_24h_window=sampling_complete and source_verified,
+                sampling_window_complete=sampling_complete, source_provenance_verified=source_verified,
+                source_provenance_errors=source_errors, optional_provenance_errors=optional_errors,
                 deployed_dirty_changed=dirty_changed,
                 deployed_revisions=sorted(revisions), revision_changed=len(revisions) > 1,
                 malformed_lines=malformed, gaps=gaps, errors=dict(errors), backend_generations=len(generations),
@@ -444,7 +459,7 @@ def report(path):
                 scenes={key: {metric: len(values) if metric == 'samples' else distribution(values)
                                for metric, values in group.items()} for key, group in grouped.items()},
                 limits=['Polling can miss brief subprocesses and buffering between samples.',
-                        'Drops are summed within observed player generations; resets and gaps lose evidence.',
+                        'Drop resets include the known new counter value; drops before the unobserved reset and across gaps remain unknown.',
                         'CPU excludes intervals with changed membership, scene or sampling gaps.',
                         'Unknown display state cannot establish display-off coverage.',
                         'Library categories are stored metadata, not new ffprobe inspection; bitrate inventory remains unmeasured.',
