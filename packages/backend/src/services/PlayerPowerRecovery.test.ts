@@ -90,6 +90,7 @@ const makeHarness = (options: {
         : Effect.sync(() => events.push("mpv.play")),
     pause: () => Effect.void,
     resume: () => Effect.void,
+    release: () => Effect.void,
     stop: () => Effect.sync(() => events.push("mpv.stop")),
     setDisplayMode: () => Effect.void,
     status: () =>

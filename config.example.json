@@ -21,7 +21,9 @@
     "binary_path": "mpv",
     "ipc_socket": "/tmp/pi-wallpaper-engine-mpv.sock",
     "hwdec": "auto",
-    "gpu_api": "opengl"
+    "gpu_api": "opengl",
+    "cache_forward_mib": 32,
+    "cache_backward_mib": 8
   },
   "transcode": {
     "target_codec": "hevc",

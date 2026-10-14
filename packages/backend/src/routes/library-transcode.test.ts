@@ -149,6 +149,7 @@ const makeStack = (
     play: () => Effect.void,
     pause: () => Effect.void,
     resume: () => Effect.void,
+    release: () => Effect.void,
     stop: () => Effect.void,
     setDisplayMode: () => Effect.void,
     ended: () => Stream.empty,

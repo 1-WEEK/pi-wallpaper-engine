@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Ref, Stream } from "effect"
+import { Clock, Context, Effect, Fiber, Layer, Ref, Semaphore, Stream } from "effect"
 import type {
   DbError,
   DisplayError,
@@ -68,16 +68,19 @@ export const PlaybackLive = Layer.effect(
     const rotation = yield* Rotation
     const prefs = yield* PlaybackPrefs
 
-    const limitTimerRef = yield* Ref.make<Timer | null>(null)
+    const lock = yield* Semaphore.make(1)
+    const serialize = lock.withPermit
+    const scope = yield* Effect.scope
+    let limitFiber: Fiber.Fiber<void> | undefined
     const limitDeadlineRef = yield* Ref.make<number | null>(null)
     // Whether a playback session is running, so an explicit setPlayLimit knows
     // whether there is a live deadline to re-arm.
     const sessionActiveRef = yield* Ref.make(false)
 
     const clearPlayLimit = Effect.gen(function* () {
-      const pending = yield* Ref.get(limitTimerRef)
-      if (pending) clearTimeout(pending)
-      yield* Ref.set(limitTimerRef, null)
+      const pending = limitFiber
+      limitFiber = undefined
+      if (pending) yield* Fiber.interrupt(pending)
       yield* Ref.set(limitDeadlineRef, null)
     })
 
@@ -148,18 +151,16 @@ export const PlaybackLive = Layer.effect(
       const minutes = clampPlayLimitMinutes(play_limit_minutes)
       if (minutes <= 0) return
       const ms = minutes * 60_000
-      const deadline = Date.now() + ms
-      const timer = setTimeout(() => {
-        Effect.runFork(onPlayLimitElapsed)
-      }, ms)
-      timer.unref()
-      yield* Ref.set(limitTimerRef, timer)
+      const deadline = (yield* Clock.currentTimeMillis) + ms
+      limitFiber = yield* Effect.forkIn(
+        Effect.sleep(ms).pipe(Effect.andThen(serialize(onPlayLimitElapsed))), scope,
+      )
       yield* Ref.set(limitDeadlineRef, deadline)
       yield* logger.info(`Play limit armed: ${minutes}m`)
     })
 
     const onPlayLimitElapsed = Effect.gen(function* () {
-      yield* Ref.set(limitTimerRef, null)
+      limitFiber = undefined
       yield* Ref.set(limitDeadlineRef, null)
       yield* Ref.set(sessionActiveRef, false)
       yield* consumeOnceLimit
@@ -206,7 +207,7 @@ export const PlaybackLive = Layer.effect(
 
     return {
       play: (workshopId) =>
-        Effect.gen(function* () {
+        serialize(Effect.gen(function* () {
           const result = yield* playerPower.play(workshopId)
           // Best-effort: a play succeeds even if arming rotation hiccups.
           yield* rotation.arm(workshopId).pipe(Effect.catch(() => Effect.void))
@@ -215,24 +216,24 @@ export const PlaybackLive = Layer.effect(
           yield* Ref.set(sessionActiveRef, true)
           yield* armPlayLimit.pipe(Effect.catch(() => Effect.void))
           return result
-        }),
+        })),
 
       stop: () =>
-        Effect.gen(function* () {
+        serialize(Effect.gen(function* () {
           yield* clearSessionTimers
           yield* rotation.disarm()
           return yield* playerPower.stopForIdle()
-        }),
+        })),
 
       displayOff: () =>
-        Effect.gen(function* () {
+        serialize(Effect.gen(function* () {
           yield* clearSessionTimers
           yield* rotation.disarm()
           return yield* playerPower.displayOff()
-        }),
+        })),
 
       displayOn: () =>
-        Effect.gen(function* () {
+        serialize(Effect.gen(function* () {
           const { restored_workshop_id, ...result } = yield* playerPower.displayOn()
           // Re-arm rotation on the restored wallpaper (ADR 0009 follow-up,
           // signed off 2026-07-06). Best-effort, like arming after play.
@@ -242,18 +243,18 @@ export const PlaybackLive = Layer.effect(
             yield* armPlayLimit.pipe(Effect.catch(() => Effect.void))
           }
           return result
-        }),
+        })),
 
-      next: () => rotation.next(),
-      prev: () => rotation.prev(),
-      setMode: (mode) => rotation.setMode(mode),
-      setRotationInterval: (sec) => rotation.setInterval(sec),
+      next: () => serialize(rotation.next()),
+      prev: () => serialize(rotation.prev()),
+      setMode: (mode) => serialize(rotation.setMode(mode)),
+      setRotationInterval: (sec) => serialize(rotation.setInterval(sec)),
 
       // The status is read through prefs + the live deadline on every call, so
       // this reads the setting rather than a cached copy.
       playLimitStatus,
       setPlayLimit: (minutes, once) =>
-        Effect.gen(function* () {
+        serialize(Effect.gen(function* () {
           yield* prefs.setPlayLimit(minutes, once)
           // The PlayerBar and the Settings row edit this one value and both show
           // the same countdown, so a set while a session runs means "N minutes
@@ -264,7 +265,7 @@ export const PlaybackLive = Layer.effect(
           const sessionActive = yield* Ref.get(sessionActiveRef)
           if (minutes > 0 && sessionActive) yield* armPlayLimit
           else yield* clearPlayLimit
-        }),
+        })),
     }
   })
 )

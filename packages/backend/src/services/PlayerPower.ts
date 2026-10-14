@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, PubSub, Ref, Stream } from "effect"
+import { Context, Effect, Fiber, Layer, PubSub, Semaphore, Stream } from "effect"
 import {
   DbError,
   DisplayError,
@@ -73,16 +73,28 @@ export const PlayerPowerLive = Layer.effect(
     const playerState = yield* PlayerState
     const storage = yield* Storage
     const watch = yield* MediaRootWatch
-    const timerRef = yield* Ref.make<ReturnType<typeof setTimeout> | null>(null)
     const recoveredPubSub = yield* PubSub.unbounded<string>()
+    const scope = yield* Effect.scope
+    let autoOffFiber: Fiber.Fiber<void> | undefined
+    const lock = yield* Semaphore.make(1)
+    const serialize = lock.withPermit
+    let intentGeneration = 0
 
     const logWarn = (message: string) => logger.warn(message).pipe(Effect.ignore)
 
     const cancelAutoOff = Effect.gen(function* () {
-      const timer = yield* Ref.get(timerRef)
-      if (timer) clearTimeout(timer)
-      yield* Ref.set(timerRef, null)
+      const timer = autoOffFiber
+      autoOffFiber = undefined
+      if (timer) yield* Fiber.interrupt(timer)
     })
+
+    // Cancel before waiting for an intent already in progress, then again after
+    // entering: that intent may have armed its timer while this caller waited.
+    const control = <A, E>(effect: Effect.Effect<A, E>) =>
+      Effect.sync(() => { intentGeneration++ }).pipe(
+        Effect.andThen(cancelAutoOff),
+        Effect.andThen(serialize(cancelAutoOff.pipe(Effect.andThen(effect)))),
+      )
 
     const rememberCurrentOrKeep = (reason: RestoreReason) =>
       Effect.gen(function* () {
@@ -96,15 +108,17 @@ export const PlayerPowerLive = Layer.effect(
           return
         }
 
-        // A previous /player/stop may already have stored the wallpaper before
-        // mpv entered idle. Preserve it when Display Off happens during that
-        // countdown.
-        yield* playerState.getRestore().pipe(
-          Effect.catchTag("DbError", (e) =>
-            logWarn(`Failed to read player restore state: ${String(e.cause)}`)
-          ),
-          Effect.asVoid
+        // A deliberate stop already owns its saved item during the grace
+        // period. An automatic recovery hold must become deliberate when the
+        // user powers off while the share is still absent.
+        const saved = yield* playerState.getRestore().pipe(
+          Effect.catchTag("DbError", e => logWarn(`Failed to read player restore state: ${String(e.cause)}`).pipe(Effect.as(null))),
         )
+        if (saved && (saved.reason === "media_lost" || saved.reason === "startup")) {
+          yield* playerState.setRestore(saved.workshop_id, reason).pipe(
+            Effect.catchTag("DbError", e => logWarn(`Failed to persist player restore state: ${String(e.cause)}`)),
+          )
+        }
       })
 
     const clearRestoreBestEffort = (context: string) =>
@@ -119,6 +133,7 @@ export const PlayerPowerLive = Layer.effect(
 
     const powerOnDisplayIfKnownOff = Effect.gen(function* () {
       const status = yield* display.status().pipe(
+        Effect.uninterruptible,
         Effect.catchTag("DisplayError", (e) =>
           Effect.gen(function* () {
             yield* logWarn(`Could not read display status before play: ${formatDisplayError(e)}`)
@@ -130,6 +145,7 @@ export const PlayerPowerLive = Layer.effect(
       if (!status || !shouldPowerOnBeforePlay(status)) return
 
       yield* display.on().pipe(
+        Effect.uninterruptible,
         Effect.catchTag("DisplayError", (e) =>
           logWarn(`Could not power on display before play: ${formatDisplayError(e)}`)
         )
@@ -189,25 +205,23 @@ export const PlayerPowerLive = Layer.effect(
     const stopAndPowerOff = (reason: RestoreReason) =>
       Effect.gen(function* () {
         yield* rememberCurrentOrKeep(reason)
-        yield* mpv.stop()
-        yield* display.off()
-        yield* Ref.set(timerRef, null)
+        yield* mpv.release()
+        // Hold the intent lock until the command and its owned cleanup settle
+        // so an old off cannot finish after a newer play has powered back on.
+        yield* display.off().pipe(Effect.uninterruptible)
         return { ok: true as const, state: "off" as const }
       })
 
     const scheduleAutoOff = Effect.gen(function* () {
       yield* cancelAutoOff
-      const timer = setTimeout(() => {
-        Effect.runFork(
-          stopAndPowerOff("auto_off").pipe(
-            Effect.catch((e) =>
-              logWarn(`Auto display off failed: ${e instanceof Error ? e.message : String(e)}`)
-            )
-          )
-        )
-      }, AUTO_OFF_DELAY_MS)
-      ;(timer as { unref?: () => void }).unref?.()
-      yield* Ref.set(timerRef, timer)
+      autoOffFiber = yield* Effect.forkIn(
+        Effect.sleep(AUTO_OFF_DELAY_MS).pipe(
+          Effect.andThen(serialize(stopAndPowerOff("auto_off"))),
+          Effect.catch(e => logWarn(`Auto display off failed: ${e instanceof Error ? e.message : String(e)}`)),
+          Effect.asVoid,
+        ),
+        scope,
+      )
     })
 
     yield* Effect.addFinalizer(() => cancelAutoOff)
@@ -223,6 +237,7 @@ export const PlayerPowerLive = Layer.effect(
      * playing screen and no service restart.
      */
     const retryPendingRestore = Effect.gen(function* () {
+      const generation = intentGeneration
       const saved = yield* playerState.getRestore().pipe(Effect.orElseSucceed(() => null))
       if (!saved) return
       // `display_off`/`manual_stop`/`auto_off` are *deliberate* holds: the user
@@ -241,7 +256,9 @@ export const PlayerPowerLive = Layer.effect(
       // which deliberately loops the single wallpaper until an explicit play or
       // display-on. That distinction survives the outage, so only `media_lost`
       // is announced as a recovery.
-      if (saved.reason === "media_lost") {
+      // A newer explicit intent owns rotation linkage even while it waits
+      // for this restore to leave the power lock.
+      if (saved.reason === "media_lost" && generation === intentGeneration) {
         yield* PubSub.publish(recoveredPubSub, saved.workshop_id)
       }
       yield* logger.info(`Restored ${saved.workshop_id} after the media root came back`)
@@ -259,7 +276,7 @@ export const PlayerPowerLive = Layer.effect(
       watch
         .availableProbes()
         .pipe(
-          Stream.mapEffect(() => retryPendingRestore),
+          Stream.mapEffect(() => serialize(retryPendingRestore)),
           Stream.runDrain
         )
         .pipe(
@@ -286,7 +303,7 @@ export const PlayerPowerLive = Layer.effect(
         .ended()
         .pipe(
           Stream.mapEffect(() =>
-            Effect.gen(function* () {
+            serialize(Effect.gen(function* () {
               const status = yield* mpv.status()
               const workshopId = status.current_workshop_id
               if (!workshopId) return
@@ -301,7 +318,7 @@ export const PlayerPowerLive = Layer.effect(
                 `Playback of ${workshopId} stopped because the media root is unavailable: ${probe.last_error ?? probe.data_root}`
               )
               yield* watch.probeNow()
-            })
+            }))
           ),
           Stream.runDrain
         )
@@ -313,7 +330,7 @@ export const PlayerPowerLive = Layer.effect(
     )
 
     const startupRestore = Effect.gen(function* () {
-      const status = yield* display.status()
+      const status = yield* display.status().pipe(Effect.uninterruptible)
       if (!shouldAutoRestoreOnStartup(status)) return
 
       // Record the intent *before* attempting it. The attempt itself fails
@@ -338,12 +355,11 @@ export const PlayerPowerLive = Layer.effect(
       )
     )
 
-    yield* Effect.forkScoped(startupRestore)
+    yield* Effect.forkScoped(serialize(startupRestore))
 
     return {
       play: (workshopId) =>
-        Effect.gen(function* () {
-          yield* cancelAutoOff
+        control(Effect.gen(function* () {
           yield* clearRestoreBestEffort("explicit play")
           const item = yield* library.get(workshopId)
           const path = yield* library.playablePath(item)
@@ -352,10 +368,10 @@ export const PlayerPowerLive = Layer.effect(
           yield* library.update(item.workshop_id, { last_played_at: Date.now() })
           yield* mpv.setDisplayMode(item.display_mode)
           return { ok: true, path }
-        }),
+        })),
 
       stopForIdle: () =>
-        Effect.gen(function* () {
+        control(Effect.gen(function* () {
           const status = yield* mpv.status()
           if (status.current_workshop_id) {
             yield* playerState.setRestore(status.current_workshop_id, "manual_stop").pipe(
@@ -371,21 +387,17 @@ export const PlayerPowerLive = Layer.effect(
             yield* clearRestoreBestEffort("idle stop")
           }
           return { ok: true }
-        }),
+        })),
 
       displayOff: () =>
-        Effect.gen(function* () {
-          yield* cancelAutoOff
-          return yield* stopAndPowerOff("display_off")
-        }),
+        control(stopAndPowerOff("display_off")),
 
       displayOn: () =>
-        Effect.gen(function* () {
-          yield* cancelAutoOff
-          yield* display.on()
+        control(Effect.gen(function* () {
+          yield* display.on().pipe(Effect.uninterruptible)
           const restored = yield* restoreSaved("display_on")
           return { ok: true, state: "on", ...restored }
-        }),
+        })),
 
       recovered: () => Stream.fromPubSub(recoveredPubSub),
     }

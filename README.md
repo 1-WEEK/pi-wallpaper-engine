@@ -53,6 +53,29 @@ the active root switches and the old copies are removed.
 For public access, follow [Authentication](docs/auth.md). Optional NAS transcoding
 is covered in the [Worker deployment guide](docs/worker-deployment.md).
 
+Playback cache budgets are optional settings under `mpv` in
+`~/.config/pi-wallpaper-engine/config.json` (or the file selected by `PWE_CONFIG`):
+
+```json
+"cache_forward_mib": 32,
+"cache_backward_mib": 8
+```
+
+Omitting either setting uses its default above. Values must be nonnegative
+integers in MiB, at most 8589934591, so conversion to bytes stays exact. A budget
+of zero is accepted and passed to mpv. These limits apply to mpv's media cache,
+not total player or application memory. Hardware decoding and picture settings
+are unchanged.
+
+To restore the former cache budgets independently of player lifecycle changes,
+set `cache_forward_mib` to `150` and `cache_backward_mib` to `50`. Restart the
+backend with `bun run service:restart` (or restart `bun run dev` in development)
+after saving the configuration. Budgets apply when each player is created;
+changing the file does not resize an existing player's retained allocations.
+
+See [playback resources and rollback](docs/player-lifecycle.md) for stopped-idle
+release, display restoration and the separate lifecycle rollback procedure.
+
 ## Start
 
 Start both the backend and frontend in development mode:
