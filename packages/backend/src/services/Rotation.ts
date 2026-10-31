@@ -6,8 +6,6 @@ import { Logger } from "./Logger.js"
 import { Mpv } from "./Mpv.js"
 import { PlaybackPrefs } from "./PlaybackPrefs.js"
 
-// --- Pure helpers (unit-tested in Day 4) ---
-
 // Fisher-Yates shuffle into a new array. rng is injectable for deterministic tests.
 export const shuffleSequence = <T>(items: readonly T[], rng: () => number = Math.random): T[] => {
   const arr = [...items]

@@ -143,15 +143,12 @@ if (existsSync(FRONTEND_DIST)) {
   }))
 }
 
-// Bun caps request bodies at 128 MiB by default, and nothing here overrode it.
-// That silently rejected every optimized artifact larger than the ceiling: the
-// Worker had already finished encoding, then got a broken pipe (or a bare 413)
-// while uploading, and threw the result away. Five of the nine lifetime job
-// failures were this — and it selected for exactly the wrong content, since the
-// largest sources produce the largest artifacts. Bun streams request bodies
-// (verified: RSS stays ~14 MB while receiving 600 MB), and the artifact route
-// pipes the stream straight to disk, so a higher ceiling costs no memory; it
-// only stops Bun from refusing the upload at the socket.
+// Bun caps request bodies at 128 MiB by default. Left at the default, that
+// rejects every optimized artifact larger than the ceiling after the Worker
+// has already finished encoding. Bun streams request bodies (RSS stays ~14 MB
+// while receiving 600 MB), and the artifact route pipes the stream straight to
+// disk, so a higher ceiling costs no memory; it only stops Bun from refusing
+// the upload at the socket.
 const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024 * 1024
 
 const server = app.listen({

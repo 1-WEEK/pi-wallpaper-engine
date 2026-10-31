@@ -1,5 +1,5 @@
-/* ── Activity queue (implementation ticket 09) ─────────────────────
-   spec §4.3 (06 票定稿): ACTIVE / FINISHED sections, header
+/* Activity queue —
+   spec §4.3: ACTIVE / FINISHED sections, header
    `n ACTIVE — m FINISHED — k FAILED`. Row = 64px thumb + title + TYPE
    border pill + STAGE pill (300ms flip-in on every stage change) + mono
    readout line + hairline progress — determinate fills via
@@ -21,7 +21,6 @@
     color var(--dur-hover) var(--ease-out);
 }
 
-/* ── Header: Clash display title + mono queue counts ────────────── */
 .act-head {
   display: flex;
   align-items: baseline;
@@ -52,7 +51,6 @@
   white-space: nowrap;
 }
 
-/* ── Section heads ───────────────────────────────────────────────── */
 .act-sec-head {
   display: flex;
   align-items: baseline;
@@ -75,7 +73,6 @@
   padding: 0;
 }
 
-/* ── Task row: thumb | main | actions, hairline below ───────────── */
 .act-row {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) auto;
@@ -192,7 +189,6 @@
   color: var(--pt-dim);
 }
 
-/* Failure expands a red mono ERR line. */
 .act-errline {
   margin-top: 6px;
   font-size: 10px;
@@ -208,7 +204,6 @@
   }
 }
 
-/* Hairline progress: inverse fill on a soft track. */
 .act-bar {
   grid-column: 2 / 4;
   position: relative;

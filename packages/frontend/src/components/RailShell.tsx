@@ -1,10 +1,10 @@
 // RailShell — the global instrument rail of the redesign (spec §2.3 / §3.1).
 // 300px sticky column, top to bottom: typographic wordmark → plain-text nav
 // (no numbering, no §; the active item wears a true XOR inversion mask —
-// ticket 11, 09 票 N 方案) → per-page control slot → THEME tri-state at the
+// 09 票 N 方案) → per-page control slot → THEME tri-state at the
 // bottom. No PI.LOCAL, no live clock (05 修正).
 //
-// Nav motion (ticket 11): one shared white mask in mix-blend-mode difference
+// Nav motion: one shared white mask in mix-blend-mode difference
 // slides between items in 420ms on the symmetric --ease-slide (deliberately
 // NOT --ease-out: that curve hits ~85% progress by one-third duration and
 // would swallow the pass-over inversion). Everything mid-flight is driven by
@@ -231,7 +231,7 @@ export const RailShell = ({
     []
   )
 
-  // Interface sound timing (ticket 13, sound spec §3): the nav family's
+  // Interface sound timing (sound spec §3): the nav family's
   // trigger point is pointerdown — same frame as :active, ahead of the
   // route commit. Navigation itself stays on the click semantic layer
   // (keyboard Enter/Space, modified clicks); the click handler only fires
@@ -248,7 +248,7 @@ export const RailShell = ({
     // over the plain left click. Clicking the current page is a no-op.
     e.preventDefault()
     if (item.active) return
-    // Interface sound (ticket 13): nav family, with the active state. Skip
+    // Interface sound: nav family, with the active state. Skip
     // when onNavPress already fired it for this press (no double trigger).
     const last = navSoundAt.current
     if (!last || last.key !== item.key || performance.now() - last.at > 400)

@@ -7,7 +7,7 @@
 import { easeOut, duration } from "./motionTokens.js"
 import { prefersReducedMotion } from "./reducedMotion.js"
 
-// Ghost channels (ticket 12): one flight per channel at a time. Re-triggering
+// Ghost channels: one flight per channel at a time. Re-triggering
 // a channel kills its in-flight ghost instantly (cancel + remove, its onDone
 // suppressed) instead of queueing — rapid repeated ADDs/PLAYs never stack.
 const inflight = new Map<string, { ghost: HTMLElement; kill: () => void }>()

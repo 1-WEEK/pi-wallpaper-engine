@@ -1,7 +1,6 @@
-/* ── UI redesign foundation (implementation ticket 01) ─────────────
-   The `--pt-*` design-token layer of the new visual language
+/* The `--pt-*` design-token layer of the visual language
    (spec: .scratch/ui-redesign/spec.md §2.1/§2.2/§2.5/§5). Tokens live on
-   :root so every later ticket consumes them; only new-design components
+   :root so the whole redesign consumes them; only new-design components
    reference them, so legacy pages keep their current look until migrated.
 
    Theme model: THEME[B] pure black is the :root default, THEME[A] cream is
@@ -10,7 +9,7 @@
    AUTO resolution happens in JS, not via CSS media queries, so manual
    choice always wins and switches never flash. */
 
-/* ── Self-hosted fonts (OFL): Clash Display / Geist Sans / Geist Mono ── */
+/* Self-hosted fonts, OFL licensed. */
 @font-face {
   font-family: "Clash Display";
   src: url(/fonts/clash-500.woff2) format("woff2");
@@ -109,7 +108,7 @@
   --pt-scrollbar-hover: rgba(255, 255, 255, 0.26);
 }
 
-/* ── THEME[A] cream — a pure token override set ──────────────────── */
+/* THEME[A] cream — a pure token override set. */
 html[data-theme="light"] {
   --pt-bg: #fbfaf4;
   --pt-text: rgba(0, 0, 0, 0.86);
@@ -129,7 +128,6 @@ html[data-theme="light"] {
   --pt-scrollbar-hover: rgba(0, 0, 0, 0.3);
 }
 
-/* ── Global thin scrollbar: 5px translucent thumb, no track ──────── */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--pt-scrollbar) transparent;
@@ -149,15 +147,14 @@ html[data-theme="light"] {
   background: var(--pt-scrollbar-hover);
 }
 
-/* ── Shared mono utility: readings render in Geist Mono ──────────── */
 .mono {
   font-family: var(--pf-mono);
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Mount choreography (spec §2.5): 550ms expo-out, opacity +
-     translateY(12px) + blur(4px), 40ms stagger capped at 8 items.
-     Consumers set `--pt-i` to the item index. ────────────────────── */
+/* Mount choreography (spec §2.5): 550ms expo-out, opacity +
+   translateY(12px) + blur(4px), 40ms stagger capped at 8 items.
+   Consumers set `--pt-i` to the item index. */
 @keyframes pt-enter {
   from {
     opacity: 0;

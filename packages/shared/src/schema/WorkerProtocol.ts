@@ -1,9 +1,6 @@
 import { Schema } from "effect"
 import { TargetCodec } from "./Config.js"
 
-// Phase 2 — Worker pull protocol. Schemas are defined now so backend can be wired
-// to the contract; routes that consume them stay unmounted until Phase 2.
-
 export const TranscodeJobStatus = Schema.Literals([
   "pending",
   "claimed",

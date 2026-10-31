@@ -16,7 +16,7 @@
 # mount attempt that is already running) plus `Wants=` (start regardless of its
 # outcome).
 #
-# Scope caveat, measured 2026-10-01: this renders into a *user* unit while the
+# Scope caveat: this renders into a *user* unit while the
 # shelf mounts are *system* units, and the user manager cannot resolve a system
 # unit name (`systemctl --user show systemd-journald.service` → not-found; the
 # mount itself shows up only as `SourcePath=/proc/self/mountinfo` once it is

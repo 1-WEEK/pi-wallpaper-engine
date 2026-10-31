@@ -1,7 +1,7 @@
 // Unified Sheet skeleton (mobile spec §3.4): opaque --pt-bg panel +
 // rgba(0,0,0,0.55) blur-free scrim, two detents ("88%" / "auto"), same-
 // frame enter (panel 300ms + scrim 200ms) and synchronous programmatic
-// exit (200/200 — the old 60ms panel delay is deleted). Vertical drag-to-
+// exit (200/200). Vertical drag-to-
 // dismiss follows the finger 1:1 by writing transform strings directly
 // (no WAAPI, no filter), lerps the scrim with progress, rubber-bands
 // over-top drags (0.35 damping, 48px cap), and on release projects

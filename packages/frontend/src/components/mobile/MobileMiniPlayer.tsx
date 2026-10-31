@@ -1,4 +1,4 @@
-// MobileMiniPlayer (ticket 14, spec §9) — the PlayerBar's mobile
+// MobileMiniPlayer (spec §9) — the PlayerBar's mobile
 // degradation: MiniPlayer + Sheet. The bar keeps the transport and the
 // display-power toggle; tapping the media/copy area opens a Sheet with
 // the PlayerBar's remaining instant controls (play mode / display mode /
@@ -101,9 +101,9 @@ export const MobileMiniPlayer = ({ summary, onRefresh }: Props) => {
   const limitOnce = limit?.once ?? false
   const limitLeft = playLimitMinutesLeft(limit)
   const hasCurrent = !!player?.current_workshop_id
-  // Ticket 01 (media-root resilience): same rule as the desktop dock — an
-  // idle-looking mini player on a device whose media root is gone has to name
-  // the outage rather than read as "nothing playing".
+  // Same rule as the desktop dock: an idle-looking mini player on a device
+  // whose media root is gone has to name the outage rather than read as
+  // "nothing playing".
   const storageDown = summary !== null && !summary.status.storage.available
 
   const runAction = async (action: () => Promise<unknown>, triggerSound = false) => {

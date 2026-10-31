@@ -1,4 +1,4 @@
-/* ── Shared 1-bit focus band (implementation ticket 06) ────────────
+/* Shared 1-bit focus band —
    spec §4.1 10 票 Q 方案 · §2.6 Kare vocabulary · §5 F4. One shared
    element (FocusRing.tsx) parks on the keyboard cursor's item: a 2px
    checkerboard dither band outside the card = "uncommitted"; Enter flips

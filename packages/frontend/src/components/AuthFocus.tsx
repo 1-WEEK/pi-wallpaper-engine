@@ -1,5 +1,5 @@
-// AuthFocus — the passkey focused overlay (implementation ticket 14,
-// spec §9): the only glass surface on the Login/Setup pages. Shown while
+// AuthFocus — the passkey focused overlay (spec §9): the only glass surface
+// on the Login/Setup pages. Shown while
 // the WebAuthn ceremony is pending; cancel abandons the wait — the caller
 // guards with a ref so a late resolution can't sign in behind the user's
 // back.

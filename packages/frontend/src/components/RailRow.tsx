@@ -1,7 +1,7 @@
 /** One rail ledger row (spec §2.3): name left, dotted leader, ●/○
  *  (selection) or → (command) aligned to the rail's right edge. Styles live
  *  in library.css under the lib-rc-* block — the shared rail-control
- *  language (ticket 11 hover: instant 1-bit dither band + carved glyph
+ *  language (hover: instant 1-bit dither band + carved glyph
  *  chips; selection stays accent text, never an inversion block). */
 export const RailRow = ({
   label,

@@ -1,4 +1,3 @@
-/* ── Design tokens ───────────────────────────────────────────────── */
 :root {
   --ink: #0e1116;
   --ink-1: #131820;
@@ -19,7 +18,6 @@
   --success-bg: rgba(61, 220, 132, 0.12);
 }
 
-/* ── Reset ───────────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -93,7 +91,6 @@ a {
   min-height: 100%;
 }
 
-/* ── App shell ───────────────────────────────────────────────────── */
 .app {
   height: 100vh;
   height: 100svh;
@@ -106,17 +103,15 @@ a {
 .main {
   min-width: 0;
   min-height: 0;
-  /* The PlayerBar dock floats above the bottom of this scroller
-     (ticket 04); the generous bottom padding keeps the last content
+  /* The PlayerBar dock floats above the bottom of this scroller;
+     the generous bottom padding keeps the last content
      reachable clear of the glass. */
   padding: 18px 20px 110px;
   overflow-y: auto;
 }
 
-/* ── Bottom player: rebuilt as the liquid-glass dock (ticket 04), see
-   playerBar.css. The legacy .player-dock block styles were removed; the
-   DisplayPowerToggle chrome below is still shared with the mobile mini
-   player. ─────────────────────────────────────────────────────────── */
+/* The PlayerBar dock lives in playerBar.css; the DisplayPowerToggle
+   chrome here is shared with the mobile mini player. */
 
 .display-toggle {
   display: inline-flex;
@@ -212,8 +207,6 @@ a {
   border-radius: 999px;
 }
 
-/* ── Browse ─────────────────────────────────────────────────────── */
-
 .directory-dialog-overlay {
   position: fixed;
   inset: 0;
@@ -243,7 +236,6 @@ a {
   border-radius: 8px;
 }
 
-/* ── Motion ─────────────────────────────────────────────────────── */
 @keyframes progress-slide {
   0% {
     transform: translateX(-100%);
@@ -260,10 +252,10 @@ a {
 
 }
 
-/* ── Mobile shell (selected by LayoutContext) ────────────────────────
-   Ticket 14 (spec §9): the mobile fallbacks consume the --pt-* token
-   layer like every other redesigned surface. Navigation degrades to the
-   bottom TabBar, the PlayerBar degrades to MiniPlayer + Sheet. */
+/* Mobile shell (selected by LayoutContext, spec §9): the mobile fallbacks
+   consume the --pt-* token layer like every other redesigned surface.
+   Navigation degrades to the bottom TabBar, the PlayerBar degrades to
+   MiniPlayer + Sheet. */
 .mobile-shell {
   --mobile-safe-top: env(safe-area-inset-top, 0px);
   --mobile-safe-right: env(safe-area-inset-right, 0px);
@@ -320,8 +312,6 @@ a {
   margin-top: 10px;
   line-height: 1.6;
 }
-
-/* ---- Video preview (BL-17) ---- */
 
 .video-preview-dialog {
   position: fixed;

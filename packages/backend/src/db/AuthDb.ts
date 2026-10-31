@@ -36,9 +36,9 @@ export const openAuthDb = (): AuthDbHandle => {
   db.exec("PRAGMA journal_mode = WAL")
   db.exec("PRAGMA foreign_keys = ON")
 
-  // Drop the legacy auth_setup_state table from earlier phases of this branch.
-  // setup completion is now derived from passkey existence, so the table is
-  // unused; this keeps existing dev databases tidy.
+  // Existing databases can still carry an auth_setup_state table; setup
+  // completion is derived from passkey existence, so the table is unused.
+  // Dropping it keeps dev databases tidy.
   db.exec("DROP TABLE IF EXISTS auth_setup_state")
 
   // Statements are prepared lazily because this function runs before Better

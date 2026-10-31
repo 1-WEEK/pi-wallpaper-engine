@@ -1,5 +1,5 @@
-// FocusRing — the shared 1-bit focus band (implementation ticket 06, spec
-// §4.1 10 票 Q 方案 / §2.6 / §5 F4). ONE absolutely positioned element parks
+// FocusRing — the shared 1-bit focus band (spec §4.1 10 票 Q 方案 /
+// §2.6 / §5 F4). ONE absolutely positioned element parks
 // on the keyboard cursor's card: a 2px Kare checkerboard dither band just
 // outside the card ("uncommitted") plus a mono C·R coordinate readout riding
 // the frame; Enter flips it into a full-cover XOR difference block
@@ -19,7 +19,7 @@
 // re-measure and cancel any in-flight slide rather than animating to a
 // moving target.
 //
-// Reusable: ticket 08 (Library) mounts the same ring over its own grid/list.
+// Reusable: the Library page mounts the same ring over its own grid/list.
 // The host element must carry .focus-ring-host (position + isolation — the
 // XOR blend must stay inside the host's stacking context) and every roamed
 // item must match `selector`; both the ring and the items use the host as

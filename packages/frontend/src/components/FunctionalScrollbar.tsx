@@ -1,5 +1,5 @@
-// Functional scrollbar for the Browse long grid (implementation ticket 07 —
-// spec §2.3 "功能性滚动条", 08 票定稿: E interaction core + L visual skin).
+// Functional scrollbar for the Browse long grid (spec §2.3
+// "功能性滚动条", 08 票定稿: E interaction core + L visual skin).
 //
 // Interaction: the thumb's position AND length both LERP toward their
 // targets (~0.16 / 0.14 per frame), so an infinite-scroll append shrinks the
@@ -8,7 +8,7 @@
 // thumb 5px → 11px. Dragging is zero-damping (pointer capture) with a `137 /
 // 240` readout chip; clicking the track jumps so the thumb centers on the
 // click. Scroll position is read from lenis `animatedScroll` and drags are
-// written back through lenis `scrollTo` (ticket 01 binds lenis to the .main
+// written back through lenis `scrollTo` (lenis is bound to the .main
 // scroller in wrapper mode).
 //
 // Visual: the canvas draws the Kare 1-bit dithered dot track and the PAGE

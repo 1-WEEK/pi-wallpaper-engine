@@ -5,9 +5,8 @@ import { Db } from "./Db.js"
 /**
  * Why a wallpaper is held for restore.
  *
- * `media_lost` is ticket 01 of `.scratch/playback-mount-resilience`: the media
- * root the current wallpaper lives on went away, so the wallpaper is neither
- * playing nor stopped by choice. `startup` is the same ticket's other half: the
+ * `media_lost`: the media root the current wallpaper lives on went away, so
+ * the wallpaper is neither playing nor stopped by choice. `startup`: the
  * backend meant to resume a wallpaper at boot, but the media root was not
  * mounted yet. Both are retried by the recovery loop once the root answers.
  */

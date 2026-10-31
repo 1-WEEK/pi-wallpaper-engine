@@ -1,4 +1,4 @@
-// Settings desktop (implementation ticket 10) — spec §4.4 IA + the 05
+// Settings desktop — spec §4.4 IA + the 05
 // prototype's unified spec-ledger row grammar. Four local sections live in
 // the rail: Playback / Storage / Access & Security primary, System under a
 // hairline as the secondary diagnostic entry (with a `!` badge when a
@@ -12,8 +12,8 @@
 // owns phases, errors and cancel.
 //
 // The section bodies (PlaybackSec / StorageSec / AccessSec / SystemSec) and
-// the row grammar (SpecRow / Block / Note) are shared with SettingsMobile
-// (ticket 14): the mobile layout degrades the rail navigation to a
+// the row grammar (SpecRow / Block / Note) are shared with SettingsMobile:
+// the mobile layout degrades the rail navigation to a
 // section-list → detail two-layer structure over the same content.
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { Link, useLocation, useSearch } from "wouter"
@@ -60,9 +60,9 @@ const HEAD_TITLE: Record<Sec, string> = {
   system: "System",
 }
 
-/* ── The one row grammar (spec §4.4): sans name left (14px) + dotted
+/* The one row grammar (spec §4.4): sans name left (14px) + dotted
    leader + mono value right (11px) + hairline below. Identities: command
-   rows carry → and a hover band; read-only rows stay quiet. ─────────── */
+   rows carry → and a hover band; read-only rows stay quiet. */
 
 export const SpecRow = ({
   name,
@@ -152,10 +152,6 @@ export const gbFree = (bytes: number): string => {
 }
 
 const gb = (bytes: number): string => `${Math.max(0, Math.round(bytes / 2 ** 30))} GB`
-
-/* ── Playback (spec §4.4): CURRENT MODE read-only context, per-wallpaper
-   duration segmented control with in-place ◌→● commit, the single-loop
-   note, and the interface-sounds master switch (wired in ticket 13). ─── */
 
 const DURATIONS = [
   { min: 1, sec: 60 },
@@ -412,11 +408,11 @@ export const PlaybackSec = ({
   )
 }
 
-/* ── Mobile-only INTERFACE additions (mobile spec §4.4): appended after the
+/* Mobile-only INTERFACE additions (mobile spec §4.4): appended after the
    shared master-switch row inside the same block; row order is fixed —
    Theme first, the conditional MUTE row directly under the master switch,
    Reduce transparency last. The desktop rail keeps its own bracketed theme
-   control, so this block renders nothing there (`.setm-ifx`). ──────────── */
+   control, so this block renders nothing there (`.setm-ifx`). */
 
 const THEME_SEG: ReadonlyArray<{ label: string; choice: ThemeChoice }> = [
   { label: "A", choice: "light" },
@@ -513,10 +509,10 @@ export const InterfaceTail = () => {
   )
 }
 
-/* ── Storage (spec §4.4): current directory + DEFAULT tag, disk space row
+/* Storage (spec §4.4): current directory + DEFAULT tag, disk space row
    value + hairline capacity bar, and the glass focused flow for changing
    directories. A running migration locks the section down to a summary +
-   the Activity handoff link; Activity owns progress phases and cancel. ── */
+   the Activity handoff link; Activity owns progress phases and cancel. */
 
 type SheetStep =
   | { kind: "browse"; path: string | null }
@@ -975,7 +971,7 @@ export const StorageSec = ({
           defaultRoot={storage.default_root}
           libraryTotal={libraryTotal}
           onClose={() => {
-            // Interface sound (ticket 13): nav dismiss variant on sheet exit.
+            // Interface sound: nav dismiss variant on sheet exit.
             sounds.trigger("dismiss")
             setSheetOpen(false)
           }}

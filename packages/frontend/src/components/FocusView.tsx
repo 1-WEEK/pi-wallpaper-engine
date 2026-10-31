@@ -1,10 +1,9 @@
-// FocusView — the immersive focus view (implementation ticket 05, spec §4.1,
-// 14 票定稿): full-screen scrim + 16:9 media + Clash title + mono metadata +
-// DOWNLOAD/STEAM actions (pure download semantics — no PLAY). It replaces and
-// absorbs the old card-detail overlay; ←/→ steps through the result list,
-// Esc / scrim click closes. The open/close motion (VT morph out, FLIP ghost
-// back) is orchestrated by the parent — this component only renders the
-// surface. The `.pfocus-media` element carries `view-transition-name:
+// FocusView — the immersive focus view (spec §4.1, 14 票定稿):
+// full-screen scrim + 16:9 media + Clash title + mono metadata +
+// DOWNLOAD/STEAM actions (pure download semantics — no PLAY). ←/→ steps
+// through the result list, Esc / scrim click closes. The open/close motion
+// (VT morph out, FLIP ghost back) is orchestrated by the parent — this
+// component only renders the surface. The `.pfocus-media` element carries `view-transition-name:
 // card-media` (browse.css); scrim and stage stay unnamed (spec §5 F3: nested
 // named snapshots are the mid-morph white-block artifact source).
 import { useRef, useState } from "react"
@@ -78,9 +77,9 @@ export const FocusView = ({
       .download(item.publishedfileid)
       .then(() => {
         setQueued(true)
-        // Download accepted (ticket 13): commit family, on the ghost takeoff.
+        // Download accepted: commit family, on the ghost takeoff.
         sounds.trigger("download")
-        // Download receipt (ticket 12, spec §4.5) — same flight as the card.
+        // Download receipt (spec §4.5) — same flight as the card.
         if (mediaRef.current) {
           flyDownloadReceipt(mediaRef.current, item.preview_url || undefined)
         }

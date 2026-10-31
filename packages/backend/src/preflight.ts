@@ -54,7 +54,6 @@ const fixDirs = args.has("--fix-dirs")
 
 console.log("Pi Wallpaper Engine — Preflight\n" + "─".repeat(36))
 
-// 1. Config file present + parses + schema valid
 let config: typeof ConfigSchema.Type | null = null
 let mediaRoot: string | null = null
 if (!existsSync(CONFIG_PATH)) {
@@ -79,7 +78,6 @@ if (!existsSync(CONFIG_PATH)) {
   }
 }
 
-// 2. Bun version
 const bunVersion = Bun.version
 if (bunVersion) {
   const [maj, min] = bunVersion.split(".").map((n) => parseInt(n, 10))
@@ -96,7 +94,6 @@ if (bunVersion) {
   fail("Bun version", "Could not detect", "Run `bun --version` manually")
 }
 
-// Helper: run command and check exit 0
 async function checkBinary(
   label: string,
   cmd: string[],
@@ -123,7 +120,6 @@ async function checkBinary(
   }
 }
 
-// 3-5. Binaries
 await checkBinary(
   "mpv binary",
   [config?.mpv.binary_path ?? "mpv", "--version"],

@@ -1,4 +1,4 @@
-/* ── PlayerBar liquid-glass dock (implementation ticket 04) ─────────
+/* PlayerBar liquid-glass dock —
    spec §2.4 glass recipe (CSS ceiling) · §3.2 content & responsibilities ·
    §5 F2 popover enter/exit/positioning · 350ms direction-aware tuck
    (registered exception in §5's duration scale).
@@ -51,10 +51,10 @@
   outline-offset: 2px;
 }
 
-/* ── The glass itself: near-clear material, heavy blur+saturate,
-     refracting top rim, lens-thickness bottom shadow, faint chromatic
-     fringe. True refraction is WebGPU-only (spec §2.4) — this is the CSS
-     ceiling. ─────────────────────────────────────────────────────── */
+/* The glass itself: near-clear material, heavy blur+saturate,
+   refracting top rim, lens-thickness bottom shadow, faint chromatic
+   fringe. True refraction is WebGPU-only (spec §2.4) — this is the CSS
+   ceiling. */
 .pbar-inner {
   position: relative;
   overflow: hidden;
@@ -129,9 +129,9 @@ html[data-theme="light"] .pbar-inner::after {
     linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.25) 50%, transparent 58%);
 }
 
-/* ── Content: media/transport/modes pack left; the codec readout and the
-     compressed-icon cluster anchor to the right end (§5 F2), so the
-     popovers land above the rightmost icons. ─────────────────────── */
+/* Content: media/transport/modes pack left; the codec readout and the
+   compressed-icon cluster anchor to the right end (§5 F2), so the
+   popovers land above the rightmost icons. */
 .pbar-empty {
   padding: 4px 2px;
   font-size: 12px;
@@ -305,7 +305,7 @@ html[data-theme="light"] .pbar-cluster button.active {
 }
 
 /* The dock's single notice line: either a failed action or the media-root
-   outage (ticket 01). One rendered element, one rule. Clamped to two lines —
+   outage. One rendered element, one rule. Clamped to two lines —
    the storage message carries the causing path and can be long. */
 .pbar-notice {
   padding: 6px 4px 0;
@@ -318,7 +318,7 @@ html[data-theme="light"] .pbar-cluster button.active {
   overflow: hidden;
 }
 
-/* ── DISPLAY / PLAY LIMIT popovers (spec §5 F2) ─────────────────────
+/* DISPLAY / PLAY LIMIT popovers (spec §5 F2).
    Same glass recipe as the dock. They render as siblings of .pbar-inner
    (nested backdrop-filter is dropped in Chromium). Position is measured
    in JS: bottom edge 12px above the glass top edge, right edge flush

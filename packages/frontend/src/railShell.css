@@ -1,8 +1,8 @@
-/* ── RailShell (spec §2.3 / §3.1) ──────────────────────────────────
+/* RailShell (spec §2.3 / §3.1)
    300px sticky instrument rail: wordmark → plain-text nav → per-page
    control slot → THEME tri-state. Colors come exclusively from the
    --pt-* token layer (tokens.css). Row baseline: 12px / padding 5px
-   (spec §2.3, 07 票修订 — covers every rail row: nav plus the shared
+   (spec §2.3 — covers every rail row: nav plus the shared
    lib-rc / set-rc ledger rows). */
 .rail {
   grid-column: 1;
@@ -44,7 +44,6 @@
   cursor: pointer;
 }
 
-/* ── Brand: pure-typography wordmark + hairline + annotation ─────── */
 .rail-brand {
   display: flex;
   flex-direction: column;
@@ -79,8 +78,8 @@
   color: var(--pt-dim);
 }
 
-/* ── Nav: plain text; the active item wears a true XOR inversion mask ──
-   (spec §3.1, ticket 11 — 09 票 N 方案, Mac 1984 selection). The mask is
+/* Nav: plain text; the active item wears a true XOR inversion mask
+   (spec §3.1 — Mac 1984 selection). The mask is
    one shared white block in mix-blend-mode: difference parked above the
    content layer; RailShell.tsx FLIP-slides it between items in 420ms on
    the symmetric --ease-slide. Geometry: no left indent — labels sit on the
@@ -142,7 +141,7 @@
   color: var(--pt-accent);
 }
 
-/* navpulse (ticket 12, spec §4.5 — registered §5 exception 700×2+1400): the
+/* navpulse (spec §4.5 — registered §5 exception 700×2+1400): the
    download receipt's inverse flash once the receipt ghost lands. It hangs on
    the label, not the link, so it never fights the XOR mask's covered state. */
 .rail-nav-link.nav-pulse > .rail-nav-label {
@@ -195,7 +194,7 @@
   }
 }
 
-/* ── Per-page control slot (filled via <RailControls> portals) ────── */
+/* Per-page control slot, filled via <RailControls> portals. */
 .rail-controls {
   display: flex;
   flex-direction: column;
@@ -206,7 +205,6 @@
   display: none;
 }
 
-/* ── Bottom: THEME tri-state ─────────────────────────────────────── */
 .rail-foot {
   margin-top: auto;
   padding-top: 14px;
@@ -250,7 +248,7 @@
   color: var(--pt-inv-text);
 }
 
-/* ── Interface-sound quick mute (ticket 13, spec §6) ───────────────────
+/* Interface-sound quick mute (spec §6).
    Persistent round dot at the shell's bottom-right, floating above the
    PlayerBar dock's right end: the dock owns wallpaper audio, this dot owns
    interface sounds only — separate position (outside the glass), separate

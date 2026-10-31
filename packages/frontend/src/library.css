@@ -1,5 +1,5 @@
-/* ── Library contact sheet (implementation ticket 08) ──────────────
-   spec §4.2 (06 票定稿): the same contact sheet as Browse (grid grammar
+/* Library contact sheet —
+   spec §4.2: the same contact sheet as Browse (grid grammar
    mirrors browse.css) plus occupancy — NOW PLAYING inverse chip, TX pill
    (fixed dark scrim over imagery, theme-decoupled per §2.1), caption meta
    prefers the transcoded readout + ↓n% saved. The detail popover reuses
@@ -38,7 +38,6 @@
   z-index: 1;
 }
 
-/* ── Header: Clash display title + mono count + view hint ───────── */
 .lib-head {
   display: flex;
   align-items: baseline;
@@ -82,7 +81,7 @@
   white-space: nowrap;
 }
 
-/* ── Rail page controls (spec §4.2, via the RailControls portal) ── */
+/* Rail page controls (spec §4.2, via the RailControls portal). */
 .lib-rc-title {
   display: flex;
   align-items: baseline;
@@ -122,7 +121,7 @@
 
 /* Ledger row grammar in the rail: name left + dotted leader + mark
    right (●/○ selection, → command). Row baseline 12px / padding 5px —
-   spec §2.3 (07 票修订), shared by every page's rail rows. */
+   spec §2.3, shared by every page's rail rows. */
 .lib-rc-row {
   display: flex;
   align-items: baseline;
@@ -144,7 +143,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  /* Same language as the nav (spec §3.1, ticket 11): hover = uncommitted
+  /* Same language as the nav (spec §3.1): hover = uncommitted
      1-bit checker band, instant, glyphs carved out on chips of page color. */
   .lib-rc-row:hover:not(.is-on) {
     background-image: var(--pt-dither);
@@ -236,7 +235,7 @@
   }
 }
 
-/* ── Contact sheet grid (columns measured at runtime, applied inline) ── */
+/* Contact sheet grid (columns measured at runtime, applied inline). */
 .lib-grid {
   display: grid;
   gap: 18px 16px;
@@ -371,9 +370,9 @@
   white-space: nowrap;
 }
 
-/* ── Hover action cluster (cards + ledger rows): PLAY inverse primary,
-     PREVIEW (transcoded only), DELETE two-step. Hidden at rest; revealed
-     by hover-capable pointers or keyboard focus. ─────────────────── */
+/* Hover action cluster (cards + ledger rows): PLAY inverse primary,
+   PREVIEW (transcoded only), DELETE two-step. Hidden at rest; revealed
+   by hover-capable pointers or keyboard focus. */
 .lib-actions {
   margin-left: auto;
   flex-shrink: 0;
@@ -387,10 +386,9 @@
 /* Cards: the cluster overlays the caption's right end instead of sitting
    in flow. In flow it reserved its width even while opacity-hidden —
    squeezing title/meta to a few characters at rest — and a wide meta
-   could push it past the card's right edge (ticket 15 regression test:
-   hover PLAY on the first card). The overlay owns the row under hover on
-   an opaque chip and can never leave the card. Ledger rows keep the
-   flow layout: they are wide enough. */
+   could push it past the card's right edge. The overlay owns the row
+   under hover on an opaque chip and can never leave the card. Ledger
+   rows keep the flow layout: they are wide enough. */
 .lib-card .lib-actions {
   position: absolute;
   right: 0;
@@ -469,11 +467,11 @@
   margin-left: 10px;
 }
 
-/* ── Detail popover (§4.2): the §2.4 glass shell with playback
-     semantics — SOURCE / OPTIMIZED double spec line + PLAY / PREVIEW /
-     TRANSCODE / DELETE / STEAM. Glass usage boundary (§2.4): temporary
-     focused overlay, never nested, no other glass on screen besides the
-     PlayerBar. ───────────────────────────────────────────────────── */
+/* Detail popover (§4.2): the §2.4 glass shell with playback
+   semantics — SOURCE / OPTIMIZED double spec line + PLAY / PREVIEW /
+   TRANSCODE / DELETE / STEAM. Glass usage boundary (§2.4): temporary
+   focused overlay, never nested, no other glass on screen besides the
+   PlayerBar. */
 .ldet {
   position: fixed;
   inset: 0;
@@ -778,7 +776,7 @@ html[data-theme="light"] .ldet-panel::after {
   }
 }
 
-/* ── View Transition, open direction (§5 F3, Library variant) ──────
+/* View Transition, open direction (§5 F3, Library variant).
    Same recipe as Browse's card-media morph: media named only, 300ms
    --ease-out, old snapshot fast-out / new fades in, normal blending on
    all three levels. The image-pair animates the clip radius 0 →

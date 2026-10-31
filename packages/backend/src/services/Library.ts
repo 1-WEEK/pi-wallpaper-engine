@@ -95,9 +95,9 @@ export const LibraryLive = Layer.effect(
 
     // SteamCMD's "Success" line sometimes reports the transient
     // downloads/<weAppId>/<id> path, then moves the files to content/.
-    // Rows persisted before the SteamCmd path-normalize fix can end up
-    // pointing at a file that no longer exists. Fix them in place when the
-    // downloads<->content swap names a file that does exist on disk.
+    // Rows persisted with the staging path can end up pointing at a file
+    // that no longer exists. Fix them in place when the downloads<->content
+    // swap names a file that does exist on disk.
     const reconcilePaths = Effect.gen(function* () {
       const dataRoot = yield* storage.mediaRootOrNull()
       if (!dataRoot) return

@@ -2,8 +2,6 @@ import { Schema } from "effect"
 import { DisplayMode, PathsConfig, ScreenConfig, MpvConfig, ServerConfig } from "./Config.js"
 import { PlayMode } from "./Playback.js"
 
-// ── Player Status ──────────────────────────────────
-
 export const PlayerStatus = Schema.Struct({
   playing: Schema.Boolean,
   current_workshop_id: Schema.NullOr(Schema.String),
@@ -17,8 +15,6 @@ export const PlayerStatus = Schema.Struct({
   current_codec: Schema.NullOr(Schema.String),
 })
 export type PlayerStatus = typeof PlayerStatus.Type
-
-// ── Display Status ─────────────────────────────────
 
 export const DisplayState = Schema.Literals(["on", "off", "unknown"])
 export type DisplayState = typeof DisplayState.Type
@@ -34,8 +30,6 @@ export const DisplayStatus = Schema.Struct({
 })
 export type DisplayStatus = typeof DisplayStatus.Type
 
-// ── Storage Status ─────────────────────────────────
-
 export const StorageStatus = Schema.Struct({
   available: Schema.Boolean,
   path: Schema.String,
@@ -50,8 +44,6 @@ export const StorageStatus = Schema.Struct({
   error: Schema.NullOr(Schema.String),
 })
 export type StorageStatus = typeof StorageStatus.Type
-
-// ── Library / Downloads / Play limit / Transcode ──
 
 export const LibraryCounts = Schema.Struct({
   total: Schema.Number,
@@ -88,18 +80,14 @@ export const TranscodeCounts = Schema.Struct({
 })
 export type TranscodeCounts = typeof TranscodeCounts.Type
 
-// ── Steam Summary Config ───────────────────────────
 // Separate from SteamConfig (raw web_api_key) —
 // this one carries the masked version for public API responses.
-
 export const SteamSummaryConfig = Schema.Struct({
   username: Schema.String,
   web_api_key_masked: Schema.String,
   steamcmd_path: Schema.String,
 })
 export type SteamSummaryConfig = typeof SteamSummaryConfig.Type
-
-// ── Summary Config (public API shape) ──────────────
 
 export const SummaryConfig = Schema.Struct({
   steam: SteamSummaryConfig,

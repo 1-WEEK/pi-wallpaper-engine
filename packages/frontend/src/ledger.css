@@ -1,8 +1,7 @@
-/* ── Density list (implementation ticket 05) ───────────────────────
-   Ledger row grammar (spec §2.3 / §4.1): N° + 56px thumb + title left +
+/* Ledger row grammar (spec §2.3 / §4.1): N° + 56px thumb + title left +
    dotted leader + mono metadata right, hairline separators. Shared by
-   Browse (V-key view) and, from ticket 08, the Library List view. Colors
-   come exclusively from the --pt-* token layer. */
+   Browse (V-key view) and the Library List view. Colors come exclusively
+   from the --pt-* token layer. */
 
 .ledger-list {
   border-top: 1px solid var(--pt-line);
@@ -32,7 +31,7 @@
   color: var(--pt-faint);
 }
 
-/* Keyboard cursor (ticket 06): the shared FocusRing draws the 1-bit band
+/* Keyboard cursor: the shared FocusRing draws the 1-bit band
    around the row; the row itself only brightens its N°. */
 .ledger-row.is-cursor .ledger-no {
   color: var(--pt-text);

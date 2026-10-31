@@ -1,10 +1,10 @@
-/* ── Browse contact sheet (implementation ticket 02) ─────────────
+/* Browse contact sheet —
    spec §2.3 measured coordinate grid · §2.5/§5 penter + parallax ·
    §3.3 three-state blocks · §4.1 contact sheet · §8.6
    content-visibility. Colors come exclusively from the --pt-* token
    layer; motion uses the token curves/durations (linear only for the
    constant scan/pulse loops, per §5). Page-level query/sort/filter
-   controls live in the rail via the RailControls portal (ticket 03);
+   controls live in the rail via the RailControls portal;
    their row styles are the shared rail language in library.css
    (lib-rc-*), only the collapsible group header is local here. */
 
@@ -26,7 +26,7 @@
   z-index: 1;
 }
 
-/* ── Rail-only: collapsible FILTERS group header (spec §4.1) ──────
+/* Rail-only: collapsible FILTERS group header (spec §4.1).
    Same type grammar as the flat group titles, plus a caret. */
 .bws-rc-toggle {
   display: flex;
@@ -55,8 +55,8 @@
   }
 }
 
-/* ── Header: Clash display title + mono count. The parallax fade
-     (spec §2.5) is driven from Browse.tsx via inline styles. ────── */
+/* Header: Clash display title + mono count. The parallax fade
+   (spec §2.5) is driven from Browse.tsx via inline styles. */
 .bws-head {
   display: flex;
   align-items: baseline;
@@ -87,14 +87,13 @@
   white-space: nowrap;
 }
 
-/* ── Contact sheet grid. Column count is measured at runtime
-     (useColumnsPerRow) and applied inline — never hardcoded. ────── */
+/* Contact sheet grid. Column count is measured at runtime
+   (useColumnsPerRow) and applied inline — never hardcoded. */
 .bws-grid {
   display: grid;
   gap: 18px 16px;
 }
 
-/* ── Card: N° index above / still / title + mono meta below ─────── */
 .bws-card {
   min-width: 0;
   /* Long-grid engineering (spec §8.6): skip rendering offscreen cells;
@@ -216,7 +215,7 @@ button.bws-add.is-static {
   color: var(--pt-danger);
 }
 
-/* ── Coordinate-grid overlay: scrolls with the content column ────── */
+/* Coordinate-grid overlay: scrolls with the content column. */
 .bws-gridlines {
   position: absolute;
   inset: 0;
@@ -248,7 +247,7 @@ button.bws-add.is-static {
   color: var(--pt-faint);
 }
 
-/* ── State blocks (spec §3.3): skeleton / empty / error / end ────── */
+/* State blocks (spec §3.3): skeleton / empty / error / end. */
 .bws-state {
   position: relative;
   display: flex;
@@ -350,7 +349,6 @@ button.bws-add.is-static {
   min-height: 1px;
 }
 
-/* ── View dual-state (implementation ticket 05, spec §4.1 14 票) ──── */
 .bws-head-side {
   display: flex;
   align-items: baseline;
@@ -364,14 +362,14 @@ button.bws-add.is-static {
   white-space: nowrap;
 }
 
-/* Keyboard cursor (ticket 06, spec §4.1 Q 方案): the shared FocusRing owns
+/* Keyboard cursor (spec §4.1 Q 方案): the shared FocusRing owns
    the focus language (checkerboard band + C·R readout); the card itself only
    brightens its N° index. */
 .bws-card.bws-cursor .bws-card-index {
   color: var(--pt-text);
 }
 
-/* ── Immersive focus view (ticket 05, spec §4.1) ───────────────────
+/* Immersive focus view (spec §4.1).
    Full-screen scrim + 16:9 media + Clash title + mono metadata +
    DOWNLOAD/STEAM. The scrim surface is theme-decoupled: always dark with
    light text (spec §2.1, scrims over imagery). */
@@ -602,7 +600,7 @@ button.bws-add.is-static {
   white-space: nowrap;
 }
 
-/* ── View Transition, open direction (spec §5 F3) ──────────────────
+/* View Transition, open direction (spec §5 F3).
    Same-image morph, 300ms on the single --ease-out curve so the open and
    the ghost fly-back are true mirrors. The old snapshot (card crop) exits
    fast, the new one (focus crop) fades in across the morph — no double

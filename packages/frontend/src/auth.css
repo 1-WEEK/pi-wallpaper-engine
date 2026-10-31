@@ -1,4 +1,4 @@
-/* ── Auth pages: Login / Setup (implementation ticket 14) ─────────────
+/* Auth pages: Login / Setup —
    spec §9: pure reuse of the existing material set — a typographic
    skeleton page (Clash display title + mono ledger readings on --pt-bg,
    no card, no new material), and glass only for the passkey focused
@@ -20,7 +20,6 @@
     color var(--dur-hover) var(--ease-out);
 }
 
-/* ── Skeleton page: brand reading → Clash title → ledger → command ── */
 .auth-page {
   width: min(400px, 100%);
   display: flex;
@@ -212,9 +211,9 @@
   transition: opacity var(--dur-micro) var(--ease-out);
 }
 
-/* ── Passkey focused overlay: the only glass on these pages (§9/§2.4).
-     Recipe copy-faithful to .set-sheet-panel — near-clear fill, heavy
-     blur+saturate, refracting top rim, lens shadow, faint grain. ────── */
+/* Passkey focused overlay: the only glass on these pages (§9/§2.4).
+   Recipe copy-faithful to .set-sheet-panel — near-clear fill, heavy
+   blur+saturate, refracting top rim, lens shadow, faint grain. */
 .auth-focus {
   position: fixed;
   inset: 0;
@@ -333,8 +332,8 @@ html[data-theme="light"] .auth-focus-panel {
   }
 }
 
-/* ── mobile-impl 05 (spec §4.5 / §8.6): touch corrections, mobile scoped
-   only. 16px inputs kill the iOS focus auto-zoom; the shell top-aligns so
+/* Mobile touch corrections (spec §4.5 / §8.6), mobile scoped only.
+   16px inputs kill the iOS focus auto-zoom; the shell top-aligns so
    the open keyboard cannot push the command out of view; the passkey
    focused overlay keeps its glass panel but drops the scrim blur and
    tightens to 16px padding. Desktop is untouched. */

@@ -1,11 +1,11 @@
-/* ── Mobile shell vocabulary + chrome (mobile spec §2/§3/§5.1) ──────
+/* Mobile shell vocabulary + chrome (mobile spec §2/§3/§5.1).
    The press→release grammar, the migrating TabBar block, the floating
    glass MiniPlayer, the Sheet skeleton choreography, mp-enter, the mobile
    coordinate-grid overlay, and the reduce-transparency degradation
    channel. Everything here is scoped under `.mobile-shell` (or the
    html[data-reduce-transparency] gate) so the desktop shell is untouched. */
 
-/* ═══ press→release vocabulary (§2.1) ═══════════════════════════════
+/* press→release vocabulary (§2.1).
    press-down = uncommitted intent: 1px 50% checker dither tile, onset
    0ms (`.pressing` carries no transition in). Cancel (slop / scroll /
    pointercancel / pointerleave) = instant cut (`.cut` kills the exit
@@ -110,7 +110,7 @@
   z-index: 2;
 }
 
-/* ═══ TopBar — typographic skeleton strip (§3.1, opaque) ════════════ */
+/* TopBar — typographic skeleton strip (§3.1, opaque). */
 .mobile-top-bar {
   position: relative;
   z-index: 14;
@@ -158,7 +158,7 @@
   color: var(--pt-text);
 }
 
-/* ═══ TabBar — resident inverted block + 250ms migration (§3.2) ═════ */
+/* TabBar — resident inverted block + 250ms migration (§3.2). */
 .mobile-tab-bar {
   position: relative;
   z-index: 16; /* above the MiniPlayer (15): the tuck hides behind it */
@@ -251,7 +251,7 @@
   color: var(--pt-on-accent);
 }
 
-/* ═══ MiniPlayer — floating glass lozenge (§2.3/§3.3) ═══════════════
+/* MiniPlayer — floating glass lozenge (§2.3/§3.3).
    §2.4 recipe verbatim minus the pointer-tracking specular (touch has no
    persistent pointer; the static specular stays). Floats above the main
    scroll area; content scrolls beneath it. Radius 18 (desktop dock
@@ -483,10 +483,10 @@ html[data-theme="light"] .mobile-mini-player {
   color: var(--pt-text);
 }
 
-/* ═══ Sheet — unified skeleton (§3.4) ════════════════════════════════
+/* Sheet — unified skeleton (§3.4).
    Enter same-frame: panel 300ms --ease-out + scrim 200ms fade.
-   Programmatic exit: panel 200ms + scrim 200ms, fully synchronous (the
-   60ms panel delay / 200×120 mismatch is deleted — desktop F1 kin). */
+   Programmatic exit: panel 200ms + scrim 200ms, fully synchronous (no
+   staggered panel delay — desktop F1 kin). */
 .mobile-sheet {
   position: absolute;
   inset: 0;
@@ -596,12 +596,11 @@ html[data-theme="light"] .mobile-sheet-panel {
   background: var(--pt-bg);
 }
 
-/* ═══ mp-enter (05 D1): mobile mount choreography ═══════════════════
+/* mp-enter (05 D1): mobile mount choreography.
    240ms --ease-out, opacity + translateY(8px), NO blur; stagger 30ms per
    item capped at 6. Plays on page mount / tab switch only — the class is
    applied by the page at mount; infinite-scroll appends and filter
-   refreshes re-render without the class (tickets 02–05 own that wiring).
-   Replaces the old "instant cut" override of the desktop pt-enter. */
+   refreshes re-render without the class. */
 @keyframes mp-enter {
   from {
     opacity: 0;
@@ -640,7 +639,7 @@ html[data-theme="light"] .mobile-sheet-panel {
   }
 }
 
-/* ═══ Mobile coordinate-grid overlay (§6 D1) ════════════════════════
+/* Mobile coordinate-grid overlay (§6 D1).
    Same generation logic as the desktop GridOverlay (measured offsets,
    ResizeObserver recompute); the classPrefix parameterisation keeps the
    desktop `.bws-gridlines` class off the mobile shell. */
@@ -671,7 +670,7 @@ html[data-theme="light"] .mobile-sheet-panel {
   color: var(--pt-faint);
   transform: translate(-50%, -50%);
 }
-/* ═══ navpulse (spec §5.1 D3 / §3.6) ═════════════════════════════════
+/* navpulse (spec §5.1 D3 / §3.6).
    1.4s inverse double flash (700ms × 2), drawn on opaque surfaces
    (TabBar icon / MiniPlayer thumb), never across the glass container. */
 .mobile-tab-bar-item.nav-pulse .mobile-tab-bar-icon {
@@ -717,12 +716,12 @@ html[data-theme="light"] .mobile-sheet-panel {
   }
 }
 
-/* ═══ Reduce transparency (§2.3) — three channels, one attribute ════
+/* Reduce transparency (§2.3) — three channels, one attribute.
    Manual Settings switch OR prefers-reduced-transparency OR
    prefers-reduced-motion (iOS proxy, registered approximation) →
    html[data-reduce-transparency="true"]: dynamic glass turns solid with
    a top hairline; the scrim is unchanged; focused-overlay panels turn
-   solid with a --pt-line border (scoped variants land with ticket 05). */
+   solid with a --pt-line border. */
 html[data-reduce-transparency="true"] .mobile-mini-player {
   background: var(--pt-bg);
   -webkit-backdrop-filter: none;

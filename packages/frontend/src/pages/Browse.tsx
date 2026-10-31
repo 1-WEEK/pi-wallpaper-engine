@@ -144,7 +144,6 @@ export const Browse = () => {
     setQueryDraft(submittedQuery)
   }, [submittedQuery])
 
-  // Mobile-only sheet state
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [cardItem, setCardItem] = useState<WorkshopItem | null>(null)
   const queryRef = useRef<HTMLInputElement | null>(null)
@@ -152,7 +151,7 @@ export const Browse = () => {
   // and the AGE group lists Everyone only; clicking reveals ● 18+ and the
   // Questionable/Mature rows.
   const [adultRevealed, setAdultRevealed] = useState(false)
-  // Functional scrollbar (ticket 07, spec §2.3): desktop grid only; reduced
+  // Functional scrollbar (spec §2.3): desktop grid only; reduced
   // motion keeps the native thin scrollbar (no LERP, no auto-hide).
   const reducedMotion = useReducedMotion()
 
@@ -275,12 +274,10 @@ export const Browse = () => {
     return () => io.disconnect()
   }, [mobile, hasMore, isLoadingMore, setSize])
 
-  /* ── View dual-state + immersive focus view (ticket 05, spec §4.1) ── */
-
   const [view, setView] = useState<"grid" | "list">("grid")
   const [cursor, setCursor] = useState(0)
   const [focusIdx, setFocusIdx] = useState<number | null>(null)
-  // Enter confirm beat (ticket 06, spec §4.1): true during the ~120ms
+  // Enter confirm beat (spec §4.1): true during the ~120ms
   // dither-out / XOR-in flip before the open transition runs.
   const [commit, setCommit] = useState(false)
   const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -345,9 +342,9 @@ export const Browse = () => {
       f === null || items.length === 0 ? f : (f + dir + items.length) % items.length
     )
 
-  // Enter confirm beat (ticket 06, spec §4.1): the ring's checkerboard band
+  // Enter confirm beat (spec §4.1): the ring's checkerboard band
   // ("uncommitted") fades out while a full-card XOR block ("committed") fades
-  // in over ~120ms, THEN the open transition (VT, ticket 05) runs. Reduced
+  // in over ~120ms, THEN the open transition (VT) runs. Reduced
   // motion: no beat — focus state just IS, the open is instant.
   const openWithConfirm = (i: number) => {
     if (commitTimer.current !== null) return
@@ -368,7 +365,7 @@ export const Browse = () => {
   // beat (F1). Reduced motion: no ghost, instant cut.
   const requestClose = () => {
     if (focusIdx === null || focusClosing) return
-    // Interface sound (ticket 13): nav dismiss variant, exit-beat first frame.
+    // Interface sound: nav dismiss variant, exit-beat first frame.
     sounds.trigger("dismiss")
     // Drop the commit state and park the cursor on the closing item while the
     // scrim still covers the grid: the XOR fades and the ring re-seats under

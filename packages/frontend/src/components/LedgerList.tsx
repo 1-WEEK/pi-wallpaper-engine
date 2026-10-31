@@ -1,7 +1,7 @@
 // LedgerList — the density-list row grammar (spec §2.3 / §4.1): N° index,
 // 56px thumb, title left, dotted leader, mono metadata right, hairline
-// separators between rows. Extracted as a shared component so ticket 08
-// (Library List) reuses the exact same syntax; per-page extras (badges,
+// separators between rows. Extracted as a shared component so the Library
+// List reuses the exact same syntax; per-page extras (badges,
 // action chips) slot in via `action`.
 import type { ReactNode } from "react"
 

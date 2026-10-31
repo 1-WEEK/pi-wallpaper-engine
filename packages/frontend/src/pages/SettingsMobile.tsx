@@ -1,4 +1,4 @@
-// Settings mobile (implementation ticket 14) — spec §9 degradation: the
+// Settings mobile — spec §9 degradation: the
 // desktop rail navigation becomes a section-list → detail two-layer flow.
 // Layer one is four command rows (Playback / Storage / Access & Security /
 // System) with mono live readings; a row opens the detail layer, which

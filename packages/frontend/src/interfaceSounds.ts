@@ -1,6 +1,5 @@
-// Interface sounds master switch (ticket 10 builds the switch only; ticket
-// 13 wires the actual Web Audio engine). Default OFF, persisted in
-// localStorage — spec §6. Fully separate from PlayerBar wallpaper audio.
+// Interface sounds master switch. Default OFF, persisted in localStorage —
+// spec §6. Fully separate from PlayerBar wallpaper audio.
 
 const KEY = "pwe-interface-sounds"
 

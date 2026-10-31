@@ -2,7 +2,7 @@
 // tab = resident inverted block (--pt-inv-bg, square, inset 8/4 of the
 // cell) that migrates in 250ms --ease-slide; during the flight a rAF
 // coverWatch flips any cell >30% covered per frame so text never reads
-// inverted-before-the-block. The amber top tick is abolished; the hot
+// inverted-before-the-block. There is no amber top tick; the hot
 // badge stays a chip face (status channel, readable on and off the block).
 // Press vocabulary (§2.1): the pressed tab's dither survives release and
 // is cleared only when the block lands (transitionend, 380ms fallback) —

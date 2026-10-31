@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Live smoke for `.scratch/shell-bg-and-play-limit` ticket 02.
+# Live smoke for the play-limit policy.
 #
 # Runs this checkout's backend against a disposable media root and a real mpv,
 # so the play-limit policy is exercised through the real HTTP surface rather
@@ -114,7 +114,6 @@ expect() { # expect <actual> <expected> <what>
   [ "$1" = "$2" ] || die "$3: expected '$2', got '$1'"
 }
 
-# ── Seed one playable wallpaper ─────────────────────────────────────────────
 step "0. Seed a media root with one wallpaper"
 mkdir -p "$MEDIA_ROOT/source/123456"
 ffmpeg -y -f lavfi -i "color=c=blue:s=320x240:r=10" -t 5 \
@@ -143,14 +142,12 @@ kill_backend
 boot
 ok "backend restarted with a seeded library"
 
-# ── 1. Persisted setting, no live deadline while stopped ────────────────────
 step "1. Setting the limit persists and reports no live deadline"
 curl -fsS -X POST "$BASE/api/player/play-limit" -H 'Content-Type: application/json' \
   -d '{"minutes": 45, "once": false}' >/dev/null
 expect "$(plimit)" "45 null false" "stored 45 without arming a session"
 ok "play_limit = 45 null, mode ALWAYS"
 
-# ── 2. Play arms a session deadline; stepping leaves it alone ───────────────
 step "2. Playing arms a deadline and stepping does not re-arm it"
 curl -fsS -X POST "$BASE/api/player/play/123456" >/dev/null
 expect "$(plimit)" "45 set false" "play armed a deadline"
@@ -159,7 +156,6 @@ curl -fsS -X POST "$BASE/api/player/prev" >/dev/null
 expect "$(plimit)" "45 set false" "next/prev left the deadline armed"
 ok "deadline held across next/prev"
 
-# ── 3. Off clears a live deadline ──────────────────────────────────────────
 step "3. Setting the limit to 0 clears the live deadline"
 curl -fsS -X POST "$BASE/api/player/play-limit" -H 'Content-Type: application/json' \
   -d '{"minutes": 0, "once": false}' >/dev/null

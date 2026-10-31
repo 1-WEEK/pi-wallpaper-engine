@@ -70,7 +70,7 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const closePop = () => {
     const p = popoverRef.current
     if (!p) return
-    // Interface sound (ticket 13): nav dismiss variant on the exit first frame.
+    // Interface sound: nav dismiss variant on the exit first frame.
     sounds.trigger("dismiss")
     setPop(null)
     setClosingPop(p)
@@ -105,15 +105,15 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
   const limitLeft = playLimitMinutesLeft(summary?.status.play_limit ?? null)
   const limitMinutes = summary?.status.play_limit?.minutes ?? null
   const limitOnce = summary?.status.play_limit?.once ?? false
-  // Ticket 01 (media-root resilience): a wallpapered player that is sitting
-  // idle with the media root gone must not read as "idle". The dock is the one
-  // surface visible on every page, so the outage is named here; the status text
-  // swaps to it and the causing path is shown underneath.
+  // A wallpapered player that is sitting idle with the media root gone must
+  // not read as "idle". The dock is the one surface visible on every page, so
+  // the outage is named here; the status text swaps to it and the causing
+  // path is shown underneath.
   const storage = summary?.status.storage ?? null
   const storageDown = storage !== null && !storage.available
   const storageReason = storage?.last_error ?? null
 
-  // Interface sound timing (ticket 13, sound spec §3): the transport row's
+  // Interface sound timing (sound spec §3): the transport row's
   // trigger point is pointerdown — the commit family sounds on the same
   // frame as :active, ahead of the API round-trip. Play/pause/skip itself
   // stays on the click semantic layer (keyboard Enter/Space); the click
@@ -144,7 +144,7 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
 
   const togglePower = async () => {
     if (!display || !display.configured) return
-    // Interface sound (ticket 13): transition family ×0.7 gain, on the
+    // Interface sound: transition family ×0.7 gain, on the
     // status-dot flip.
     sounds.trigger("display")
     setDisplayPending(true)
@@ -187,7 +187,6 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Close the popover on Esc or any outside pointer.
   useEffect(() => {
     if (!popover) return
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && closePop()
@@ -385,7 +384,7 @@ export const PlayerBar = ({ summary, onRefresh }: Props) => {
             disabled={pending}
             onPointerDown={() => transportPress("prev")}
             onClick={() => {
-              // Interface sound (ticket 13): commit family, icon-swap frame.
+              // Interface sound: commit family, icon-swap frame.
               transportClick("prev")
               void runAction(() => api.playerPrev())
             }}

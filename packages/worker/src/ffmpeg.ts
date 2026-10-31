@@ -255,11 +255,10 @@ export const buildFfmpegArgs = (
   const cropBox = `crop=w='min(iw,ih*${w}/${h})':h='min(ih,iw*${h}/${w})'`
 
   if (encoder === "qsv") {
-    // QSV path: hardware device initialization + VPP hardware scaler +
-    // hardware HEVC encode. `mode=hq` favors quality over throughput;
-    // the Pi screen is small so the speed tax is immaterial.
-    // In FFmpeg 7+ (oneVPL), scale_qsv expects hardware frames, so we
-    // initialize the device context and upload frames to QSV surfaces.
+    // `mode=hq` favors quality over throughput; the Pi screen is small so the
+    // speed tax is immaterial. In FFmpeg 7+ (oneVPL), scale_qsv expects
+    // hardware frames, so we initialize the device context and upload frames
+    // to QSV surfaces.
     return [
       ...common,
       "-init_hw_device",
@@ -313,8 +312,8 @@ export const buildFfmpegArgs = (
     ]
   }
 
-  // Software libx265 path. The crop box above already yields the target aspect
-  // ratio, so the scaler is a plain fit with no aspect handling of its own.
+  // The crop box above already yields the target aspect ratio, so the scaler
+  // is a plain fit with no aspect handling of its own.
   const sw = job.target_codec === "h264" ? "libx264" : "libx265"
   return [
     ...common,
@@ -397,7 +396,6 @@ export const transcode = async (
   const ffmpegBin = opts.ffmpegBin ?? FFMPEG
   const paths = buildJobPaths(opts.sourcePath, opts.outputPath)
 
-  // Source presence check — fail fast if the Pi download failed.
   await stat(paths.sourceAbs).catch(() => {
     throw new Error(`Source not found: ${paths.sourceAbs}`)
   })

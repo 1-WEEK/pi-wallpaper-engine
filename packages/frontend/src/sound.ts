@@ -1,4 +1,4 @@
-// Interface sound layer (ticket 13, spec §6; sound spec:
+// Interface sound layer (spec §6; sound spec:
 // .scratch/ui-redesign/research/15-sound-spec.md).
 //
 // Direction B — BLOOM, warm tonal: sine/triangle bodies, 8–12ms soft
@@ -9,7 +9,7 @@
 // Native Web Audio, zero dependencies:
 //   - lazy AudioContext: created/resumed only from a real user gesture and
 //     only while the master switch is ON. The switch (default OFF,
-//     localStorage) lives in interfaceSounds.ts (ticket 10); this module is
+//     localStorage) lives in interfaceSounds.ts; this module is
 //     the engine behind it.
 //   - background tabs stay silent: triggers while document.hidden drop,
 //     hiding the page cancels in-flight voices, nothing replays on return.
@@ -25,9 +25,9 @@
 import { getInterfaceSounds, INTERFACE_SOUNDS_CHANGED } from "./interfaceSounds.js"
 import { prefersReducedMotion } from "./reducedMotion.js"
 
-/* ── Direction B family patches (sound spec §2/§4 — the ticket-15 lab's
-     declarative BLOOM direction, inlined). Envelope: linear soft attack to
-     peak, then exponential decay; voice life ≈ delay + attack + decay. ── */
+/* Direction B family patches (sound spec §2/§4 — the declarative BLOOM
+   direction, inlined). Envelope: linear soft attack to peak, then
+   exponential decay; voice life ≈ delay + attack + decay. */
 
 export type SoundFamily = "nav" | "commit" | "transition" | "warn"
 
@@ -89,11 +89,11 @@ export const SOUND_FAMILIES: Record<SoundFamily, FamilySpec> = {
   },
 }
 
-/* ── Trigger matrix (sound spec §3). One id per product trigger; cooldown
-     and reentry key on the id, not the family (commit-transport and
-     commit-download share a family but have their own rows). The explicit
-     SILENT rows — card/filter hover, scrolling, polling progress, keyboard
-     repeats — are a decision, not a gap: they simply never call trigger(). ── */
+/* Trigger matrix (sound spec §3). One id per product trigger; cooldown
+   and reentry key on the id, not the family (commit-transport and
+   commit-download share a family but have their own rows). The explicit
+   SILENT rows — card/filter hover, scrolling, polling progress, keyboard
+   repeats — are a decision, not a gap: they simply never call trigger(). */
 
 export type SoundTrigger =
   | "nav" // page navigation / ledger row select — active-state first frame
@@ -173,8 +173,6 @@ class SoundEngine {
     window.addEventListener(INTERFACE_SOUNDS_CHANGED, () => this.syncEnabled())
   }
 
-  /* ── state ── */
-
   get enabled(): boolean {
     return getInterfaceSounds()
   }
@@ -219,8 +217,6 @@ class SoundEngine {
     this.emit()
   }
 
-  /* ── lifecycle ── */
-
   private unlock() {
     if (!this.supported || !this.enabled || this.muted) return
     try {
@@ -264,8 +260,6 @@ class SoundEngine {
     for (const v of this.active) v.stop()
     this.active = []
   }
-
-  /* ── playback ── */
 
   trigger(id: SoundTrigger) {
     if (!this.supported || !this.enabled || this.muted) return

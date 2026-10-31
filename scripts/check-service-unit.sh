@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Verifies scripts/render-service-unit.sh against the ticket-02 contract:
-# the unit is ordered after the configured media root's mount attempt with
-# non-requiring semantics, derived from configuration rather than hardcoded.
+# Verifies scripts/render-service-unit.sh: the unit is ordered after the
+# configured media root's mount attempt with non-requiring semantics, derived
+# from configuration rather than hardcoded.
 #
 # Run from the repository root: bash scripts/check-service-unit.sh
 
@@ -53,7 +53,7 @@ render() {
 
 echo "render-service-unit"
 
-# ── data_root drives the mount unit when storage.root is null ────────────────
+# data_root drives the mount unit when storage.root is null
 CONFIG="$WORK/config-default.json"
 OUT="$WORK/unit-default.service"
 write_config "/home/pi/pi-wallpaper-engine-data" "$CONFIG"
@@ -67,7 +67,7 @@ check "no Requires= on the mount unit" bash -c "! grep -qxF \"Requires=$UNIT\" '
 check "placeholder fully substituted" bash -c "! grep -q '@@' '$OUT'"
 check "ExecStart and Environment survive rendering" grep -q '^ExecStart=/usr/bin/bun run packages/backend/src/index.ts$' "$OUT"
 
-# ── a differing deployment path is not hardcoded ─────────────────────────────
+# a differing deployment path is not hardcoded
 OTHER="$WORK/config-other.json"
 OTHER_OUT="$WORK/unit-other.service"
 write_config "/srv/media" "$OTHER"
@@ -77,12 +77,12 @@ check "a different media root yields a different unit" test "$OTHER_UNIT" = "srv
 check "other unit is ordered after its own mount" grep -qxF "After=srv-media.mount" "$OTHER_OUT"
 check "previous ordering does not leak into the re-render" test "$OTHER_UNIT" != "$UNIT"
 
-# ── re-running over an existing output replaces it ───────────────────────────
+# re-running over an existing output replaces it
 render "$CONFIG" "$OTHER_OUT" >/dev/null
 check "re-render overwrites the previous unit in place" grep -qxF "After=$UNIT" "$OTHER_OUT"
 check "re-render leaves no stale ordering behind" bash -c "! grep -q 'srv-media.mount' '$OTHER_OUT'"
 
-# ── a path needing real escaping ─────────────────────────────────────────────
+# a path needing real escaping
 ESCAPED="$WORK/config-escaped.json"
 ESCAPED_OUT="$WORK/unit-escaped.service"
 write_config "/mnt/My Share/media" "$ESCAPED"

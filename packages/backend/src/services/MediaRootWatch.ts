@@ -28,8 +28,8 @@ export const STARTUP_PROBE_DELAY_MS = 3_000
  * republished as a retry opportunity, so this is also the worst-case delay
  * before a recovery retry runs after a failed one. A 1-minute bound keeps a
  * late mount from leaving the screen black for longer than a minute, and costs
- * one `access(2)` a minute. Deliberately not faster: the ticket requires that
- * re-evaluation stays bounded and cheap, not that it is tight.
+ * one `access(2)` a minute. Deliberately not faster: re-evaluation needs to
+ * stay bounded and cheap, not tight.
  */
 export const AVAILABLE_TICK = "1 minute"
 
@@ -43,8 +43,8 @@ export const UNAVAILABLE_BACKOFF_CAP = "12 seconds"
 /**
  * Folder-level watch over the active media root.
  *
- * Ticket 01 of `.scratch/playback-mount-resilience`. The media root is a
- * network mount whose unit can come and go while the backend runs; `Storage`
+ * The media root is a network mount whose unit can come and go while the
+ * backend runs; `Storage`
  * answers "is it reachable *right now*" and nothing else, so anything that must
  * react to the root coming back needs its own signal. This service owns that
  * signal.
@@ -58,7 +58,7 @@ export const UNAVAILABLE_BACKOFF_CAP = "12 seconds"
  * Callers: `PlayerPower`, which retries a wallpaper it had to hold once the
  * share answers again.
  *
- * Cost discipline, per the ticket: the loop only probes on a timer while the
+ * Cost discipline: the loop only probes on a timer while the
  * root is reachable (one `access(2)` a minute) or unreachable (capped at
  * `UNAVAILABLE_BACKOFF_CAP`), and `probeNow()` collapses that wait instead of
  * adding a second prober. Nothing privileged runs here.

@@ -43,15 +43,6 @@ const isAdultTask = (task: ActivityTask): boolean =>
     adultHint: task.adult_hint,
   })
 
-/* ── Desktop (implementation ticket 09, spec §4.3) ─────────────────
-   ACTIVE / FINISHED ledger, header `n ACTIVE — m FINISHED — k FAILED`.
-   Row = 64px thumb + title + TYPE border pill + STAGE pill (300ms flip on
-   stage change) + mono readout line + hairline progress (determinate via
-   transform: scaleX, indeterminate as a scan segment). Terminal tasks play
-   the settle beat before dropping into FINISHED; failures expand a red mono
-   ERR line. Storage migrations surface as a synthesized row with the
-   COPY → VERIFY → SWITCH → CLEANUP phase readout. */
-
 type QueueRow =
   | {
       kind: "task"
@@ -68,16 +59,15 @@ type QueueRow =
       migration: MigrationProgress
     }
 
-/* ── Shared queue state machine (mobile spec §8.4) ─────────────────
-   useActivityQueue is the single owner of the Activity state machine:
-   task-feed polling (infinite history pages + the 1s active overlay),
-   storage-migration polling + row synthesis, the settle beat (1.4s dwell
-   + COMPLETE pill inverse flash, skipped under reduced motion at the TS
-   layer), the done/fail sound receipts, and every mutation action
-   (dismiss / cancel / retry / clear / migration cancel). Both
-   ActivityDesktop and ActivityMobile consume it — the mobile page gets
-   the settle beat, the migration row and the header count by wiring this
-   hook, not by re-deriving them. */
+// useActivityQueue is the single owner of the Activity state machine:
+// task-feed polling (infinite history pages + the 1s active overlay),
+// storage-migration polling + row synthesis, the settle beat (1.4s dwell
+// + COMPLETE pill inverse flash, skipped under reduced motion at the TS
+// layer), the done/fail sound receipts, and every mutation action
+// (dismiss / cancel / retry / clear / migration cancel). Both
+// ActivityDesktop and ActivityMobile consume it — the mobile page gets
+// the settle beat, the migration row and the header count by wiring this
+// hook, not by re-deriving them.
 
 interface ActivityQueue {
   rows: QueueRow[]
@@ -726,13 +716,6 @@ const MigrationRow = ({
     </li>
   )
 }
-
-
-/* ── Mobile (spec §4.3): the same `.act-*` ledger as desktop — same
-     useActivityQueue state machine (settle beat, migration row, header
-     count, done/fail receipts), same row components. The rail's
-     HOUSEKEEPING commands and the discreet 18+ entry move into a Sheet
-     behind one QUEUE… command under the header. ─────────────────────── */
 
 const ActivityMobile = () => {
   const [showAdult, setShowAdult] = useState(false)

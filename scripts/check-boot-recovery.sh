@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Recorded evidence for ticket 02 of `.scratch/playback-mount-resilience`.
+# Records boot-recovery evidence for the media-root resilience work.
 #
-# Ticket 02 asks for two facts to be "verified and recorded, not assumed":
+# Two facts are verified and recorded, not assumed:
 #
 #   1. with the share deliberately unavailable at start, the service is still
 #      running, `systemctl --user is-active` reports `active`, and the API
@@ -17,7 +17,7 @@
 # user unit; the shelf mounts are system units, so the name is unresolvable
 # while the share is down — see docs/agents/development.md § Media-root ordering).
 # What a reboot would additionally prove is that the desktop session comes up
-# before the service; everything else on the ticket's list is covered here.
+# before the service; everything else in the recovery contract is covered here.
 #
 # The live deployment is restored on exit, including on failure.
 #
@@ -61,9 +61,9 @@ fi
 rm -rf "$CHECK"
 mkdir -p "$CHECK/state"
 
-# ── The isolated config: no auth (so the API can be read), a media root we
-#    control, a headless mpv (this runs on the appliance's own display), and a
-#    port that cannot collide with the real deployment.
+# The isolated config: no auth (so the API can be read), a media root we
+# control, a headless mpv (this runs on the appliance's own display), and a
+# port that cannot collide with the real deployment.
 cat > "$CHECK/mpv-wrapper.sh" <<'WRAP'
 #!/usr/bin/env bash
 # Evidence only: decode without touching the attached display or audio device.
@@ -157,7 +157,6 @@ seed
 systemctl --user start pi-wallpaper-engine
 wait_until "backend health after seeding" 60 curl -fsS "$BASE/api/health"
 
-# ── The share appears ────────────────────────────────────────────────────────
 step "Make the share available; the wallpaper must resume with no manual action"
 provide_share
 if wait_until "wallpaper resumes by itself" 180 \

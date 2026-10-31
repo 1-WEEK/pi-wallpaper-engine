@@ -29,8 +29,6 @@ interface Props {
 const MIN_CARD_WIDTH = 248
 const GRID_GAP = 16
 
-/* ── Shared row semantics ────────────────────────────────────────── */
-
 const playableResolution = (row: LibraryItem): string =>
   row.transcoded_resolution ?? row.source_resolution
 
@@ -105,10 +103,10 @@ const hasSweepable = (rows: LibraryItem[]): boolean =>
 
 const canPreview = (row: LibraryItem): boolean => row.transcode_status === "completed"
 
-/* ── Shared backend intents (identical behavior on desktop + mobile) ── */
+// Shared backend intents — identical behavior on desktop + mobile.
 
 interface Intents {
-  /** fromEl/src feed the cross-page play ghost (ticket 12, spec §4.5);
+  /** fromEl/src feed the cross-page play ghost (spec §4.5);
    *  omitted on mobile and other no-ghost triggers. */
   play: (id: string, fromEl?: HTMLElement | null, src?: string) => void
   remove: (id: string) => void
@@ -128,7 +126,7 @@ const useIntents = (
   setNotice: (n: string | null) => void
 ): Intents => ({
   play: (id, fromEl, src) => {
-    // Wallpaper selected (ticket 13): nav family ×1.5 pitch, on the
+    // Wallpaper selected: nav family ×1.5 pitch, on the
     // NOW PLAYING chip's appearance intent.
     sounds.trigger("select")
     // The media ghost flies to the PlayerBar thumb as playback starts; the
@@ -163,9 +161,9 @@ const useIntents = (
       .catch((e: Error) => setError(e.message)),
 })
 
-/* ── Hover action cluster (spec §4.2): PLAY inverse primary / PREVIEW
-     (transcoded only) / DELETE two-step SURE?. Shared by grid cards and
-     ledger rows; clicks never reach the row's select/open handlers. ── */
+// Hover action cluster (spec §4.2): PLAY inverse primary / PREVIEW
+// (transcoded only) / DELETE two-step SURE?. Shared by grid cards and
+// ledger rows; clicks never reach the row's select/open handlers.
 
 const HoverActions = ({
   row,
@@ -221,7 +219,7 @@ const HoverActions = ({
             setConfirming(false)
             intents.remove(row.workshop_id)
           } else {
-            // Destructive confirm armed (ticket 13): warn family, light variant.
+            // Destructive confirm armed: warn family, light variant.
             sounds.trigger("armed")
             setConfirming(true)
             timer.current = setTimeout(() => setConfirming(false), 2200)

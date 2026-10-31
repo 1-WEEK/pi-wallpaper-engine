@@ -7,9 +7,9 @@ import { useEffect, type RefObject } from "react"
 import { prefersReducedMotion } from "./reducedMotion.js"
 
 // The live desktop lenis instance, exposed for the Browse functional
-// scrollbar (ticket 07): it reads `animatedScroll` and writes drags back
-// through `scrollTo`. Null under reduced motion (lenis never initializes)
-// and on the mobile shell.
+// scrollbar: it reads `animatedScroll` and writes drags back through
+// `scrollTo`. Null under reduced motion (lenis never initializes) and on
+// the mobile shell.
 let activeLenis: Lenis | null = null
 
 export const getLenis = (): Lenis | null => activeLenis

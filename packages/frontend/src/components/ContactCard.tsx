@@ -42,8 +42,7 @@ export const ContactCard = ({
   isInLibrary?: boolean
   downloadTask?: ActivityTask
   onDownloadQueued?: () => void
-  /** True while the keyboard cursor sits on this card (ticket 05 basic
-   *  roaming; the full 1-bit focus band lands with ticket 06). */
+  /** True while the keyboard cursor sits on this card. */
   cursor?: boolean
   onSelect?: () => void
   /** Opens the immersive focus view (double-click on the media). */
@@ -65,9 +64,9 @@ export const ContactCard = ({
       .download(item.publishedfileid)
       .then(() => {
         setQueued(true)
-        // Download accepted (ticket 13): commit family, on the ghost takeoff.
+        // Download accepted: commit family, on the ghost takeoff.
         sounds.trigger("download")
-        // Download receipt (ticket 12, spec §4.5): the thumbnail flies to the
+        // Download receipt (spec §4.5): the thumbnail flies to the
         // Library nav item; the landing pulses the nav label.
         if (mediaRef.current) {
           flyDownloadReceipt(mediaRef.current, item.preview_url || undefined)

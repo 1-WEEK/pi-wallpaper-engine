@@ -183,9 +183,9 @@ export const PlaybackLive = Layer.effect(
 
     yield* Effect.addFinalizer(() => clearPlayLimit)
 
-    // Ticket 01 (media-root recovery): PlayerPower restores a wallpaper on its
-    // own when the media root comes back (a file that vanished mid-playback, or
-    // a startup restore that aborted). Rotation linkage stays owned here, per
+    // PlayerPower restores a wallpaper on its own when the media root comes
+    // back (a file that vanished mid-playback, or a startup restore that
+    // aborted). Rotation linkage stays owned here, per
     // ADR 0009, so this is the one place that observes those restores and arms
     // the sequence on them — the same thing `displayOn` does explicitly.
     yield* Effect.forkScoped(
@@ -244,8 +244,8 @@ export const PlaybackLive = Layer.effect(
       displayOn: () =>
         serialize(Effect.gen(function* () {
           const { restored_workshop_id, ...result } = yield* playerPower.displayOn()
-          // Re-arm rotation on the restored wallpaper (ADR 0009 follow-up,
-          // signed off 2026-07-06). Best-effort, like arming after play.
+          // Re-arm rotation on the restored wallpaper. Best-effort, like
+          // arming after play.
           if (result.restored && restored_workshop_id) {
             yield* rotation.arm(restored_workshop_id).pipe(Effect.catch(() => Effect.void))
             yield* Ref.set(sessionActiveRef, true)

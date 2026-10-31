@@ -36,7 +36,6 @@ export const decideTranscode = (
   const aspectMatches = Math.abs(sourceAspect - screenAspect) < ASPECT_TOLERANCE
   const codec = probe.codec.toLowerCase()
 
-  // Vertical content
   if (probe.height > probe.width) {
     return {
       kind: "skip",
@@ -44,7 +43,6 @@ export const decideTranscode = (
     }
   }
 
-  // 4K — always transcode
   if (probe.width >= 2160 || probe.height >= 1440) {
     return {
       kind: "transcode",
@@ -55,12 +53,10 @@ export const decideTranscode = (
     }
   }
 
-  // Exact match + supported codec
   if (isSameResolution(probe, screen) && (codec === "h264" || codec === "hevc")) {
     return { kind: "skip", reason: "Already at screen native resolution and codec" }
   }
 
-  // 1080p / 720p H.264 or HEVC with aspect mismatch
   if (!aspectMatches) {
     return {
       kind: "transcode",
@@ -71,7 +67,6 @@ export const decideTranscode = (
     }
   }
 
-  // 1080p source, screen-aspect match, supported codec — let mpv runtime-scale
   if (codec === "h264" || codec === "hevc") {
     return {
       kind: "skip",
@@ -79,7 +74,6 @@ export const decideTranscode = (
     }
   }
 
-  // Unsupported codec
   return {
     kind: "transcode",
     target_width: screen.width,

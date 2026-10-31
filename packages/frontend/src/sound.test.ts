@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { SOUND_FAMILIES, SOUND_TRIGGERS, sounds } from "./sound.js"
 
-// Matrix invariants from the ticket-15 sound spec (§2–§4). The engine's
+// Matrix invariants from the sound spec (§2–§4). The engine's
 // runtime behavior (cooldown, reentry, hidden-tab drops) is covered by the
 // Playwright spec; here we pin the declarative table itself so a careless
 // edit can't drift from the locked spec.

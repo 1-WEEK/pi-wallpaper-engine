@@ -1,6 +1,6 @@
 // TopBar (mobile spec §3.1): typographic skeleton strip — the `pwe+`
-// wordmark is the logo (favicon img deleted), the repeated page title is
-// deleted (the 26px Clash page head owns the display title, §6 D8), and a
+// wordmark is the logo (no favicon img), the page title is not repeated
+// here (the 26px Clash page head owns the display title, §6 D8), and a
 // mono instrument readout sits right. Opaque --pt-bg page skeleton, never
 // glass (§2.3). Theme controls are NOT here — they belong to Settings.
 import type { SystemSummary } from "../../api.js"

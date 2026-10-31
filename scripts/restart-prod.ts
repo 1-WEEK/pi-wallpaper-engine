@@ -29,7 +29,6 @@ const run = async (cmd: string[], opts: { cwd?: string } = {}): Promise<{ exit: 
   return { exit, stdout }
 }
 
-// --- 1. dirty-tree guard ----------------------------------------------------
 const { stdout: dirty } = await run(["git", "status", "--porcelain"], { cwd: PROJECT_ROOT })
 if (dirty.trim() && !FORCE) {
   console.error("✗ working tree is dirty — refusing to restart.")
@@ -68,7 +67,6 @@ if (existsSync(liveDb)) {
   console.log(`(no db at ${liveDb}; skipping snapshot)`)
 }
 
-// Trim old snapshots, keep the most recent SNAPSHOT_KEEP.
 const all = existsSync(SNAPSHOT_DIR)
   ? readdirSync(SNAPSHOT_DIR)
       .filter((n) => /^\d{8}-\d{6}$/.test(n))
@@ -79,7 +77,6 @@ for (const old of all.slice(SNAPSHOT_KEEP)) {
   rmSync(join(SNAPSHOT_DIR, old), { recursive: true, force: true })
 }
 
-// --- 3. restart + health check ---------------------------------------------
 // Hard timeout in case systemctl hangs (would otherwise block forever).
 const restart = run(["systemctl", "--user", "restart", SERVICE])
 const timeout = new Promise<{ exit: number; stdout: string }>((_, reject) =>

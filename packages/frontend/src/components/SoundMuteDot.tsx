@@ -1,5 +1,5 @@
 // SoundMuteDot — the shell's persistent quick-mute for interface sounds
-// (ticket 13, spec §6/§5 控制入口): a small round dot at the shell's
+// (spec §6/§5 控制入口): a small round dot at the shell's
 // bottom-right, floating above the PlayerBar dock's right end. Position,
 // shape and semantics are deliberately separate from the PlayerBar — the
 // dock owns wallpaper audio (mpv on the Pi), this dot owns interface

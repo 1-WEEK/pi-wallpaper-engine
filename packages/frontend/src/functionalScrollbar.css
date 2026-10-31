@@ -1,5 +1,5 @@
-/* ── Functional scrollbar (implementation ticket 07) ───────────────
-   spec §2.3 "功能性滚动条" (08 票定稿 — E interaction core + L visual skin)
+/* Functional scrollbar —
+   spec §2.3 "功能性滚动条" (E interaction core + L visual skin)
    on the Browse long grid only. Structure: a <canvas> draws the Kare 1-bit
    dithered dot track and the PAGE graduations (§2.6); the thumb is a DOM
    liquid-glass sliver using the §2.4 recipe verbatim — canvas can't do

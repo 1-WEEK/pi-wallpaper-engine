@@ -11,7 +11,6 @@
 # entrypoint into a single self-contained file in a builder stage and ship only
 # that — the runtime image carries no node_modules and runs no `bun install`.
 
-# ── stage 1: bundle the worker into one self-contained file ────────────────
 FROM oven/bun:1.3.14-debian AS builder
 
 WORKDIR /app
@@ -31,7 +30,6 @@ RUN bun build packages/worker/src/index.ts \
       --outdir dist \
       --sourcemap=linked
 
-# ── stage 2: minimal runtime — FFmpeg 9.x + Intel media driver + the bundle ─
 FROM oven/bun:1.3.14-slim AS runtime
 
 ARG TARGETARCH

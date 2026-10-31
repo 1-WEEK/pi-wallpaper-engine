@@ -1,4 +1,4 @@
-// Cross-page ghost choreography (ticket 12, spec §4.5 — the two flights that
+// Cross-page ghost choreography (spec §4.5 — the two flights that
 // cross page boundaries; same-page card → detail stays on View Transitions):
 //
 // 1. Download receipt: Browse ADD flies the thumbnail (420ms, registered §5
@@ -29,7 +29,7 @@ let pulseTimer: number | null = null
 
 /** navpulse (§5 exception): the nav label flashes inverse once, 1.4s. It hangs
  *  on the label, not the link, so it never fights the XOR mask's covered
- *  state (ticket 11). Class-based: a repeat re-arms the animation from zero. */
+ *  state. Class-based: a repeat re-arms the animation from zero. */
 const pulseLibraryNav = () => {
   const link = libraryNavEl()
   if (!link) return

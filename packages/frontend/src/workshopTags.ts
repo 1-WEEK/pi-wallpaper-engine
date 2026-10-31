@@ -30,10 +30,10 @@ export const GENRE_TAGS = [
   "Unspecified",
 ] as const
 
-// WE tags resolution by exact pixel string, not aspect ratio. Expanded from
-// the original 5 to the 13-item census of real workshop tag arrays
-// (QueryFiles, trending, Everyone): ultrawide/dual families, portrait
-// variants, 1366x768 laptops, and the heavily-used "Other resolution".
+// WE tags resolution by exact pixel string, not aspect ratio. The 13-item
+// list is a census of real workshop tag arrays (QueryFiles, trending,
+// Everyone): ultrawide/dual families, portrait variants, 1366x768 laptops,
+// and the heavily-used "Other resolution".
 export const RESOLUTION_TAGS = [
   "1280 x 720",
   "1366 x 768",

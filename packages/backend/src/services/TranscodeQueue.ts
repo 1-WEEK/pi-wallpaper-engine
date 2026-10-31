@@ -101,9 +101,9 @@ const noopReport = (workshopId: string) => ({
 })
 
 /**
- * Phase 1 active layer. No worker exists, so anything that would need
+ * Noop layer, used when no worker exists: anything that would need
  * transcoding is marked "skipped" — the Pi plays source files directly.
- * The decision is still logged so we can see what Phase 2 would have done.
+ * The decision is still logged so it stays visible what a worker would do.
  */
 export const TranscodeQueueNoop = Layer.effect(
   TranscodeQueue,
@@ -153,7 +153,7 @@ export const TranscodeQueueNoop = Layer.effect(
 )
 
 /**
- * Phase 2 layer. Writes a transcode_jobs row, lets the Worker pull it.
+ * Live layer. Writes a transcode_jobs row, lets the Worker pull it.
  */
 export const TranscodeQueueLive = Layer.effect(
   TranscodeQueue,
@@ -246,7 +246,7 @@ export const TranscodeQueueLive = Layer.effect(
 
       claim: (worker) =>
         Effect.gen(function* () {
-          // Atomic claim via UPDATE ... RETURNING — Phase 2 wiring.
+          // Atomic claim via UPDATE ... RETURNING.
           const row = yield* db.queryOne<{
             id: string
             workshop_id: string

@@ -45,9 +45,9 @@ export interface PlayerPowerImpl {
    * (`media_lost`) — never for a startup restore, which takes the boot path and
    * deliberately does not arm rotation (ADR 0009).
    *
-   * Ticket 01: playback is restarted from here because this is where both the
-   * player and the display are owned, but rotation linkage belongs to
-   * `Playback` (ADR 0009), so `Playback` subscribes and arms the sequence.
+   * Playback is restarted from here because this is where both the player and
+   * the display are owned, but rotation linkage belongs to `Playback`
+   * (ADR 0009), so `Playback` subscribes and arms the sequence.
    */
   readonly recovered: () => Stream.Stream<string>
 }
@@ -227,14 +227,14 @@ export const PlayerPowerLive = Layer.effect(
     yield* Effect.addFinalizer(() => cancelAutoOff)
 
     /**
-     * Ticket 01: finish a restore that the media root interrupted, once the
-     * root answers again.
+     * Finish a restore that the media root interrupted, once the root answers
+     * again.
      *
      * Two ways a wallpaper ends up held here: its file stopped mid-playback
      * when the share went away (`media_lost`), or a startup restore ran before
-     * the mount existed. Unlike `display_off`/`auto_off`, nothing here waits for
-     * the user — the point of the ticket is that a late mount ends with a
-     * playing screen and no service restart.
+     * the mount existed. Unlike `display_off`/`auto_off`, nothing here waits
+     * for the user — a late mount must end with a playing screen and no
+     * service restart.
      */
     const retryPendingRestore = Effect.gen(function* () {
       const generation = intentGeneration
@@ -334,10 +334,9 @@ export const PlayerPowerLive = Layer.effect(
       if (!shouldAutoRestoreOnStartup(status)) return
 
       // Record the intent *before* attempting it. The attempt itself fails
-      // while the media root is not mounted yet (that is the nine-day outage in
-      // the ticket), and a failed attempt must not discard the wallpaper the
-      // user was watching: the persisted `startup` hold is what the recovery
-      // loop retries once the share appears.
+      // while the media root is not mounted yet, and a failed attempt must not
+      // discard the wallpaper the user was watching: the persisted `startup`
+      // hold is what the recovery loop retries once the share appears.
       const saved = yield* playerState.getRestore().pipe(Effect.orElseSucceed(() => null))
       if (saved && saved.reason !== "startup") {
         yield* playerState

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Live smoke for `.scratch/playback-mount-resilience` ticket 01.
+# Live smoke for media-root loss and recovery.
 #
 # Runs this checkout's backend, unmodified, in a private mount namespace against
 # a disposable media root, so the media root can be made to disappear and come
@@ -148,7 +148,7 @@ create_media() {
     -c:v libx264 -pix_fmt yuv420p "$INSIDE_ROOT/source/123456/video.mp4" -loglevel error
 }
 
-# ── The media root is deliberately absent at boot: the late-mount case ───────
+# The media root is deliberately absent at boot: the late-mount case.
 # Two boots, not one: the first creates and seeds the state database, the
 # second is the boot whose startup restore has to survive the missing mount.
 # Seeding a running backend instead would race its startup restore.
@@ -200,7 +200,6 @@ BACKEND_PID=$!
 wait_until "backend health" curl -fsS "$BASE/api/health"
 ok "backend booted with the share absent"
 
-# ── 1. The absent media root is reported as such ────────────────────────────
 step "1. An absent media root is an explicit, named condition"
 wait_until "storage reports unavailable" bash -c "curl -fsS $BASE/api/storage | grep -q '\"available\":false'"
 status | tee "$SMOKE_ROOT/1-down.json"
@@ -208,7 +207,6 @@ grep -q 'pwe-mnt/media' "$SMOKE_ROOT/1-down.json" \
   || die "last_error does not name the causing path"
 ok "available=false with the causing path in last_error"
 
-# ── 2. The mount arrives late: the backend resumes on its own ───────────────
 grep -q 'Could not restore 123456 on startup' "$SMOKE_ROOT/backend.log" \
   || die "the startup restore did not attempt-and-fail as the ticket describes"
 ok "startup restore failed against the absent share"
@@ -231,7 +229,6 @@ grep -q '"available":true' "$SMOKE_ROOT/3-up.json" || die "storage still unavail
 grep -q '"last_error":null' "$SMOKE_ROOT/3-up.json" || die "last_error did not clear"
 ok "available=true and last_error=null"
 
-# ── 4. The file stops while the share is down ───────────────────────────────
 step "4. A file that stops while the share is down is held, and named"
 # Lazy, because mpv holds the video open and refuses a plain umount. The
 # underlying directory then has to go as well: a lazy unmount detaches the

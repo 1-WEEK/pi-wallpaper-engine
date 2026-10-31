@@ -1,7 +1,5 @@
 import { isTerminalTaskStage, type ActivityTask } from "@pwe/shared"
 
-// Shared display logic for the unified task model (downloads + transcodes).
-
 export const DL_STAGE_LABEL: Record<string, string> = {
   starting: "Starting",
   downloading: "Downloading",

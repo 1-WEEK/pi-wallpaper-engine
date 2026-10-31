@@ -4,9 +4,9 @@
  *
  * Answers one question per completed library row: was this artifact made by
  * cropping the source to the configured screen aspect ratio, or by stretching
- * the whole source into the target box? The stretched kind is the bug that
- * shipped on 2026-08-25 and sat in the library for over a month, because
- * nothing in the system looked at the picture itself.
+ * the whole source into the target box? The stretched kind is the bug this
+ * audit exists to catch: nothing else in the system looks at the picture
+ * itself.
  *
  * Why not container metadata: a stretched artifact is still 1200x1080 SAR 1:1
  * DAR 10:9, exactly like a correct one. `display_aspect_ratio` is identical in
@@ -29,8 +29,6 @@ import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { expandHome } from "../packages/backend/src/paths.js"
 import { resolveDbPath } from "../packages/backend/src/statePath.js"
-
-// --- config loading (same convention as preflight.ts / paths.ts) ------------
 
 const CONFIG_PATH =
   process.env["PWE_CONFIG"] ?? resolve(homedir(), ".config/pi-wallpaper-engine/config.json")
@@ -63,8 +61,6 @@ const TARGET_W = width
 const TARGET_H = height
 
 const DB_PATH = resolveDbPath()
-
-// --- verdict thresholds -----------------------------------------------------
 
 // Which side wins is decided by the *normalized* difference, never by the raw
 // SSIM difference and never by a bare comparison of the two scores.
@@ -103,8 +99,6 @@ const NORMALIZED_MARGIN = 0.5
 // 0.6 is well under every true match observed and well over any mismatch.
 const MATCH_FLOOR = 0.6
 
-// --- probe timestamps -------------------------------------------------------
-
 // One frame decides nothing: a scene cut, a still title card, or a fade at the
 // identical instant on both files can make a single sample unrepresentative or
 // pathological. We sample every item at two timestamps and average the two
@@ -130,8 +124,6 @@ const timestamps = (sourceDuration: number | null, artifactDuration: number | nu
   const late = clamp(span * 0.7)
   return early === late ? [early] : [early, late]
 }
-
-// --- process helpers (Bun.spawn, as in preflight.ts) ------------------------
 
 const run = async (cmd: string[]): Promise<{ code: number; stderr: string }> => {
   const proc = Bun.spawn(cmd, { stdout: "ignore", stderr: "pipe", stdin: "ignore" })
@@ -192,8 +184,6 @@ const grabFrame = async (
   return code === 0 && existsSync(out)
 }
 
-// --- flags ------------------------------------------------------------------
-
 const args = process.argv.slice(2)
 const asJson = args.includes("--json")
 const limitIdx = args.indexOf("--limit")
@@ -210,8 +200,6 @@ if (Bun.which("ffmpeg") === null || Bun.which("ffprobe") === null) {
   console.error("ffmpeg/ffprobe not found on PATH")
   process.exit(2)
 }
-
-// --- rows -------------------------------------------------------------------
 
 type Verdict = "crop" | "stretched" | "indeterminate"
 
@@ -231,8 +219,6 @@ const rows = db
 db.close()
 
 const selected = limit === null ? rows : rows.slice(0, limit)
-
-// --- audit ------------------------------------------------------------------
 
 const CROP = `crop=w='min(iw,ih*${TARGET_W}/${TARGET_H})':h='min(ih,iw*${TARGET_H}/${TARGET_W})',scale=${TARGET_W}:${TARGET_H}`
 const STRETCH = `scale=${TARGET_W}:${TARGET_H}`

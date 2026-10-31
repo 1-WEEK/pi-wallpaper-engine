@@ -1,4 +1,4 @@
-// Login (implementation ticket 14) — spec §9 light treatment: a pure
+// Login — spec §9 light treatment: a pure
 // typographic skeleton page (Clash title + mono ledger readings on the
 // token layer). The passkey ceremony gets the page's only glass surface —
 // the AuthFocus overlay — while it is pending.

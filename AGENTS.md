@@ -39,6 +39,10 @@ mpv, and an optional NAS transcode worker.
   workers receive source bytes and upload artifacts through the worker protocol.
 - Use `snake_case` for HTTP JSON, config keys, and SQLite columns; use `camelCase`
   inside TypeScript. Keep cross-package contracts in `@pwe/shared`.
+- Comments follow Clean Code practice: write one only when the code cannot express
+  the point itself (rationale, constraints, hardware/library quirks). Delete
+  comments that restate the code, log change history, or mark sections/positions —
+  the code and git history already carry those.
 - Keep commit subjects focused. In every agent workflow, put the actual model ID
   on its own line in the commit body: `Model: <model-id>`.
 

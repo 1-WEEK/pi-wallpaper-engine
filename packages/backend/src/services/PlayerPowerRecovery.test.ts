@@ -40,7 +40,7 @@ interface Save {
 }
 
 /**
- * The media-root recovery paths (ticket 01) are driven through a controllable
+ * The media-root recovery paths are driven through a controllable
  * watch, because the condition under test *is* "the root answered again". The
  * real watch's cadence is its own suite's business; what matters here is the
  * decision made from each verdict.
@@ -309,8 +309,7 @@ describe("PlayerPower startup restore across a missing mount", () => {
   test("keeps the wallpaper for the recovery loop when the mount is not up yet", async () => {
     // Boot with the display already on and the media root not mounted: the
     // startup attempt fails against `library.playablePath`, so the wallpaper
-    // has to stay held with a reason the recovery loop retries — that is the
-    // nine-day silent-idle failure this ticket exists to remove.
+    // has to stay held with a reason the recovery loop retries.
     const harness = makeHarness({
       displayStatus: { state: "on", source: "probed" },
       saved: { workshop_id: "123", reason: "display_off" },

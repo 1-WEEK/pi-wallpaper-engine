@@ -54,9 +54,7 @@ export const playerRoutes = (runtime: AppRuntime, auth: AuthService | null = nul
       )
     )
     .post("/resume", ({ set }) =>
-      // Previously returned 200 even on failure (catchAll → succeed without
-      // setting status). runRoute maps MpvIpcError to 500 — a failed resume
-      // should not report success. Intentional contract fix (was a latent bug).
+      // runRoute maps MpvIpcError to 500: a failed resume must not report success.
       runRoute(
         set,
         Effect.gen(function* () {

@@ -1,7 +1,6 @@
-// Setup (implementation ticket 14) — spec §9 light treatment, same
+// Setup — spec §9 light treatment, same
 // skeleton as Login: Clash title + mono ledger readings; glass only for
-// the passkey focused overlay (AuthFocus) during registration. The
-// step flow and backend calls are unchanged from the legacy page.
+// the passkey focused overlay (AuthFocus) during registration.
 import { useRef, useState } from "react"
 import { registerPasskey, setupAdmin } from "../auth.js"
 import { dispatchAuthChange } from "../api.js"

@@ -1,7 +1,6 @@
 // Canonical mapping from a tagged business error to an HTTP status + body.
-// Centralizes what was duplicated across ~28 route handlers. The mapping is
-// kind-aware (StorageError/DisplayError/etc.) and was derived from the existing
-// per-route catchTag status codes so wiring a route through this preserves its
+// The mapping is kind-aware (StorageError/DisplayError/etc.) and mirrors the
+// per-route status codes, so wiring a route through this preserves its
 // contract. Pure, so it is unit-tested without a runtime.
 
 export interface HttpErrorResult {

@@ -141,10 +141,10 @@ describe("probeMediaRoot", () => {
   })
 })
 
-// The media root comes and goes while the backend runs (ticket 01 of
-// `.scratch/playback-mount-resilience`). `status()` and `mediaRoot()` are the
-// seam everything else reads, so the outage and its recovery must be visible
-// through them without any cached state surviving the transition.
+// The media root comes and goes while the backend runs. `status()` and
+// `mediaRoot()` are the seam everything else reads, so the outage and its
+// recovery must be visible through them without any cached state surviving
+// the transition.
 describe("Storage across a media-root outage", () => {
   test("status reports the outage, names the path, and clears it on recovery", async () => {
     const parent = await tempRoot()

@@ -7,9 +7,8 @@ import type { AppContext, AppRuntime } from "../runtime.js"
 
 export const displayRoutes = (runtime: AppRuntime) => {
   // See player.ts for the rationale. DisplayError maps NotConfigured -> 503,
-  // else 500 (same as the previous hand-rolled kind check); MpvIpcError -> 500.
-  // The previous `{ ok, error, kind, stderr }` error bodies collapse to
-  // `{ error }` — the frontend's json() helper only reads `error` on failure.
+  // else 500; MpvIpcError -> 500. Error bodies are `{ error }` — the frontend's
+  // json() helper only reads `error` on failure.
   const runRoute = <A, E extends { readonly _tag: string }>(
     set: { status?: number | string },
     effect: Effect.Effect<A, E, AppContext>
